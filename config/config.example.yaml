@@ -1,0 +1,271 @@
+# Copy to config.yaml and edit.
+
+# Timeframe for swing analysis. Maps to moomoo KLType via
+# src/moomoo_client.py's RESOLUTION_MAP: MIN_1, MIN_5, MIN_15, HOUR_1,
+# HOUR_4, DAY. moomoo has no historical 4h K-line, so HOUR_4 is built
+# from 60-minute bars (4 per group, per trading day).
+# Note: each distinct symbol you pull history for uses moomoo's 7-day
+# historical K-line quota.
+timeframe: "DAY"
+
+# Kronos offline model configuration
+kronos:
+  model_name: "NeoQuasar/Kronos-base"      # Local offline model in HF cache
+  tokenizer_name: "NeoQuasar/Kronos-Tokenizer-base"
+  device: "cpu"                            # "cpu" or "cuda"
+  max_context: 512
+  local_files_only: true                   # Enforce offline mode (no network call to HuggingFace)
+  sample_count: 3                          # Number of prediction paths to average
+  temperature: 0.5                         # Lower for more stable swing predictions
+  top_p: 0.9
+  verbose: false
+
+# How many closed bars to keep in the rolling lookback window fed to
+# Kronos. Kronos-small/base support up to 512 context bars.
+lookback_bars: 200
+
+# How many bars ahead to forecast for the confirmation signal.
+forecast_horizon: 6
+
+# Minimum Kronos confidence (0-1, probability price moves in the
+# pattern's implied direction) required to confirm a trade.
+kronos_confidence_threshold: 0.62
+
+# Indicator confirmation - runs after a candlestick pattern fires and
+# BEFORE Kronos, so setups that fight the indicators are dropped without
+# a forecast. Uses EMA 9/20/50/200, ADX, Supertrend, RSI, MACD,
+# Stochastic, Bollinger, Donchian, volume/OBV (+ session VWAP intraday).
+# It can only reject signals, never create them; risk.py stays last.
+indicators:
+  enabled: true
+  mode: filter             # filter = may reject; log = record in audit/dashboard only
+  min_alignment: 0         # indicator bias score toward the trade, -100..100 (0 = not net against it)
+  require_ma_trend: false  # true: BUY only if EMA fast > slow, SELL only if fast < slow
+  ma_fast: 20
+  ma_slow: 50
+  ma_kind: ema             # sma | ema | wma | hma | vwma
+  max_rsi_for_buy: 75      # skip BUYs when RSI is this high (null = off)
+  min_rsi_for_sell: 25     # skip SELLs when RSI is this low (null = off)
+  min_bars: 60             # fewer closed bars -> check is skipped, signal passes
+
+# Order execution type: "LIMIT" (recommended) or "MARKET". Entries are
+# DAY orders. MARKET is only used while the session is open - outside
+# it a LIMIT at the last close is placed instead. Exit orders (stop and
+# target) are placed once the entry fills: GTC on live accounts, DAY on
+# paper accounts (moomoo paper rejects GTC) - DAY exits are re-placed at
+# every session open. MOOMOO_EXIT_TIF in .env can force GTC or DAY.
+order_type: "LIMIT"
+
+# Cancel an entry that is still completely unfilled after this many
+# minutes, so a stale limit doesn't block the symbol for the session.
+entry_timeout_minutes: 15
+
+# false (recommended): only evaluate signals and submit entries while the
+# exchange session is open. A bar that closes after hours is evaluated at
+# the next open, so no order sits queued overnight and fills on a gap.
+# Exchange holidays and early closes are respected (src/market_calendar.py).
+trade_outside_market_hours: false
+
+# Trailing stop - once enabled, the position monitor (running on its
+# own faster cadence, independent of the candle-scan loop) ratchets the
+# stop in the favorable direction as price moves, and closes the
+# position if price crosses the stop or reaches the target.
+trailing_stop:
+  enabled: false
+  check_interval_seconds: 20
+  trigger_points: 2.00   # price units - profit distance before trailing engages
+  trail_distance: 3.00   # price units - fixed trail distance behind the best price
+  use_atr: false
+  atr_multiplier: 3.0
+
+# Symbols to trade, as moomoo codes ("US.AAPL", "HK.00700", "SG.D05")
+# or bare tickers (the MOOMOO_TRADE_MARKET prefix is added).
+# Static symbol list - only used when screener.enabled is false.
+symbols:
+  - symbol: "US.AAPL"
+    name: "Apple"
+    quantity: 10
+  - symbol: "US.MSFT"
+    name: "Microsoft"
+    quantity: 5
+
+# Default order quantity applied to symbols selected by the screener
+# (screener candidates don't carry a per-symbol quantity of their own).
+default_quantity: 10
+
+# Dynamic screener - when enabled, replaces the static `symbols:` list
+# above with a periodically-refreshed set ranked by volatility (ATR%)
+# and filtered by price range and liquidity.
+screener:
+  enabled: false
+
+  # The screened market is MOOMOO_TRADE_MARKET from .env.
+
+  # Universe source - leave empty to screen the entire market via
+  # get_stock_basicinfo(), or list specific codes to screen within
+  # (faster and quota-friendly - see src/screener.py docstring).
+  candidate_symbols:
+    - "US.AAPL"
+    - "US.MSFT"
+    - "US.NVDA"
+    - "US.AMZN"
+    - "US.META"
+    - "US.GOOGL"
+    - "US.AMD"
+    - "US.TSLA"
+
+  # Price range filter (market currency) - candidates outside are excluded.
+  min_price: 5.0
+  max_price: 500.0
+
+  # Minimum average volume (last 20 bars) to be considered liquid enough.
+  min_avg_volume: 1000000
+
+  # ATR (Average True Range) as % of price - the volatility band you
+  # want to trade. Too low = not enough movement to hit targets; too
+  # high = whipsaw risk.
+  atr_period: 14
+  min_atr_pct: 0.5
+  max_atr_pct: 8.0
+
+  # How many top-ranked candidates to actively trade at once.
+  top_n: 5
+
+  # How often to re-run the screener and refresh the active symbol list.
+  refresh_interval_minutes: 360
+
+risk:
+  # Max number of concurrent open positions across all symbols
+  max_open_positions: 3
+  # Max order quantity per single position
+  max_stake_per_point: 200
+  # Stop loss / take profit distance in price units (market currency)
+  stop_loss_points: 4.0
+  take_profit_points: 8.0
+  # Hard daily loss cap in market currency - trading halts if breached.
+  # The day rolls over at midnight in the exchange's timezone.
+  max_daily_loss: 300.0
+  # Minimum minutes between trades on the same symbol (persists across restarts)
+  min_minutes_between_trades: 240
+  # false: SELL signals are rejected rather than opening a short position
+  # (shorting needs a margin account with borrow at moomoo).
+  allow_short: false
+  # Order quantities must be a multiple of this. US = 1; SGX board lot =
+  # 100; HK lot size varies per stock (check get_market_snapshot lot_size).
+  lot_size: 1
+
+# Market calendar. With follow_market the agent scans only while the
+# exchange is open - NYSE/Nasdaq holidays and 1 pm early closes included -
+# warms up `warmup_minutes` before the open (OpenD check + fresh screener
+# run), and otherwise sleeps, checking positions every
+# `sleep_monitor_seconds`. Telegram gets an open / close message.
+# Ignored (always on) when trade_outside_market_hours is true.
+schedule:
+  follow_market: true
+  warmup_minutes: 15
+  sleep_monitor_seconds: 300
+  notify_open_close: true
+
+# OpenD connection. Every connect attempt is bounded, so an OpenD that is
+# running but not logged in can't freeze the agent. A health ping runs
+# every `health_check_seconds`; after `reconnect_after_failures` failed
+# pings the connection is rebuilt. Trading pauses while OpenD is down.
+connection:
+  connect_timeout_seconds: 35
+  health_check_seconds: 60
+  reconnect_after_failures: 3
+
+# Broker positions/orders the agent didn't open (placed by hand, or left
+# by another program). mode: alert (Telegram + dashboard banner, once per
+# symbol) or off. close_missing_positions: an agent position the broker
+# no longer holds - and whose exit orders didn't fill - is marked closed
+# after a few minutes instead of being monitored forever.
+unmanaged_positions:
+  mode: alert
+  check_interval_seconds: 300
+  close_missing_positions: true
+
+polling_interval_seconds: 60
+
+# Market Sentiment Meter (dashboard only - never affects trading).
+# Reads benchmark ETFs for the broker's market and labels the market
+# Up trend / Down trend / Sideways / Stable with a -100..100 needle.
+sentiment:
+  enabled: true
+  timeframe: DAY             # DAY = the market's trend; HOUR_1 / MIN_15 for intraday mood
+  lookback_bars: 250
+  refresh_minutes: 15        # cached between readings (broker data limits)
+  adx_trend: 20              # ADX at or above this counts as trending
+  breadth_symbols: 15        # % of the agent's active symbols above EMA50 (0 = off)
+  benchmarks:                # leave a market out to use the defaults:
+    # US: [US.SPY, US.QQQ, US.IWM]               S&P 500, Nasdaq 100, Russell 2000
+    # SG: [SG.ES3, SG.G3B]                       STI ETFs
+    # HK: [HK.02800, HK.03033]                   Hang Seng, Hang Seng Tech
+    # NSE: [NSE.NIFTYBEES, NSE.BANKBEES, NSE.JUNIORBEES]
+
+# ---------------------------------------------------------------------------
+# Brokers. Every setting above is SHARED. Each broker below can override
+# any of them for itself only - nested sections merge, so write just the
+# keys that differ. Several enabled brokers run in one process, each with
+# its own connection, audit DB (data/audit_<name>.db; moomoo keeps
+# data/audit.db), risk state, screener and market calendar. They share one
+# offline Kronos model (the kronos: section is shared-only).
+# Credentials stay in .env. Restart main.py after changing this.
+#   adapter  moomoo | tiger | ig, zerodha, angel (experimental)
+#   market   overrides the market set in .env for that broker
+# ---------------------------------------------------------------------------
+brokers:
+  moomoo:
+    enabled: true            # trades the shared settings above as-is
+
+  tiger:                     # Tiger Brokers (tigeropen) - TIGER_* in .env
+    enabled: false
+    market: SG               # SGX
+    timeframe: HOUR_1
+    default_quantity: 100
+    risk:
+      lot_size: 100          # SGX board lot
+      max_daily_loss: 300.0  # SGD
+    screener:
+      candidate_symbols: [SG.D05, SG.O39, SG.U11, SG.Z74, SG.C6L]
+      min_price: 1.0
+      max_price: 100.0
+      min_avg_volume: 20000
+
+  ig:                        # IG REST API - EXPERIMENTAL, IG_* in .env, use a DEMO account
+    enabled: false
+    market: US               # session calendar used for scheduling
+    default_quantity: 1      # deal size (contracts)
+    screener:
+      enabled: true
+      candidate_symbols: [UA.D.AAPL.CASH.IP, UA.D.MSFT.CASH.IP]   # IG epics
+
+  zerodha:                   # Zerodha Kite Connect - KITE_* in .env, run kite_login.py daily (EXPERIMENTAL)
+    enabled: false
+    market: NSE
+    default_quantity: 5      # shares - no paper account, start small
+    risk:
+      allow_short: false     # CNC delivery can't short
+      lot_size: 1
+      max_daily_loss: 2000.0 # INR
+    screener:
+      candidate_symbols: [NSE.RELIANCE, NSE.HDFCBANK, NSE.ICICIBANK, NSE.INFY, NSE.TCS,
+                          NSE.SBIN, NSE.LT, NSE.AXISBANK, NSE.BHARTIARTL, NSE.ITC]
+      min_price: 100.0
+      max_price: 5000.0
+      min_avg_volume: 20000  # per 5-minute bar
+
+  angel:                     # Angel One SmartAPI - ANGEL_* in .env, TOTP login is automatic (EXPERIMENTAL)
+    enabled: false
+    market: NSE
+    default_quantity: 5
+    risk:
+      allow_short: false     # DELIVERY can't short
+      lot_size: 1
+      max_daily_loss: 2000.0 # INR
+    screener:
+      candidate_symbols: [NSE.RELIANCE, NSE.HDFCBANK, NSE.ICICIBANK, NSE.INFY, NSE.TCS,
+                          NSE.SBIN, NSE.LT, NSE.AXISBANK, NSE.BHARTIARTL, NSE.ITC]
+      min_price: 100.0
+      max_price: 5000.0
+      min_avg_volume: 20000

@@ -1,0 +1,2582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kronos Swing Agent — Trading Terminal</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="/static/js/lightweight-charts.js"></script>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header class="header">
+    <div class="brand-section">
+      <div class="brand-logo">🐅</div>
+      <div>
+        <div class="brand-title">Kronos Swing Agent <span style="color:var(--accent-cyan); font-weight:400; font-size:14px;">Terminal</span></div>
+        <div class="brand-sub">Powered by Kronos Offline K-Line Foundation Model (AAAI 2026)</div>
+      </div>
+    </div>
+
+    <div class="header-badges">
+      <div id="badge-agent-status" class="badge warning">
+        <span class="pulse-dot"></span>
+        <span id="agent-status-text">AGENT: CHECKING...</span>
+      </div>
+
+      <div id="badge-broker" class="badge info">
+        <span id="broker-label">BROKER: MOOMOO</span>
+        <span id="broker-acc" style="color:#fff; opacity:0.8;"></span>
+        <span id="broker-funds" class="mono" style="color:var(--accent-green); opacity:0.9;"></span>
+      </div>
+
+      <div id="badge-kronos" class="badge purple">
+        <span>🤖 KRONOS: BASE (OFFLINE)</span>
+      </div>
+
+      <div id="badge-risk" class="badge success">
+        <span>RISK GUARD: ACTIVE</span>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <label class="broker-switch" id="broker-switch-wrap" style="display:none" title="Which broker this dashboard shows - every tab follows it">
+        <span>Broker</span>
+        <select id="broker-switch"></select>
+      </label>
+      <button class="btn btn-primary" onclick="triggerScanNow()" id="btn-scan-now">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        Scan Bar Now
+      </button>
+      <button class="btn" onclick="toggleAutoRefresh()" id="btn-auto-refresh">
+        Auto: <span id="auto-refresh-state" style="color:var(--accent-green); margin-left:4px;">ON (5s)</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Navigation Bar -->
+  <nav class="nav-bar">
+    <div class="tabs-list">
+      <button class="tab-btn active" onclick="switchTab('terminal')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        Live Terminal
+      </button>
+      <button class="tab-btn" onclick="switchTab('decisions')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        Decisions & Audit Log
+      </button>
+      <button class="tab-btn" onclick="switchTab('positions')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Positions & Trailing Stop
+      </button>
+      <button class="tab-btn" onclick="switchTab('kronos-lab')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        Kronos Model Lab
+      </button>
+      <button class="tab-btn" onclick="switchTab('strategies')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        Strategies & Tactics
+      </button>
+      <button class="tab-btn" onclick="switchTab('settings')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Config & Risk
+      </button>
+    </div>
+
+    <div style="font-size:12px; font-family:var(--font-mono); color:var(--text-muted);" id="current-clock">
+      --:--:-- SGT
+    </div>
+  </nav>
+
+  <!-- Main Container -->
+  <main class="main-content">
+
+    <!-- Market bar: live exchange sessions + agent phase -->
+    <section class="market-bar" id="market-bar" aria-label="Exchange sessions">
+      <div class="mkt-agent" id="mkt-agent">
+        <div class="mkt-agent-label">Agent</div>
+        <div class="mkt-agent-phase" id="mkt-agent-phase"><span class="phase-dot"></span><span>Checking…</span></div>
+        <div class="mkt-agent-sub" id="mkt-agent-sub"></div>
+      </div>
+      <div class="mkt-sessions" id="mkt-sessions"></div>
+    </section>
+
+    <!-- Market Sentiment Meter (display only - see src/sentiment.py) -->
+    <section class="sentiment-bar" id="sentiment-bar" aria-label="Market sentiment" style="display:none">
+      <div class="sent-gauge">
+        <svg viewBox="0 0 200 118" role="img" aria-label="Sentiment gauge">
+          <path d="M 20.0 100.0 A 80 80 0 0 1 35.3 53.0" class="g-zone g-z1"/>
+          <path d="M 35.3 53.0 A 80 80 0 0 1 75.3 23.9" class="g-zone g-z2"/>
+          <path d="M 75.3 23.9 A 80 80 0 0 1 124.7 23.9" class="g-zone g-z3"/>
+          <path d="M 124.7 23.9 A 80 80 0 0 1 164.7 53.0" class="g-zone g-z4"/>
+          <path d="M 164.7 53.0 A 80 80 0 0 1 180.0 100.0" class="g-zone g-z5"/>
+          <line id="sent-needle" x1="100" y1="100" x2="100" y2="34" class="g-needle"/>
+          <circle cx="100" cy="100" r="6" class="g-hub"/>
+          <text x="22" y="116" class="g-tick">Bearish</text>
+          <text x="178" y="116" class="g-tick" text-anchor="end">Bullish</text>
+        </svg>
+        <div class="sent-score" id="sent-score">–</div>
+      </div>
+      <div class="sent-main">
+        <div class="sent-title">Market sentiment <span id="sent-market" class="sent-market"></span></div>
+        <div class="sent-regime" id="sent-regime">Reading…</div>
+        <div class="sent-sub" id="sent-sub"></div>
+        <div class="sent-breadth" id="sent-breadth"></div>
+      </div>
+      <div class="sent-benchmarks" id="sent-benchmarks"></div>
+      <div class="sent-foot">
+        <span id="sent-updated"></span>
+        <button class="btn btn-sm" id="sent-refresh" title="Read the market again now">↻</button>
+      </div>
+    </section>
+
+    <!-- Alerts: OpenD connection and positions the agent doesn't manage -->
+    <div id="alert-broker" class="alert-banner danger" style="display:none;" role="alert"></div>
+    <div id="alert-unmanaged" class="alert-banner warning" style="display:none;" role="alert"></div>
+
+    <!-- Metrics Row -->
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">
+          <span>Active Symbol</span>
+          <span style="color:var(--accent-blue)" id="metric-symbol-source" title="Where the symbol list comes from"></span>
+        </div>
+        <div class="metric-value" id="metric-symbol">—</div>
+        <div class="metric-sub" id="metric-name">Loading symbols…</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">
+          <span>Latest Price</span>
+          <span class="mono ccy" style="color:var(--accent-green)">USD</span>
+        </div>
+        <div class="metric-value" id="metric-price">--.--</div>
+        <div class="metric-sub" id="metric-price-sub">Timeframe: HOUR_4</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">
+          <span>Kronos Threshold</span>
+          <span class="mono">CONFIDENCE</span>
+        </div>
+        <div class="metric-value" id="metric-threshold">62.0%</div>
+        <div class="metric-sub" id="metric-horizon">Horizon: 6 Bars Ahead</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">
+          <span>Risk Limits</span>
+          <span class="mono">DAILY P&L</span>
+        </div>
+        <div class="metric-value" id="metric-risk-pnl">$0.00</div>
+        <div class="metric-sub" id="metric-loss-cap">Loss Cap: -$300.00</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">
+          <span>Open Positions</span>
+          <span class="mono" id="metric-positions-max"></span>
+        </div>
+        <div class="metric-value" id="metric-positions-count">—</div>
+        <div class="metric-sub" id="metric-positions-sub">Loading…</div>
+      </div>
+    </div>
+
+    <!-- TAB 1: TERMINAL -->
+    <div id="tab-terminal" class="tab-panel active">
+      <div class="chart-pipeline-grid">
+        <!-- Candlestick & Forecast Chart Card -->
+        <div class="panel-card chart-card" id="chart-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              <span><span id="chart-market-label">Market</span> Candlestick & Kronos Forecast Path</span>
+              <span id="chart-sub-badge" class="badge purple" style="font-size:11px; margin-left:8px;">Model: Kronos-base</span>
+              <button class="chart-fs-btn" id="chart-fs-btn" type="button" title="Full screen chart (F) - Esc to exit" aria-label="Full screen chart">
+                <svg class="fs-enter" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+                <svg class="fs-exit" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
+              </button>
+              <span class="fs-live" id="fs-live" title="Candles refresh on the chart's Refresh setting; Kronos re-runs on every new candle"><i></i>LIVE</span>
+            </div>
+
+            <div class="symbol-selector" id="symbol-buttons">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <!-- Chart view controls: change only what the chart shows, never what the agent trades -->
+          <div class="chart-controls">
+            <label>Candles
+              <select id="chart-tf" class="chart-select" title="Chart-only timeframe. The agent keeps trading on the timeframe in config.yaml.">
+                <option value="">Agent setting</option>
+                <option value="MIN_1">1 min</option>
+                <option value="MIN_5">5 min</option>
+                <option value="MIN_15">15 min</option>
+                <option value="HOUR_1">1 hour</option>
+                <option value="HOUR_4">4 hours</option>
+                <option value="DAY">1 day</option>
+              </select>
+            </label>
+            <label>Show
+              <select id="chart-limit" class="chart-select">
+                <option value="50">50 bars</option>
+                <option value="80">80 bars</option>
+                <option value="150">150 bars</option>
+                <option value="300">300 bars</option>
+                <option value="500">500 bars</option>
+              </select>
+            </label>
+            <label>Refresh
+              <select id="chart-refresh" class="chart-select" title="Reloads candles only. The Kronos forecast reruns when you change symbol or timeframe.">
+                <option value="0">Off</option>
+                <option value="30">30 s</option>
+                <option value="60">1 min</option>
+                <option value="300">5 min</option>
+              </select>
+            </label>
+            <span class="chart-overlay-toggles" title="Indicator overlays - the same MA type and periods the indicator filter uses (config.yaml -> indicators)">
+              <label><input type="checkbox" id="ov-ma"> MAs</label>
+              <label><input type="checkbox" id="ov-vwap"> VWAP</label>
+              <label><input type="checkbox" id="ov-rsi"> RSI</label>
+            </span>
+            <span id="chart-tf-note" class="chart-tf-note"></span>
+            <span id="chart-updated" class="chart-updated"></span>
+          </div>
+          <div id="ind-legend" class="ind-legend"></div>
+
+          <div id="candlestick-chart-container"></div>
+
+          <div class="chart-legend">
+            <div class="legend-item">
+              <div class="legend-dot" style="background:#10b981;"></div>
+              <span>Bullish Candle</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-dot" style="background:#ef4444;"></div>
+              <span>Bearish Candle</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-dot" style="background:#38bdf8; border-radius:50%;"></div>
+              <span>Pattern Detection Marker</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-dot" style="background:#c084fc; width:16px; height:2px;"></div>
+              <span id="legend-kronos-path">Kronos Predicted Path</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pipeline Flow Card -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              <span>Decision Pipeline Stage</span>
+            </div>
+            <span id="pipeline-cycle-time" class="mono" style="font-size:11px; color:var(--text-muted);">Cycle: Live</span>
+          </div>
+
+          <div class="pipeline-flow">
+            <!-- Stage 1 -->
+            <div class="step-card active" id="pipe-step-1">
+              <div class="step-badge">1</div>
+              <div class="step-content">
+                <div class="step-title">moomoo OpenD Ingest</div>
+                <div class="step-desc">Pulls closed historical K-lines via OpenQuoteContext.</div>
+                <div class="step-value" id="pipe-val-1">Active Polling</div>
+              </div>
+            </div>
+
+            <!-- Stage 2 -->
+            <div class="step-card" id="pipe-step-2">
+              <div class="step-badge">2</div>
+              <div class="step-content">
+                <div class="step-title">Pattern Detector</div>
+                <div class="step-desc">Deterministic rules: Engulfing, Hammer, Inside Bar.</div>
+                <div class="step-value" id="pipe-val-2">Waiting for closed bar</div>
+              </div>
+            </div>
+
+            <!-- Stage 3 -->
+            <div class="step-card" id="pipe-step-3">
+              <div class="step-badge">3</div>
+              <div class="step-content">
+                <div class="step-title">Kronos Subagent (Offline AI)</div>
+                <div class="step-desc">Autoregressive K-line transformer forecasting 6 bars.</div>
+                <div class="step-value" id="pipe-val-3">Threshold: 62% Conf</div>
+              </div>
+            </div>
+
+            <!-- Stage 4 -->
+            <div class="step-card" id="pipe-step-4">
+              <div class="step-badge">4</div>
+              <div class="step-content">
+                <div class="step-title">Risk Gatekeeper</div>
+                <div class="step-desc">Hard-coded: Max 3 positions, -$300 cap, cooldown.</div>
+                <div class="step-value" id="pipe-val-4">Budget: $300.00</div>
+              </div>
+            </div>
+
+            <!-- Stage 5 -->
+            <div class="step-card" id="pipe-step-5">
+              <div class="step-badge">5</div>
+              <div class="step-content">
+                <div class="step-title">moomoo Execution & Trailing Stop</div>
+                <div class="step-desc">Independent Entry, Broker-side Stop & Limit legs.</div>
+                <div class="step-value" id="pipe-val-5">No open position</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: DECISIONS & AUDIT LOG -->
+    <div id="tab-decisions" class="tab-panel">
+      <div class="panel-card">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span>Audit Trail — Every Decision & Outcome</span>
+          </div>
+          <div>
+            <input type="text" id="decision-search" class="form-control" style="width:200px; padding:4px 8px; font-size:12px;" placeholder="Search symbol/pattern..." oninput="renderDecisionsTable()">
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Symbol</th>
+                <th>Pattern</th>
+                <th>Implied Direction</th>
+                <th>Pattern Strength</th>
+                <th>Kronos Confirmed</th>
+                <th>Kronos Confidence</th>
+                <th>Action Taken</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="decisions-table-body">
+              <tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:24px;">Loading decisions log...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: POSITIONS & TRAILING STOP -->
+    <div id="tab-positions" class="tab-panel">
+      <div class="panel-card">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            <span>Live Open Positions & Trailing Stop Status</span>
+          </div>
+          <span class="mono" id="positions-updated" style="color:var(--text-muted); font-size:11px;"></span>
+        </div>
+
+        <div class="manual-bar">
+          <span class="manual-bar-label">Manual order</span>
+          <input id="manual-symbol" type="text" placeholder="Symbol e.g. US.AAPL" autocomplete="off" spellcheck="false">
+          <input id="manual-qty" type="number" min="1" step="1" placeholder="Qty">
+          <button class="btn btn-buy" onclick="openManualConfirm('BUY')">Buy</button>
+          <button class="btn btn-sell" onclick="openManualConfirm('SELL')">Sell / Short</button>
+          <span class="manual-bar-help">Skips the pattern / Kronos / risk gates. Once filled, the agent places the usual stop, target and trailing stop.</span>
+        </div>
+
+        <div id="positions-broker-banner" class="badge warning" style="display:none; margin-bottom:12px;"></div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Side</th>
+                <th>Quantity</th>
+                <th>Avg Cost</th>
+                <th>Last Price</th>
+                <th>Stop Loss</th>
+                <th>Target Price</th>
+                <th>High Water</th>
+                <th>Trail</th>
+                <th>Unrealized P&L</th>
+                <th>Management</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="positions-table-body">
+              <tr><td colspan="12" style="text-align:center; color:var(--text-muted); padding:24px;">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="manual-orders" class="manual-orders" style="display:none;"></div>
+      </div>
+
+      <div id="manual-modal" class="manual-modal" style="display:none;" onclick="if (event.target === this) closeManualConfirm()">
+        <div class="manual-modal-box" role="dialog" aria-modal="true" aria-labelledby="manual-modal-title">
+          <h3 id="manual-modal-title">Confirm order</h3>
+          <div id="manual-modal-body" class="manual-modal-body"></div>
+          <div class="manual-modal-actions">
+            <button class="btn" onclick="closeManualConfirm()">Cancel</button>
+            <button class="btn" id="manual-modal-go" onclick="submitManualOrder()">Place order</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-card" style="margin-top:16px;">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
+            <span>Working Orders at Broker</span>
+          </div>
+          <span class="mono" id="orders-updated" style="color:var(--text-muted); font-size:11px;"></span>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Placed</th>
+                <th>Symbol</th>
+                <th>Action</th>
+                <th>Type</th>
+                <th>Qty (Filled)</th>
+                <th>Limit</th>
+                <th>Stop Trigger</th>
+                <th>Status</th>
+                <th>TIF</th>
+                <th>Order ID</th>
+                <th>Management</th>
+              </tr>
+            </thead>
+            <tbody id="orders-table-body">
+              <tr><td colspan="11" style="text-align:center; color:var(--text-muted); padding:24px;">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: KRONOS MODEL LAB -->
+    <div id="tab-kronos-lab" class="tab-panel">
+      <div class="panel-card">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+            <span>Kronos Foundation Model Offline Simulator</span>
+          </div>
+          <span class="badge purple">AAAI 2026 Foundation Model</span>
+        </div>
+
+        <div class="grid-3" style="margin-bottom:16px;">
+          <div class="form-group">
+            <label class="form-label">Symbol</label>
+            <select id="sim-symbol" class="form-control"></select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Forecast Horizon (Bars)</label>
+            <input type="number" id="sim-horizon" class="form-control" value="6" min="1" max="15">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Sampling Temperature</label>
+            <input type="number" id="sim-temp" class="form-control" value="0.5" step="0.1" min="0.1" max="1.0">
+          </div>
+        </div>
+
+        <div style="display:flex; gap:12px; margin-bottom:20px;">
+          <button class="btn btn-primary" onclick="runSimulatedForecast()" id="btn-run-sim">
+            <span>⚡ Run Kronos Offline Forecast</span>
+          </button>
+        </div>
+
+        <div id="sim-results-card" style="display:none; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <div style="font-weight:700; font-size:15px; color:#fff;" id="sim-summary-title">Forecast Result</div>
+            <div id="sim-outcome-pill" class="badge success">CONFIRMED</div>
+          </div>
+
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Future Bar</th>
+                  <th>Open</th>
+                  <th>High</th>
+                  <th>Low</th>
+                  <th>Close</th>
+                  <th>Predicted Δ vs Current</th>
+                </tr>
+              </thead>
+              <tbody id="sim-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: TRADING STRATEGIES & PLAYBOOK -->
+    <div id="tab-strategies" class="tab-panel">
+      <!-- Strategy Architecture Flow Hero -->
+      <div class="strategy-hero">
+        <div>
+          <div class="strategy-hero-title">
+            <span>⚡ Quantitative Swing Trading Architecture & Strategy Playbook</span>
+          </div>
+          <div class="strategy-hero-sub">
+            The moomoo Swing Agent operates as a multi-stage autonomous pipeline: screening dynamic market candidates, recognizing high-probability price action patterns, confirming directional trajectory using the offline Kronos Foundation Model, guarding risk thresholds, routing exchange orders with session compliance, and ratcheting dynamic trailing stops.
+          </div>
+        </div>
+
+        <div class="strategy-flow-nav">
+          <div class="strategy-flow-step active">1. Screen</div>
+          <span class="strategy-flow-arrow">➔</span>
+          <div class="strategy-flow-step active">2. Pattern</div>
+          <span class="strategy-flow-arrow">➔</span>
+          <div class="strategy-flow-step active">3. Kronos AI</div>
+          <span class="strategy-flow-arrow">➔</span>
+          <div class="strategy-flow-step active">4. Risk Guard</div>
+          <span class="strategy-flow-arrow">➔</span>
+          <div class="strategy-flow-step active">5. Execution</div>
+          <span class="strategy-flow-arrow">➔</span>
+          <div class="strategy-flow-step active">6. Trailing Exit</div>
+        </div>
+      </div>
+
+      <!-- Strategy Cards Grid -->
+      <div class="strategy-cards-grid">
+
+        <!-- Card 1: Screen Logic -->
+        <div class="strat-card">
+          <div class="strat-card-header">
+            <div>
+              <div class="strat-card-title">
+                <span>1. Dynamic Screener Strategy</span>
+              </div>
+              <div style="font-size:12px; color:var(--accent-blue); margin-top:2px;">Universe Selection & Volatility Ranking</div>
+            </div>
+            <span class="strat-tag blue">Screen Logic</span>
+          </div>
+
+          <div class="strat-desc">
+            Replaces static watchlist with periodic automated screening of the configured moomoo market (US, HK, SG or CN). Filters for liquid instruments and ranks survivors by swing volatility and trend strength.
+          </div>
+
+          <div class="strat-section-title">Core Mathematical & Filtering Logic</div>
+          <ul class="strat-logic-list">
+            <li><strong>Stage 1 (Pre-filter):</strong> Filters universe by minimum price, maximum price, and minimum average volume using batched briefs (or historical bars for US stocks).</li>
+            <li><strong>Stage 2 (ATR% Volatility):</strong> Computes Average True Range over period 14 normalized by price: <span class="strat-upgrade-code">ATR% = (ATR_14 / Close) * 100</span>. Ranks candidates descending.</li>
+            <li><strong>Trend Directional Strength:</strong> Measures exponential moving average gap: <span class="strat-upgrade-code">(EMA_20 - EMA_50) / EMA_50 * 100</span>. Positive values signify sustained uptrends.</li>
+            <li><strong>Top-N Selection:</strong> Retains only the top N highest-ranked volatility candidates for active trading.</li>
+          </ul>
+
+          <div class="strat-section-title">Active Running Configuration</div>
+          <div class="strat-meta-box">
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Screener Status:</span>
+              <span class="strat-meta-val" id="strat-val-screener-status">Disabled (Static List)</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Target Market:</span>
+              <span class="strat-meta-val" id="strat-val-screener-market">US</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Price Filter Bounds:</span>
+              <span class="strat-meta-val" id="strat-val-screener-price">$0.50 – $50.00</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">ATR% Range Filter:</span>
+              <span class="strat-meta-val" id="strat-val-screener-atr">0.5% – 8.0%</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Candidate Pool:</span>
+              <span class="strat-meta-val" id="strat-val-screener-candidates">6 symbols</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Refresh Interval:</span>
+              <span class="strat-meta-val" id="strat-val-screener-interval">360 min (6 hrs)</span>
+            </div>
+          </div>
+
+          <div class="strat-section-title" style="color:var(--accent-blue);">File Locations</div>
+          <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
+            Config: <span style="color:#fff;">config/config.yaml</span> ➔ <span style="color:var(--accent-blue);">screener:</span><br>
+            Code: <span style="color:#fff;">src/screener.py</span> (class <span style="color:var(--accent-cyan);">Screener</span>)
+          </div>
+
+          <div class="strat-upgrade-box">
+            <div class="strat-upgrade-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+              How to Upgrade & Customize Screen Logic
+            </div>
+            <div class="strat-upgrade-body">
+              • <strong>Switch to US Market:</strong> In <span class="strat-upgrade-code">config/config.yaml</span> set <span class="strat-upgrade-code">screener.market: "US"</span> and list tickers in <span class="strat-upgrade-code">candidate_symbols: ["AAPL", "NVDA", "MSFT", "TSLA"]</span>.<br>
+              • <strong>Target Explosive Runners:</strong> Increase <span class="strat-upgrade-code">min_atr_pct: 2.0</span> to screen only highly volatile momentum stocks.<br>
+              • <strong>Add Fundamental Metrics:</strong> In <span class="strat-upgrade-code">src/screener.py</span>, query financial metrics like P/E ratio, market capitalization, or earnings dates before ranking.
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2: Trigger Logic -->
+        <div class="strat-card">
+          <div class="strat-card-header">
+            <div>
+              <div class="strat-card-title">
+                <span>2. Candlestick Pattern Engine</span>
+              </div>
+              <div style="font-size:12px; color:var(--accent-green); margin-top:2px;">Deterministic Price Action Setup Detection</div>
+            </div>
+            <span class="strat-tag green">Trigger Logic</span>
+          </div>
+
+          <div class="strat-desc">
+            Evaluates closed multi-hour/daily candlestick bars for classic institutional price action patterns. Signals an initial directional bias (BUY or SELL) with assigned pattern strength.
+          </div>
+
+          <div class="strat-section-title">Supported Candlestick Formations</div>
+          <ul class="strat-logic-list">
+            <li><strong>Inside Bar (Strength 0.45):</strong> Current bar's High and Low are completely contained within the previous bar's range. Signifies consolidation prior to continuation breakout.</li>
+            <li><strong>Bullish/Bearish Engulfing (Strength 0.60):</strong> Current bar body completely engulfs prior bar body against previous trend, signaling strong momentum shift.</li>
+            <li><strong>Hammer & Inverted Hammer (Strength 0.55):</strong> Small body with a lower/upper shadow at least twice the body size, showing sharp price rejection.</li>
+            <li><strong>Morning Star / Evening Star (Strength 0.70):</strong> 3-candle reversal pattern consisting of a large directional bar, an indecision star, and a confirming reversal bar.</li>
+          </ul>
+
+          <div class="strat-section-title">Active Running Configuration</div>
+          <div class="strat-meta-box">
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Bar Timeframe:</span>
+              <span class="strat-meta-val" id="strat-val-pattern-tf">HOUR_4 (4 Hours)</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Lookback Window:</span>
+              <span class="strat-meta-val" id="strat-val-pattern-lb">200 closed bars</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Evaluation Cadence:</span>
+              <span class="strat-meta-val">On bar close (every 60s scan)</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Multi-Pattern Arbitration:</span>
+              <span class="strat-meta-val">Highest strength signal selected</span>
+            </div>
+          </div>
+
+          <div class="strat-section-title" style="color:var(--accent-green);">File Locations</div>
+          <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
+            Config: <span style="color:#fff;">config/config.yaml</span> ➔ <span style="color:var(--accent-green);">timeframe, lookback_bars</span><br>
+            Code: <span style="color:#fff;">src/patterns.py</span> (function <span style="color:var(--accent-cyan);">scan()</span>)
+          </div>
+
+          <div class="strat-upgrade-box">
+            <div class="strat-upgrade-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+              How to Upgrade & Customize Pattern Triggers
+            </div>
+            <div class="strat-upgrade-body">
+              • <strong>Add Fair Value Gaps (FVG):</strong> Add a 3-bar imbalance detector in <span class="strat-upgrade-code">src/patterns.py</span> where Candle 1 High < Candle 3 Low (bullish imbalance).<br>
+              • <strong>Add RSI Confluence:</strong> Calculate 14-period RSI; require RSI < 35 for bullish setups or RSI > 65 for bearish setups before signaling.<br>
+              • <strong>Multi-Timeframe Trend Confirmation:</strong> Only allow BUY signals if price is trading above the 200 EMA on the Daily timeframe.
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 3: AI Confirmation Logic -->
+        <div class="strat-card">
+          <div class="strat-card-header">
+            <div>
+              <div class="strat-card-title">
+                <span>3. Kronos AI Foundation Model</span>
+              </div>
+              <div style="font-size:12px; color:var(--accent-purple); margin-top:2px;">Offline K-Line Generative Trajectory Filter</div>
+            </div>
+            <span class="strat-tag purple">AI Confirmation</span>
+          </div>
+
+          <div class="strat-desc">
+            Offline K-Line foundation model (AAAI 2026). Ingests normalized historical price action tokens, generates forward trajectory paths, and validates whether the statistical probability supports the detected pattern.
+          </div>
+
+          <div class="strat-section-title">Generative Inference & Validation Logic</div>
+          <ul class="strat-logic-list">
+            <li><strong>Temporal Tokenization:</strong> Quantizes normalized OHLCV bars into temporal discrete tokens for offline context understanding.</li>
+            <li><strong>Autoregressive Prediction:</strong> Generates synthetic future candlestick paths over the designated <span class="strat-upgrade-code">forecast_horizon</span> (default 6 bars).</li>
+            <li><strong>Monte Carlo Ensemble:</strong> Generates <span class="strat-upgrade-code">sample_count</span> forward paths with temperature sampling (0.5) to quantify uncertainty and direction.</li>
+            <li><strong>Confidence Decision Gate:</strong> Calculates directional agreement percentage: <span class="strat-upgrade-code">conf = agreement_count / total_samples</span>. Confirms trade only if <span class="strat-upgrade-code">conf >= threshold (62%)</span>.</li>
+          </ul>
+
+          <div class="strat-section-title">Active Running Configuration</div>
+          <div class="strat-meta-box">
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Model Weights:</span>
+              <span class="strat-meta-val" id="strat-val-kronos-model">NeoQuasar/Kronos-base</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Compute Device:</span>
+              <span class="strat-meta-val" id="strat-val-kronos-device">cpu (Offline mode)</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Forecast Horizon:</span>
+              <span class="strat-meta-val" id="strat-val-kronos-horizon">6 bars ahead (24h in 4H TF)</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Confidence Gate:</span>
+              <span class="strat-meta-val" id="strat-val-kronos-conf">62.0% required</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Sample Ensemble:</span>
+              <span class="strat-meta-val" id="strat-val-kronos-samples">3 forward sample paths</span>
+            </div>
+          </div>
+
+          <div class="strat-section-title" style="color:var(--accent-purple);">File Locations</div>
+          <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
+            Config: <span style="color:#fff;">config/config.yaml</span> ➔ <span style="color:var(--accent-purple);">kronos:, kronos_confidence_threshold</span><br>
+            Code: <span style="color:#fff;">src/kronos_agent.py</span> (class <span style="color:var(--accent-cyan);">KronosAgent</span>)
+          </div>
+
+          <div class="strat-upgrade-box">
+            <div class="strat-upgrade-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+              How to Upgrade & Customize AI Logic
+            </div>
+            <div class="strat-upgrade-body">
+              • <strong>Upgrade to Kronos-large:</strong> If you have an NVIDIA GPU, set <span class="strat-upgrade-code">model_name: "NeoQuasar/Kronos-large"</span> and <span class="strat-upgrade-code">device: "cuda"</span> in config for higher accuracy.<br>
+              • <strong>Increase Conviction:</strong> Raise <span class="strat-upgrade-code">kronos_confidence_threshold: 0.70</span> (70%) and lower <span class="strat-upgrade-code">temperature: 0.3</span> to trade only the highest-conviction signals.<br>
+              • <strong>Extend Forecast Horizon:</strong> Change <span class="strat-upgrade-code">forecast_horizon: 10</span> to project 10 bars ahead for longer-duration swing moves.
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 4: Execution Logic -->
+        <div class="strat-card">
+          <div class="strat-card-header">
+            <div>
+              <div class="strat-card-title">
+                <span>4. Exchange Execution & Order Routing</span>
+              </div>
+              <div style="font-size:12px; color:var(--accent-cyan); margin-top:2px;">Exchange Hours Compliance & Resilient Routing</div>
+            </div>
+            <span class="strat-tag blue">Execution Logic</span>
+          </div>
+
+          <div class="strat-desc">
+            Dispatches orders through moomoo OpenD (OpenSecTradeContext) with session validation for US, HK, SGX and A-share markets, preventing off-market-hours exchange rejections and handling bracket protections.
+          </div>
+
+          <div class="strat-section-title">Session-Aware Execution Mechanics</div>
+          <ul class="strat-logic-list">
+            <li><strong>Limit Order Placement (Default):</strong> Places entries using <span class="strat-upgrade-code">order_type: "LIMIT"</span> priced at the latest completed bar close, safely queued by the broker even outside regular trading hours.</li>
+            <li><strong>Off-Hours Auto-Fallback:</strong> MARKET orders are only sent while the exchange session is open; outside it the entry is placed as a LIMIT at the last close instead.</li>
+            <li><strong>Protective Order Fallback:</strong> If the broker rejects separate resting stop orders before the buy order fills (e.g. short-selling not permitted on cash/paper accounts), software trailing stop safely assumes position control.</li>
+            <li><strong>Code Normalization & Ticks:</strong> Bare tickers get the moomoo market prefix (<span class="strat-upgrade-code">AAPL</span> ➔ <span class="strat-upgrade-code">US.AAPL</span>, <span class="strat-upgrade-code">00700</span> ➔ <span class="strat-upgrade-code">HK.00700</span>) and prices are rounded to each exchange's tick table (incl. the HKEX spread table).</li>
+            <li><strong>Broker-side Protection:</strong> Stop (<span class="strat-upgrade-code">OrderType.STOP</span>) and target (LIMIT) exits are placed GTC once the entry fills, so they keep protecting the position even if the agent is offline.</li>
+          </ul>
+
+          <div class="strat-section-title">Active Running Configuration</div>
+          <div class="strat-meta-box">
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Configured Order Type:</span>
+              <span class="strat-meta-val" id="strat-val-order-type">LIMIT (Safe Queuing)</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Broker Target:</span>
+              <span class="strat-meta-val" id="strat-val-broker-account">moomoo OpenD</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Default Order Quantity:</span>
+              <span class="strat-meta-val" id="strat-val-order-qty">100 shares</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Environment:</span>
+              <span class="strat-meta-val" id="strat-val-broker-env">Paper Trading (SIMULATE)</span>
+            </div>
+          </div>
+
+          <div class="strat-section-title" style="color:var(--accent-cyan);">File Locations</div>
+          <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
+            Config: <span style="color:#fff;">config/config.yaml</span> ➔ <span style="color:var(--accent-cyan);">order_type, symbols</span><br>
+            Code: <span style="color:#fff;">src/moomoo_client.py</span> & <span style="color:#fff;">src/orchestrator.py</span>
+          </div>
+
+          <div class="strat-upgrade-box">
+            <div class="strat-upgrade-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+              How to Upgrade & Customize Execution Logic
+            </div>
+            <div class="strat-upgrade-body">
+              • <strong>Marketable Limit Slippage:</strong> In <span class="strat-upgrade-code">src/orchestrator.py</span>, price BUY limits slightly above last close (e.g. <span class="strat-upgrade-code">last_close * 1.002</span>) to ensure immediate execution on market open.<br>
+              • <strong>Switch to Native OCA Orders:</strong> For accounts with margin shorting, attach native one-cancels-all (OCA) stop/target brackets directly to the primary entry order.<br>
+              • <strong>Add TWAP/VWAP:</strong> Slice large orders across multiple intervals to minimize market impact.
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 5: Risk Logic -->
+        <div class="strat-card">
+          <div class="strat-card-header">
+            <div>
+              <div class="strat-card-title">
+                <span>5. Capital Guard & Position Limits</span>
+              </div>
+              <div style="font-size:12px; color:var(--accent-red); margin-top:2px;">Hard Pre-Trade Portfolio Risk Checks</div>
+            </div>
+            <span class="strat-tag amber">Risk Logic</span>
+          </div>
+
+          <div class="strat-desc">
+            Acts as the primary protective firewall before any order can be dispatched. Restricts portfolio exposure, halts trading if daily drawdown thresholds are reached, and enforces cooling intervals.
+          </div>
+
+          <div class="strat-section-title">Risk Enforcement Checks</div>
+          <ul class="strat-logic-list">
+            <li><strong>Daily Cumulative Loss Cap:</strong> Tracks both realized P&L and floating unrealized loss. If cumulative daily loss exceeds <span class="strat-upgrade-code">max_daily_loss</span>, all new entries are blocked.</li>
+            <li><strong>Max Concurrent Open Positions:</strong> Limits total active swing positions across all symbols to prevent capital overcommitment.</li>
+            <li><strong>Symbol Trade Cooldown:</strong> Enforces <span class="strat-upgrade-code">min_minutes_between_trades</span> (e.g. 240m / 4h) on any individual ticker to avoid chasing consecutive whipsaws.</li>
+            <li><strong>Asymmetric Bracket Distances:</strong> Defines predefined stop-loss and take-profit distances ensuring positive risk-to-reward ratios (e.g. 1:2 R:R).</li>
+          </ul>
+
+          <div class="strat-section-title">Active Running Configuration</div>
+          <div class="strat-meta-box">
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Max Daily Loss Limit:</span>
+              <span class="strat-meta-val" id="strat-val-risk-loss">-$300.00</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Max Concurrent Positions:</span>
+              <span class="strat-meta-val" id="strat-val-risk-maxpos">3 positions</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Stop-Loss Distance:</span>
+              <span class="strat-meta-val" id="strat-val-risk-stop">0.15 / share</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Take-Profit Distance:</span>
+              <span class="strat-meta-val" id="strat-val-risk-target">0.30 (2.0 R:R)</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Trade Cooldown:</span>
+              <span class="strat-meta-val">240 minutes</span>
+            </div>
+          </div>
+
+          <div class="strat-section-title" style="color:var(--accent-red);">File Locations</div>
+          <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
+            Config: <span style="color:#fff;">config/config.yaml</span> ➔ <span style="color:var(--accent-red);">risk:</span><br>
+            Code: <span style="color:#fff;">src/risk.py</span> (class <span style="color:var(--accent-cyan);">RiskManager</span>)
+          </div>
+
+          <div class="strat-upgrade-box">
+            <div class="strat-upgrade-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+              How to Upgrade & Customize Risk Rules
+            </div>
+            <div class="strat-upgrade-body">
+              • <strong>Percentage Equity Sizing:</strong> In <span class="strat-upgrade-code">src/risk.py</span>, calculate trade quantity dynamically: <span class="strat-upgrade-code">quantity = (AccountEquity * 0.015) / StopDistance</span>.<br>
+              • <strong>ATR-based Risk Brackets:</strong> Set <span class="strat-upgrade-code">risk.use_atr: true</span> in config so stop and target scale automatically with the instrument's current volatility.<br>
+              • <strong>Sector Exposure Cap:</strong> Limit maximum open positions in a single sector (e.g. maximum 1 bank or 1 tech stock at a time).
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 6: Exit Logic -->
+        <div class="strat-card">
+          <div class="strat-card-header">
+            <div>
+              <div class="strat-card-title">
+                <span>6. Chandelier Trailing Stop & Exits</span>
+              </div>
+              <div style="font-size:12px; color:var(--accent-amber); margin-top:2px;">Dynamic Profit Locking & High-Water Ratchet</div>
+            </div>
+            <span class="strat-tag amber">Exit Logic</span>
+          </div>
+
+          <div class="strat-desc">
+            Independent fast-cadence monitoring engine running every 20 seconds. Tracks favorable price excursions and locks in profits by ratcheting the protective stop behind price peaks.
+          </div>
+
+          <div class="strat-section-title">Trailing Stop Mechanics</div>
+          <ul class="strat-logic-list">
+            <li><strong>High-Water / Low-Water Tracking:</strong> Maintains the peak favorable price achieved since position entry (<span class="strat-upgrade-code">high_water</span> for BUYs, <span class="strat-upgrade-code">low_water</span> for SELLs).</li>
+            <li><strong>Profit Trigger Delay:</strong> Trailing does not ratchet on initial entry wiggles; only activates after price moves at least <span class="strat-upgrade-code">trigger_points</span> (e.g. 0.10) in profit.</li>
+            <li><strong>One-Way Ratchet:</strong> The stop trails <span class="strat-upgrade-code">trail_distance</span> behind peak price and only ratchets in the favorable direction—never loosening.</li>
+            <li><strong>Automated Market Close:</strong> As soon as current price breaches the ratcheted stop or reaches the profit target, dispatches an automated market close order.</li>
+          </ul>
+
+          <div class="strat-section-title">Active Running Configuration</div>
+          <div class="strat-meta-box">
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Trailing Engine Status:</span>
+              <span class="strat-meta-val" id="strat-val-trail-status">Disabled (Fixed Brackets)</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Monitor Check Cadence:</span>
+              <span class="strat-meta-val" id="strat-val-trail-cadence">Every 20 seconds</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Profit Trigger Distance:</span>
+              <span class="strat-meta-val" id="strat-val-trail-trigger">0.10</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Trailing Distance:</span>
+              <span class="strat-meta-val" id="strat-val-trail-dist">0.15 behind peak</span>
+            </div>
+            <div class="strat-meta-row">
+              <span class="strat-meta-label">Volatility Adaptation:</span>
+              <span class="strat-meta-val" id="strat-val-trail-atr">Fixed (ATR Mode Available)</span>
+            </div>
+          </div>
+
+          <div class="strat-section-title" style="color:var(--accent-amber);">File Locations</div>
+          <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
+            Config: <span style="color:#fff;">config/config.yaml</span> ➔ <span style="color:var(--accent-amber);">trailing_stop:</span><br>
+            Code: <span style="color:#fff;">src/trailing_stop.py</span> & <span style="color:#fff;">src/orchestrator.py</span>
+          </div>
+
+          <div class="strat-upgrade-box">
+            <div class="strat-upgrade-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+              How to Upgrade & Customize Exit Tactics
+            </div>
+            <div class="strat-upgrade-body">
+              • <strong>Enable ATR Trailing:</strong> In <span class="strat-upgrade-code">config/config.yaml</span> set <span class="strat-upgrade-code">trailing_stop.use_atr: true</span> and <span class="strat-upgrade-code">atr_multiplier: 3.0</span> for volatility-adaptive trailing.<br>
+              • <strong>Partial Scale-Out (50% at 1R):</strong> In <span class="strat-upgrade-code">src/orchestrator.py</span>, close half the position size when price reaches 1R profit, and move the remaining stop to breakeven.<br>
+              • <strong>Time-Based Exit:</strong> Close positions that have remained stagnant after N bars (e.g. 12 bars) to free up buying power for fresh setups.
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- TAB 6: CONFIG & RISK -->
+    <div id="tab-settings" class="tab-panel">
+      <div class="panel-card">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>
+            <span>Settings</span>
+          </div>
+          <div class="settings-actions">
+            <label class="settings-scope">Editing
+              <select id="settings-scope"></select>
+            </label>
+            <button class="btn" onclick="discardSettings()" id="btn-settings-discard" disabled>Discard</button>
+            <button class="btn btn-success" onclick="saveSettings()" id="btn-settings-save" disabled>Save</button>
+          </div>
+        </div>
+        <p id="settings-scope-help" class="settings-help"></p>
+        <div id="settings-form" class="settings-form">Loading settings…</div>
+        <p class="settings-help">
+          Saved to <code>config/config.yaml</code> with its comments kept, and a backup in
+          <code>config/backups/</code>. Restart the agent (<code>main.py</code>) to apply. Not editable here:
+          the Kronos model files and device, the static <code>symbols:</code> list, and credentials (<code>.env</code>).
+        </p>
+      </div>
+    </div>
+
+  </main>
+
+  <div id="toast">Notification message</div>
+
+  <!-- Dashboard JavaScript Application -->
+  <script>
+    // Escape any server/database-derived text before it goes into innerHTML.
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"']/g, c => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      })[c]);
+    }
+
+    // Every API call needs the login cookie; tell the user when it's gone.
+    const _fetch = window.fetch.bind(window);
+    // The broker picked in the header switcher; every /api/ call is about it.
+    let currentBroker = (() => { try { return localStorage.getItem("broker") || ""; } catch (e) { return ""; } })();
+    window.fetch = async (...args) => {
+      if (currentBroker && typeof args[0] === "string" && args[0].startsWith("/api/") &&
+          !args[0].startsWith("/api/brokers") && !/[?&]broker=/.test(args[0])) {
+        args[0] += (args[0].includes("?") ? "&" : "?") + "broker=" + encodeURIComponent(currentBroker);
+      }
+      const res = await _fetch(...args);
+      if (res.status === 401) {
+        showToast("Dashboard session expired - reopen the login link printed in the terminal");
+      }
+      return res;
+    };
+
+    // The user's last pick survives page reloads; otherwise the first of
+    // the agent's active symbols is shown (see loadStatus).
+    let activeSymbol = localStorage.getItem("activeSymbol");
+    let chartSymbol = null;
+    let symbolDetails = {};
+    let chartInstance = null;
+    let candleSeries = null;
+    let volumeSeries = null;
+    let forecastSeries = null;
+    let markersPrimitive = null;
+    let autoRefresh = true;
+
+    // Chart view settings (chart only - the agent's own timeframe is untouched)
+    const TF_LABEL = { MIN_1: "1 min", MIN_5: "5 min", MIN_15: "15 min", HOUR_1: "1 hour", HOUR_4: "4 hours", DAY: "1 day" };
+    function lsGet(key, fallback) { try { return localStorage.getItem(key) ?? fallback; } catch (e) { return fallback; } }
+    function lsSet(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+    let chartTimeframe = lsGet("chartTimeframe", "");          // "" = follow agent config
+    let chartLimit = parseInt(lsGet("chartLimit", "80"), 10) || 80;
+    let chartRefreshSec = parseInt(lsGet("chartRefreshSec", "60"), 10);
+    if (isNaN(chartRefreshSec)) chartRefreshSec = 60;
+    let chartRefreshTimer = null;
+    let chartRequestSeq = 0;   // drops responses from superseded requests
+    let refreshTimer = null;
+    let allDecisions = [];
+    let currentConfig = {};
+
+    // Initialize Chart
+    function initChart() {
+      const container = document.getElementById("candlestick-chart-container");
+      if (!container) return;
+
+      const containerWidth = container.clientWidth || 800;
+      const containerHeight = container.clientHeight || 440;
+
+      chartInstance = LightweightCharts.createChart(container, {
+        width: containerWidth,
+        height: containerHeight,
+        layout: {
+          background: { type: 'solid', color: '#090d16' },
+          textColor: '#94a3b8',
+          fontFamily: "'JetBrains Mono', -apple-system, sans-serif",
+        },
+        grid: {
+          vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+          horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+        },
+        crosshair: {
+          mode: LightweightCharts.CrosshairMode.Normal,
+        },
+        timeScale: {
+          borderColor: '#1f2937',
+          timeVisible: true,
+          secondsVisible: false,
+        },
+        rightPriceScale: {
+          borderColor: '#1f2937',
+        },
+      });
+
+      // Compatibility across Lightweight Charts v5 and v4/v3
+      if (typeof chartInstance.addSeries === 'function' && LightweightCharts.CandlestickSeries) {
+        candleSeries = chartInstance.addSeries(LightweightCharts.CandlestickSeries, {
+          upColor: '#10b981',
+          downColor: '#ef4444',
+          borderVisible: false,
+          wickUpColor: '#10b981',
+          wickDownColor: '#ef4444',
+        });
+
+        volumeSeries = chartInstance.addSeries(LightweightCharts.HistogramSeries, {
+          color: '#26a69a',
+          priceFormat: { type: 'volume' },
+          priceScaleId: '',
+          scaleMargins: {
+            top: 0.8,
+            bottom: 0,
+          },
+        });
+
+        forecastSeries = chartInstance.addSeries(LightweightCharts.LineSeries, {
+          color: '#c084fc',
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          title: 'Kronos Forecast',
+        });
+        // v5 reads scaleMargins from the price scale, not the series: keep
+        // volume in the bottom 20% so it doesn't cover candles and overlays.
+        try { chartInstance.priceScale('').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } }); } catch (e) {}
+      } else if (typeof chartInstance.addCandlestickSeries === 'function') {
+        candleSeries = chartInstance.addCandlestickSeries({
+          upColor: '#10b981',
+          downColor: '#ef4444',
+          borderVisible: false,
+          wickUpColor: '#10b981',
+          wickDownColor: '#ef4444',
+        });
+
+        volumeSeries = chartInstance.addHistogramSeries({
+          color: '#26a69a',
+          priceFormat: { type: 'volume' },
+          priceScaleId: '',
+          scaleMargins: {
+            top: 0.8,
+            bottom: 0,
+          },
+        });
+
+        forecastSeries = chartInstance.addLineSeries({
+          color: '#c084fc',
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          title: 'Kronos Forecast',
+        });
+      }
+
+      const fit = () => {
+        if (chartInstance && container && container.clientWidth) {
+          chartInstance.applyOptions({
+            width: container.clientWidth,
+            height: container.clientHeight || 440,
+          });
+        }
+      };
+      chartFit = fit;
+      window.addEventListener('resize', fit);
+      // Follow the container itself, so full screen and layout changes resize the chart too.
+      if (window.ResizeObserver) new ResizeObserver(fit).observe(container);
+    }
+
+    let chartFit = null;
+
+    // ---- Full-screen live chart ----
+    function chartIsFullscreen() {
+      const card = document.getElementById("chart-card");
+      return document.fullscreenElement === card || card.classList.contains("chart-fs-fallback");
+    }
+
+    function syncFullscreenUi() {
+      const card = document.getElementById("chart-card");
+      const on = chartIsFullscreen();
+      card.classList.toggle("chart-fs", on);
+      document.body.classList.toggle("chart-fs-open", on);
+      const btn = document.getElementById("chart-fs-btn");
+      btn.title = on ? "Exit full screen (Esc)" : "Full screen chart (F) - Esc to exit";
+      btn.setAttribute("aria-label", btn.title);
+      // Leaving full screen, the chart's canvas is still full-screen wide and
+      // would hold its container open: shrink it first so the layout can
+      // settle, then size it to the space it really has.
+      if (!on && chartInstance) chartInstance.applyOptions({ width: 50, height: 50 });
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (chartFit) chartFit();
+        if (chartInstance) chartInstance.timeScale().fitContent();
+      }));
+      if (on && chartRefreshSec === 0) {
+        document.getElementById("fs-live").title = "Candle refresh is Off - pick a Refresh interval to keep it live";
+      }
+    }
+
+    async function toggleChartFullscreen() {
+      const card = document.getElementById("chart-card");
+      try {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+        } else if (card.classList.contains("chart-fs-fallback")) {
+          card.classList.remove("chart-fs-fallback");
+        } else if (card.requestFullscreen) {
+          await card.requestFullscreen({ navigationUI: "hide" });
+        } else {
+          card.classList.add("chart-fs-fallback");      // browsers without the Fullscreen API
+        }
+      } catch (err) {
+        card.classList.toggle("chart-fs-fallback");     // e.g. blocked inside an iframe
+      }
+      syncFullscreenUi();
+    }
+
+    function initChartFullscreen() {
+      document.getElementById("chart-fs-btn").addEventListener("click", toggleChartFullscreen);
+      document.addEventListener("fullscreenchange", syncFullscreenUi);
+      document.addEventListener("keydown", (e) => {
+        const typing = e.target && (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable);
+        if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+        const onTerminal = document.getElementById("tab-terminal").classList.contains("active");
+        if ((e.key === "f" || e.key === "F") && onTerminal) { e.preventDefault(); toggleChartFullscreen(); }
+        if (e.key === "Escape" && document.getElementById("chart-card").classList.contains("chart-fs-fallback")) {
+          document.getElementById("chart-card").classList.remove("chart-fs-fallback");
+          syncFullscreenUi();
+        }
+      });
+    }
+
+    // Switch Tabs
+    function switchTab(tabId) {
+      document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach(panel => panel.classList.remove("active"));
+
+      const targetBtn = Array.from(document.querySelectorAll(".tab-btn")).find(b => b.textContent.toLowerCase().includes(tabId.replace('-', ' ')));
+      if (targetBtn) targetBtn.classList.add("active");
+
+      const panel = document.getElementById(`tab-${tabId}`);
+      if (panel) panel.classList.add("active");
+
+      if (tabId === "terminal" && chartInstance) {
+        setTimeout(() => {
+          const container = document.getElementById("candlestick-chart-container");
+          chartInstance.applyOptions({ width: container.clientWidth });
+        }, 100);
+      }
+    }
+
+    // Broker market / currency (updated from /api/status)
+    const CURRENCIES = {US: "USD", HK: "HKD", SG: "SGD", CN: "CNH", NSE: "INR", BSE: "INR"};
+    const MARKET_NAMES = {US: "US Equities", HK: "Hong Kong HKEX", SG: "Singapore SGX", CN: "China A-shares"};
+    let MARKET = "US";
+    let CCY = "USD";
+
+    // Fetch Status & Metrics
+    async function loadStatus() {
+      try {
+        const res = await fetch("/api/status");
+        const data = await res.json();
+
+        // Agent status badge
+        const badge = document.getElementById("badge-agent-status");
+        const badgeText = document.getElementById("agent-status-text");
+        const agentLabels = {
+          active: ["badge success", "AGENT: ACTIVE (SCANNING)"],
+          warmup: ["badge info", "AGENT: WARMING UP"],
+          sleeping: ["badge purple", "AGENT: SLEEPING (MARKET CLOSED)"],
+          broker_down: ["badge danger", "AGENT: PAUSED (OPEND DOWN)"],
+        };
+        const [cls, label] = agentLabels[data.agent_status] || ["badge warning", "AGENT: READY (IDLE)"];
+        badge.className = cls;
+        badgeText.textContent = label;
+        renderAlerts(data);
+
+        // Masked Account
+        const broker = data.broker || {};
+        MARKET = broker.market_code || MARKET;
+        CCY = CURRENCIES[MARKET] || "USD";
+        document.querySelectorAll(".ccy").forEach(el => el.textContent = CCY);
+        const bLabel = broker.label || "moomoo OpenD";
+        const bShort = (broker.adapter || "moomoo").toUpperCase();
+        document.getElementById("broker-label").textContent =
+          `BROKER: ${bShort} ${MARKET} · ${broker.sandbox ? "PAPER" : "LIVE"}`;
+        document.getElementById("badge-broker").className = broker.connected ? "badge info" : "badge danger";
+        document.getElementById("badge-broker").title = broker.connected
+          ? `${bLabel}${broker.opend ? " " + broker.opend : ""} - ${broker.market}`
+          : `${bLabel} not reachable${broker.opend ? " at " + broker.opend + " - start OpenD and log in" : ""}`;
+        document.getElementById("broker-acc").textContent = broker.connected ? `(${broker.account})` : `(${bShort} OFFLINE)`;
+        const f = broker.funds;
+        document.getElementById("broker-funds").textContent = f && f.total_assets != null
+          ? `${f.currency} ${Number(f.total_assets).toLocaleString(undefined, {maximumFractionDigits: 0})}` : "";
+        const chartLbl = document.getElementById("chart-market-label");
+        if (chartLbl) chartLbl.textContent = MARKET;
+
+        // Metrics
+        document.getElementById("metric-threshold").textContent = `${(data.confidence_threshold * 100).toFixed(1)}%`;
+        const hz = document.getElementById("metric-horizon");
+        if (hz && data.forecast_horizon) hz.textContent = `Horizon: ${data.forecast_horizon} Bars Ahead`;
+        document.getElementById("metric-loss-cap").textContent = `Loss Cap: -$${data.risk.max_daily_loss.toFixed(2)} ${CCY}`;
+
+        // Symbols the agent is actually trading (screener picks when enabled)
+        symbolDetails = Object.fromEntries((data.symbol_details || []).map(d => [d.symbol, d]));
+        const sourceLabels = {
+          screener: "SCREENER", config: "CONFIG", screener_candidates: "CANDIDATES",
+        };
+        const srcEl = document.getElementById("metric-symbol-source");
+        srcEl.textContent = sourceLabels[data.symbols_source] || "";
+        srcEl.title = data.symbols_source === "screener_candidates"
+          ? "Agent hasn't published its screener picks yet - showing the candidate list"
+          : (data.symbols_updated ? `Updated ${new Date(data.symbols_updated * 1000).toLocaleString()}` : "");
+        populateSimSymbols(data.symbols || []);
+
+        // Populate symbol buttons
+        const symContainer = document.getElementById("symbol-buttons");
+        if (symContainer && data.symbols) {
+          symContainer.innerHTML = data.symbols.map(sym => `
+            <button class="sym-tab ${sym === activeSymbol ? 'active' : ''}" data-symbol="${esc(sym)}">
+              ${esc(sym)}
+            </button>
+          `).join("");
+          symContainer.querySelectorAll(".sym-tab").forEach(btn => {
+            btn.addEventListener("click", () => selectSymbol(btn.dataset.symbol));
+          });
+        }
+
+        // Keep the user's pick while it's still active, else show the first.
+        const symbols = data.symbols || [];
+        const wanted = symbols.includes(activeSymbol) ? activeSymbol : symbols[0];
+        if (!wanted) {
+          document.getElementById("metric-symbol").textContent = "—";
+          document.getElementById("metric-name").textContent = "No active symbols";
+        } else if (wanted !== chartSymbol) {
+          selectSymbol(wanted);
+        }
+
+        // Pipeline stage highlights
+        if (data.recent_snapshots && data.recent_snapshots.length > 0) {
+          const latestSnap = data.recent_snapshots.find(s => s.symbol === activeSymbol) || data.recent_snapshots[0];
+          updatePipelineView(latestSnap);
+        }
+      } catch (err) {
+        console.error("Failed to load status:", err);
+      }
+    }
+
+    function updatePipelineView(snap) {
+      if (!snap) return;
+      document.getElementById("pipeline-cycle-time").textContent = `Last: ${new Date(snap.ts * 1000).toLocaleTimeString()}`;
+
+      // Reset cards
+      for (let i = 1; i <= 5; i++) {
+        const card = document.getElementById(`pipe-step-${i}`);
+        if (card) card.className = "step-card";
+      }
+
+      const step1 = document.getElementById("pipe-step-1");
+      const step2 = document.getElementById("pipe-step-2");
+      const step3 = document.getElementById("pipe-step-3");
+      const step4 = document.getElementById("pipe-step-4");
+      const step5 = document.getElementById("pipe-step-5");
+
+      step1.classList.add("passed");
+      document.getElementById("pipe-val-1").textContent = `Price: $${snap.price.toFixed(2)} ${CCY}`;
+
+      if (snap.stage === "pattern_detected" || snap.stage === "kronos_result" || snap.stage === "position_open") {
+        step2.classList.add("passed");
+        let details = snap.details || {};
+        if (typeof details === "string") {
+          try { details = JSON.parse(details); } catch(e){}
+        }
+        document.getElementById("pipe-val-2").textContent = details.pattern ? `${details.pattern} (${details.direction})` : "Inside Bar (BUY)";
+      } else {
+        step2.classList.add("active");
+        document.getElementById("pipe-val-2").textContent = "Scanning for candles...";
+      }
+
+      if (snap.stage === "kronos_result" || snap.stage === "position_open") {
+        let details = snap.details || {};
+        if (typeof details === "string") {
+          try { details = JSON.parse(details); } catch(e){}
+        }
+        if (details.confirmed) {
+          step3.classList.add("passed");
+          document.getElementById("pipe-val-3").textContent = `Confirmed (${(details.confidence * 100).toFixed(0)}% Conf)`;
+        } else {
+          step3.classList.add("rejected");
+          document.getElementById("pipe-val-3").textContent = `Rejected (${(details.confidence * 100).toFixed(0)}% Conf < 62%)`;
+        }
+      } else {
+        document.getElementById("pipe-val-3").textContent = "Ready for confirmation";
+      }
+    }
+
+    // Load Bars & Patterns on Chart
+    function effectiveChartTimeframe() {
+      return chartTimeframe || currentConfig.timeframe || "";
+    }
+
+    async function loadChartData(symbol, opts = {}) {
+      const { forecast = true, fit = false } = opts;
+      const seq = ++chartRequestSeq;
+      const tf = effectiveChartTimeframe();
+      try {
+        let url = `/api/bars?symbol=${encodeURIComponent(symbol)}&limit=${chartLimit}`;
+        if (tf) url += `&timeframe=${encodeURIComponent(tf)}`;
+        if (!overlayPrefs.ma && !overlayPrefs.vwap && !overlayPrefs.rsi) url += "&overlays=0";
+        const res = await fetch(url);
+        const data = await res.json();
+        if (seq !== chartRequestSeq) return;  // user switched symbol/timeframe meanwhile
+        if (data.error) throw new Error(data.error);
+
+        const shownTf = data.timeframe || tf;
+        const priceSub = document.getElementById("metric-price-sub");
+        if (priceSub && shownTf) priceSub.textContent = `Timeframe: ${shownTf}`;
+        const upd = document.getElementById("chart-updated");
+        if (upd) upd.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+
+        document.getElementById("metric-symbol").textContent = symbol;
+        if (data.last_close) {
+          document.getElementById("metric-price").textContent = `$${data.last_close.toFixed(2)}`;
+        }
+
+        const candleData = data.bars.map(b => ({
+          time: b.time,
+          open: b.open,
+          high: b.high,
+          low: b.low,
+          close: b.close,
+        }));
+
+        const volumeData = data.bars.map(b => ({
+          time: b.time,
+          value: b.volume,
+          color: b.close >= b.open ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)',
+        }));
+
+        if (candleSeries) {
+          candleSeries.setData(candleData);
+        }
+        if (volumeSeries) {
+          volumeSeries.setData(volumeData);
+        }
+        lastOverlays = data.overlays || null;
+        applyOverlays(lastOverlays);
+
+        const patterns = data.patterns || [];
+        if (markersPrimitive) {
+          markersPrimitive.setMarkers(patterns);
+        } else if (candleSeries && typeof LightweightCharts.createSeriesMarkers === 'function') {
+          markersPrimitive = LightweightCharts.createSeriesMarkers(candleSeries, patterns);
+        } else if (candleSeries && typeof candleSeries.setMarkers === 'function') {
+          candleSeries.setMarkers(patterns);
+        }
+
+        if (fit && chartInstance) chartInstance.timeScale().fitContent();
+
+        // A new candle means the previous one closed: Kronos gets a fresh look,
+        // even on the timed refresh that otherwise skips it (it's slow on CPU).
+        const newest = data.bars && data.bars.length ? data.bars[data.bars.length - 1].time : null;
+        const newBar = newest !== null && forecastBarTime !== null && newest !== forecastBarTime;
+        if (forecast || newBar) forecastBarTime = newest;
+
+        // Kronos is slow on CPU: run it on symbol/timeframe changes, not on every refresh
+        if (forecast || newBar) {
+          if (forecast && forecastSeries) forecastSeries.setData([]);  // don't show a path from another timeframe
+          loadSymbolForecast(symbol, shownTf);
+        }
+
+      } catch (err) {
+        console.error("Failed to load chart data:", err);
+      }
+    }
+
+    // ---- Kronos verdict on the chart (same rules as the agent) ----
+    let forecastBarTime = null;      // newest candle when the last forecast ran
+    let forecastRetry = null;
+
+    function setKronosBadge(cls, text, title = "") {
+      const b = document.getElementById("chart-sub-badge");
+      if (!b) return;
+      b.className = "badge " + cls;
+      b.textContent = text;
+      b.title = title;
+    }
+
+    function hhmm(epochSec) {
+      return new Date(epochSec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+
+    // Load Kronos Forecast for Symbol
+    async function loadSymbolForecast(symbol, timeframe) {
+      if (forecastRetry) { clearTimeout(forecastRetry); forecastRetry = null; }
+      // Never leave the previous symbol's / bar's verdict on screen while this one runs.
+      setKronosBadge("purple", "Kronos: forecasting…", "Running the offline Kronos model on the last closed bars");
+      try {
+        const body = { symbol: symbol };       // horizon & sampling come from config.yaml, like the agent
+        if (timeframe) body.timeframe = timeframe;
+        const res = await fetch("/api/forecast", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        // Stale: the user moved to another symbol or timeframe while Kronos ran
+        if (symbol !== activeSymbol) return;
+        if (timeframe && timeframe !== effectiveChartTimeframe()) return;
+        if (res.status === 429) {
+          setKronosBadge("purple", "Kronos: busy - retrying…", data.error || "");
+          forecastRetry = setTimeout(() => loadSymbolForecast(symbol, timeframe), 15000);
+          return;
+        }
+        if (!res.ok || data.error || !data.forecast_bars || !data.forecast_bars.length) {
+          setKronosBadge("warning", "Kronos: unavailable", data.error || "No forecast returned");
+          if (forecastSeries) forecastSeries.setData([]);
+          return;
+        }
+        if (forecastSeries) {
+          forecastSeries.setData(data.forecast_bars.map(b => ({ time: b.time, value: b.close })));
+        }
+        const lg = document.getElementById("legend-kronos-path");
+        if (lg && data.horizon) lg.textContent = `Kronos Predicted Path (Horizon ${data.horizon})`;
+        const pct = `${(data.confidence * 100).toFixed(0)}%`;
+        const when = `bar ${hhmm(data.based_on_bar)}`;
+        const tip = `${data.horizon}-bar forecast on closed ${data.timeframe || ""} bars up to ${hhmm(data.based_on_bar)}, ` +
+                    `run at ${hhmm(data.computed_at)}. Threshold ${(data.threshold * 100).toFixed(0)}%.`;
+        if (data.mode === "outlook" || !data.pattern) {
+          const up = data.direction === "BUY";
+          setKronosBadge("purple", `Kronos outlook: ${up ? "▲ up" : "▼ down"} ${pct} · no pattern · ${when}`,
+                         tip + " No candlestick pattern on the last closed bar, so there is no signal to confirm.");
+        } else if (data.confirmed) {
+          setKronosBadge(data.direction === "BUY" ? "success" : "danger",
+                         `Kronos: ${data.direction} ${data.pattern.name} confirmed ${pct} · ${when}`, tip);
+        } else {
+          setKronosBadge("warning",
+                         `Kronos: ${data.direction} ${data.pattern.name} rejected ${pct} < ${(data.threshold * 100).toFixed(0)}% · ${when}`, tip);
+        }
+      } catch (err) {
+        if (symbol === activeSymbol) setKronosBadge("warning", "Kronos: unavailable", String(err));
+        console.warn("Forecast preview error:", err);
+      }
+    }
+
+    function populateSimSymbols(symbols) {
+      const select = document.getElementById("sim-symbol");
+      if (!select || select.dataset.symbols === symbols.join(",")) return;
+      const previous = select.value;
+      select.innerHTML = symbols.map(sym => {
+        const name = symbolDetails[sym]?.name;
+        return `<option value="${esc(sym)}">${esc(sym)}${name && name !== sym ? ` (${esc(name)})` : ""}</option>`;
+      }).join("");
+      select.dataset.symbols = symbols.join(",");
+      if (symbols.includes(previous)) select.value = previous;
+    }
+
+    function selectSymbol(sym) {
+      activeSymbol = sym;
+      chartSymbol = sym;
+      localStorage.setItem("activeSymbol", sym);
+      document.getElementById("metric-symbol").textContent = sym;
+      const detail = symbolDetails[sym];
+      document.getElementById("metric-name").textContent =
+        (detail && detail.name !== sym ? detail.name : "") + (detail?.has_position ? " • position open" : "");
+      document.querySelectorAll(".sym-tab").forEach(tab => {
+        tab.classList.toggle("active", tab.textContent.trim() === sym);
+      });
+      loadChartData(sym);
+    }
+
+    // Load Decisions Table
+    async function loadDecisions() {
+      try {
+        const res = await fetch("/api/decisions?limit=50");
+        const data = await res.json();
+        allDecisions = data.decisions || [];
+        renderDecisionsTable();
+      } catch (err) {
+        console.error("Failed to load decisions:", err);
+      }
+    }
+
+    function renderDecisionsTable() {
+      const tbody = document.getElementById("decisions-table-body");
+      const search = (document.getElementById("decision-search").value || "").toLowerCase();
+
+      const filtered = allDecisions.filter(d => {
+        return !search || d.epic.toLowerCase().includes(search) || (d.pattern && d.pattern.toLowerCase().includes(search));
+      });
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:20px;">No decisions logged yet.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(d => {
+        const dateStr = new Date(d.ts * 1000).toLocaleString();
+        const actionBadge = d.action === "opened"
+          ? `<span class="badge success">OPENED</span>`
+          : (d.action === "rejected" ? `<span class="badge warning">REJECTED</span>` : `<span class="badge danger">ERROR</span>`);
+        const confirmedBadge = d.kronos_confirmed
+          ? `<span style="color:var(--accent-green); font-weight:700;">YES</span>`
+          : `<span style="color:var(--accent-red); font-weight:700;">NO</span>`;
+        const confStr = d.kronos_confidence !== null ? `${(d.kronos_confidence * 100).toFixed(1)}%` : '—';
+
+        return `
+          <tr>
+            <td class="mono" style="font-size:11px;">${dateStr}</td>
+            <td><strong class="mono" style="color:var(--accent-blue);">${esc(d.epic)}</strong></td>
+            <td>${esc(d.pattern || '—')}</td>
+            <td><span class="mono" style="color:${d.pattern_direction === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)'}">${esc(d.pattern_direction || '—')}</span></td>
+            <td class="mono">${d.pattern_strength ? d.pattern_strength.toFixed(2) : '—'}</td>
+            <td>${confirmedBadge}</td>
+            <td class="mono">${confStr}</td>
+            <td>${actionBadge}</td>
+            <td class="mono" style="font-size:11px; color:var(--text-muted);">${esc(d.deal_id ? 'Deal: ' + d.deal_id : (d.risk_reason || 'Confidence low'))}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    // Load positions + working orders (broker truth, merged with agent state)
+    const fmtPrice = v => (v === null || v === undefined) ? "—" : `$${Number(v).toFixed(Number(v) < 1 ? 3 : 2)}`;
+    const MANAGEMENT_BADGES = {
+      managed: '<span class="badge success">AGENT</span>',
+      pending_entry: '<span class="badge">ENTRY PENDING</span>',
+      unmanaged: '<span class="badge danger" title="Held at the broker but not tracked by the agent - no stop/target is being managed">NOT MANAGED</span>',
+      missing_at_broker: '<span class="badge warning" title="Agent thinks this is open but the broker shows no holding">NOT AT BROKER</span>',
+    };
+
+    async function loadPositions() {
+      if (positionsInFlight) return;
+      positionsInFlight = true;
+      try {
+        const res = await fetch("/api/positions", { cache: "no-store" });
+        const data = await res.json();
+        const positions = data.positions || [];
+        const orders = data.orders || [];
+        const held = positions.filter(p => p.state !== "pending_entry" && p.state !== "missing_at_broker");
+        const unmanagedOrders = orders.filter(o => !o.managed).length;
+        const unmanagedPos = positions.filter(p => p.state === "unmanaged").length;
+
+        document.getElementById("metric-positions-max").textContent = `MAX ${data.max_open_positions}`;
+        document.getElementById("metric-positions-count").textContent = `${held.length} / ${data.max_open_positions}`;
+        const sub = document.getElementById("metric-positions-sub");
+        if (!data.broker_connected) {
+          sub.textContent = "Broker offline - agent view only";
+          sub.style.color = "var(--accent-amber)";
+        } else if (unmanagedPos || unmanagedOrders) {
+          sub.textContent = `⚠ ${unmanagedPos} position(s), ${unmanagedOrders} order(s) not managed`;
+          sub.style.color = "var(--accent-red)";
+        } else {
+          sub.textContent = `${orders.length} working order(s) • trailing ${data.trailing_enabled ? "on" : "off"}`;
+          sub.style.color = "";
+        }
+
+        const banner = document.getElementById("positions-broker-banner");
+        banner.style.display = data.broker_connected ? "none" : "inline-block";
+        banner.textContent = `Broker data unavailable (${data.broker_error || "unknown error"}) - showing the agent's own records only`;
+
+        const tbody = document.getElementById("positions-table-body");
+        lastPositions = positions;
+        tbody.innerHTML = positions.length === 0
+          ? `<tr><td colspan="12" style="text-align:center; color:var(--text-muted); padding:24px;">No positions held${data.broker_connected ? " at the broker" : ""}.</td></tr>`
+          : positions.map((pos, i) => {
+              const pnl = pos.unrealized_pnl;
+              const pnlCell = (pnl === null || pnl === undefined) ? "—"
+                : `<span style="font-weight:700; color:${pnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">${pnl >= 0 ? '+' : ''}${Number(pnl).toFixed(2)} ${esc(pos.currency || "")}</span>`;
+              const trail = pos.trail_active === null ? "—"
+                : (pos.trail_active ? '<span class="badge success">ARMED</span>' : '<span class="badge">PENDING</span>');
+              return `
+                <tr>
+                  <td><strong class="mono" style="color:var(--accent-blue);">${esc(pos.symbol)}</strong></td>
+                  <td><span class="badge ${pos.side === 'LONG' ? 'success' : 'danger'}">${esc(pos.side)}</span></td>
+                  <td class="mono">${esc(pos.quantity)}</td>
+                  <td class="mono">${fmtPrice(pos.avg_cost)}</td>
+                  <td class="mono">${fmtPrice(pos.current_price)}${pos.price_source === "live" ? ' <span class="live-dot" title="Live quote"></span>' : ""}</td>
+                  <td class="mono" style="color:var(--accent-red);">${fmtPrice(pos.stop)}</td>
+                  <td class="mono" style="color:var(--accent-green);">${fmtPrice(pos.target)}</td>
+                  <td class="mono">${fmtPrice(pos.high_water)}</td>
+                  <td>${trail}</td>
+                  <td class="mono">${pnlCell}</td>
+                  <td>${MANAGEMENT_BADGES[pos.state] || esc(pos.state)}</td>
+                  <td>${manualRowButton(pos, i)}</td>
+                </tr>`;
+            }).join("");
+
+        const obody = document.getElementById("orders-table-body");
+        obody.innerHTML = orders.length === 0
+          ? `<tr><td colspan="11" style="text-align:center; color:var(--text-muted); padding:24px;">${data.broker_connected ? "No working orders." : "Broker unavailable."}</td></tr>`
+          : orders.map(o => `
+              <tr>
+                <td class="mono" style="font-size:11px;">${o.order_time ? esc(String(o.order_time).slice(0, 19)) : "—"}</td>
+                <td><strong class="mono" style="color:var(--accent-blue);">${esc(o.symbol)}</strong></td>
+                <td><span class="badge ${o.action === 'BUY' ? 'success' : 'danger'}">${esc(o.action)}</span></td>
+                <td class="mono">${esc(o.order_type)}</td>
+                <td class="mono">${esc(o.quantity)} (${esc(o.filled)})</td>
+                <td class="mono">${fmtPrice(o.limit_price)}</td>
+                <td class="mono">${fmtPrice(o.stop_price)}</td>
+                <td class="mono">${esc(o.status)}</td>
+                <td class="mono">${esc(o.time_in_force)}</td>
+                <td class="mono" style="font-size:11px; color:var(--text-muted);">${esc(o.id)}</td>
+                <td>${o.managed ? MANAGEMENT_BADGES.managed : MANAGEMENT_BADGES.unmanaged}</td>
+              </tr>`).join("");
+        document.getElementById("orders-updated").textContent =
+          data.broker_connected ? `Updated ${new Date().toLocaleTimeString()}` : "";
+        document.getElementById("positions-updated").textContent =
+          `Updated ${new Date((data.updated_at || Date.now() / 1000) * 1000).toLocaleTimeString()}`;
+        manualDefaultQty = data.default_quantity || manualDefaultQty;
+        const qtyEl = document.getElementById("manual-qty");
+        if (!qtyEl.value) qtyEl.placeholder = `Qty (${manualDefaultQty})`;
+        const symEl = document.getElementById("manual-symbol");
+        if (!symEl.value && document.activeElement !== symEl && activeSymbol) symEl.placeholder = activeSymbol;
+        renderManualOrders(data.manual_orders || []);
+      } catch (err) {
+        console.error("Failed to load positions:", err);
+      } finally {
+        positionsInFlight = false;
+      }
+    }
+
+    // ---- Manual override (buy / sell / close) ----
+    var manualDefaultQty = 10, manualPending = null, positionsInFlight = false, lastPositions = [];
+
+    function manualRowButton(pos, i) {
+      if (pos.state === "missing_at_broker") return "—";
+      const label = pos.state === "pending_entry" ? "Cancel" : "Close";
+      return `<button class="btn btn-sm btn-sell" onclick="openManualConfirm('CLOSE', ${i})">${label}</button>`;
+    }
+
+    function openManualConfirm(action, rowIndex) {
+      let symbol, qty, lines;
+      if (action === "CLOSE") {
+        const pos = lastPositions[rowIndex];
+        if (!pos) return;
+        symbol = pos.symbol;
+        const exitSide = pos.side === "LONG" ? "SELL" : "BUY";
+        lines = pos.state === "pending_entry"
+          ? [`Cancel the unfilled entry order for <b>${esc(symbol)}</b>.`]
+          : [`<b>${exitSide} ${esc(pos.quantity)} ${esc(symbol)}</b> at market to close the ${esc(pos.side)} position.`,
+             pos.state === "managed" ? "The agent cancels its stop / target orders first, then closes what's left."
+                                     : "This holding isn't managed by the agent - a market close is sent as-is.",
+             pos.current_price ? `Last price ${fmtPrice(pos.current_price)}.` : ""];
+      } else {
+        symbol = (document.getElementById("manual-symbol").value.trim() || activeSymbol || "").toUpperCase();
+        if (!symbol) { showToast("Enter a symbol first"); return; }
+        const raw = document.getElementById("manual-qty").value.trim();
+        qty = raw ? parseInt(raw, 10) : manualDefaultQty;
+        if (!Number.isInteger(qty) || qty <= 0) { showToast("Quantity must be a whole number above 0"); return; }
+        lines = [`<b>${action} ${qty} ${esc(symbol)}</b> as a new position on <b>${esc(currentBroker || "the active broker")}</b>.`,
+                 action === "SELL" ? "With no holding this opens a <b>short</b> - make sure your account allows it." : "",
+                 "Pattern, Kronos and risk checks are skipped. The order uses your configured order type (limit at the last price outside market hours); stop and target are placed when it fills, then trailed as normal."];
+      }
+      manualPending = { action, symbol, quantity: qty };
+      document.getElementById("manual-modal-title").textContent =
+        action === "CLOSE" ? `Close ${symbol}?` : `${action === "BUY" ? "Buy" : "Sell / short"} ${symbol}?`;
+      document.getElementById("manual-modal-body").innerHTML = lines.filter(Boolean).map(l => `<p>${l}</p>`).join("");
+      const go = document.getElementById("manual-modal-go");
+      go.className = `btn ${action === "BUY" ? "btn-buy" : "btn-sell"}`;
+      go.disabled = false;
+      go.textContent = action === "CLOSE" ? "Close position" : `Place ${action}`;
+      document.getElementById("manual-modal").style.display = "flex";
+      go.focus();
+    }
+
+    function closeManualConfirm() {
+      document.getElementById("manual-modal").style.display = "none";
+      manualPending = null;
+    }
+
+    async function submitManualOrder() {
+      if (!manualPending) return;
+      const go = document.getElementById("manual-modal-go");
+      go.disabled = true;
+      try {
+        const res = await fetch("/api/manual_order", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(manualPending),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        showToast(data.message || "Order queued");
+        closeManualConfirm();
+        loadPositions();
+      } catch (err) {
+        go.disabled = false;
+        showToast(`Order not queued: ${err.message}`);
+      }
+    }
+
+    const MANUAL_STATUS = { queued: "badge info", working: "badge warning", done: "badge success", failed: "badge danger" };
+    function renderManualOrders(rows) {
+      const box = document.getElementById("manual-orders");
+      if (!rows.length) { box.style.display = "none"; return; }
+      box.style.display = "block";
+      box.innerHTML = `<div class="manual-orders-title">Manual orders</div>` + rows.map(r => `
+        <div class="manual-order-row">
+          <span class="mono">${new Date(r.ts * 1000).toLocaleTimeString()}</span>
+          <span class="${MANUAL_STATUS[r.status] || 'badge'}">${esc(r.status.toUpperCase())}</span>
+          <strong class="mono">${esc(r.action)} ${r.quantity ? esc(r.quantity) + " " : ""}${esc(r.symbol)}</strong>
+          <span class="manual-order-result">${esc(r.result || (r.status === "queued" ? "waiting for the agent's next cycle…" : ""))}</span>
+        </div>`).join("");
+    }
+
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape" && document.getElementById("manual-modal").style.display === "flex") closeManualConfirm();
+    });
+
+    // The positions tab refreshes faster while it's on screen (the server
+    // caches broker queries, so this doesn't add broker load).
+    setInterval(() => {
+      if (autoRefresh && document.getElementById("tab-positions").classList.contains("active")) loadPositions();
+    }, 2500);
+
+    // Trigger Scan Now
+    async function triggerScanNow() {
+      const btn = document.getElementById("btn-scan-now");
+      btn.disabled = true;
+      btn.innerHTML = `<span class="pulse-dot"></span> Scanning...`;
+      showToast("Triggering bar poll cycle...");
+
+      try {
+        const res = await fetch("/api/scan_now", { method: "POST" });
+        const data = await res.json();
+        showToast("Scan cycle complete!");
+        loadStatus();
+        if (activeSymbol) loadChartData(activeSymbol);
+        loadDecisions();
+        loadPositions();
+      } catch (err) {
+        showToast("Error triggering scan: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          Scan Bar Now
+        `;
+      }
+    }
+
+    // Kronos Simulation Lab
+    async function runSimulatedForecast() {
+      const sym = document.getElementById("sim-symbol").value;
+      const horizon = parseInt(document.getElementById("sim-horizon").value) || 6;
+      const temp = parseFloat(document.getElementById("sim-temp").value) || 0.5;
+      const btn = document.getElementById("btn-run-sim");
+
+      btn.disabled = true;
+      btn.innerHTML = `<span>⏳ Forecasting next ${horizon} bars...</span>`;
+
+      try {
+        const res = await fetch("/api/forecast", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol: sym, horizon: horizon, temperature: temp }),
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        const card = document.getElementById("sim-results-card");
+        card.style.display = "block";
+
+        document.getElementById("sim-summary-title").textContent =
+          `${sym} — Implied ${data.direction} | Model Confidence: ${(data.confidence * 100).toFixed(1)}%`;
+
+        const pill = document.getElementById("sim-outcome-pill");
+        if (data.confirmed) {
+          pill.className = "badge success";
+          pill.textContent = "CONFIRMED (> 62%)";
+        } else {
+          pill.className = "badge warning";
+          pill.textContent = "REJECTED (< 62%)";
+        }
+
+        const tbody = document.getElementById("sim-table-body");
+        tbody.innerHTML = data.forecast_bars.map((bar, i) => {
+          const delta = bar.close - data.last_close;
+          const deltaColor = delta >= 0 ? "var(--accent-green)" : "var(--accent-red)";
+          return `
+            <tr>
+              <td class="mono">T+${i + 1} (${new Date(bar.time * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})</td>
+              <td class="mono">${bar.open.toFixed(2)}</td>
+              <td class="mono">${bar.high.toFixed(2)}</td>
+              <td class="mono">${bar.low.toFixed(2)}</td>
+              <td class="mono"><strong>${bar.close.toFixed(2)}</strong></td>
+              <td class="mono" style="color:${deltaColor}; font-weight:700;">${delta >= 0 ? '+' : ''}${delta.toFixed(3)} ${CCY}</td>
+            </tr>
+          `;
+        }).join("");
+
+        showToast(`Kronos forecast generated for ${sym}`);
+      } catch (err) {
+        showToast("Forecast error: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<span>⚡ Run Kronos Offline Forecast</span>`;
+      }
+    }
+
+    // Config Tab & Strategies Dynamic Population
+    async function loadConfigData() {
+      try {
+        const res = await fetch("/api/config");
+        currentConfig = await res.json();
+
+        updateStrategiesView(currentConfig);
+        updateChartTfNote();
+      } catch (err) {
+        console.error("Failed to load config:", err);
+      }
+    }
+
+    function updateStrategiesView(cfg) {
+      if (!cfg) return;
+
+      // 1. Screener card
+      const scr = cfg.screener || {};
+      const scrStatus = document.getElementById("strat-val-screener-status");
+      if (scrStatus) {
+        scrStatus.textContent = scr.enabled ? "Active (Dynamic Scanning)" : "Disabled (Static Watchlist)";
+        scrStatus.style.color = scr.enabled ? "var(--accent-green)" : "var(--accent-amber)";
+      }
+      const scrMarket = document.getElementById("strat-val-screener-market");
+      if (scrMarket) scrMarket.textContent = MARKET + " (" + (MARKET_NAMES[MARKET] || MARKET) + ")";
+      const scrPrice = document.getElementById("strat-val-screener-price");
+      if (scrPrice) scrPrice.textContent = `$${scr.min_price !== undefined ? scr.min_price : 0.5} – $${scr.max_price !== undefined ? scr.max_price : 50.0}`;
+      const scrAtr = document.getElementById("strat-val-screener-atr");
+      if (scrAtr) scrAtr.textContent = `${scr.min_atr_pct || 0.5}% – ${scr.max_atr_pct || 8.0}%`;
+      const scrCand = document.getElementById("strat-val-screener-candidates");
+      if (scrCand) {
+        const cands = scr.candidate_symbols || [];
+        scrCand.textContent = cands.length > 0 ? `${cands.length} symbols (${cands.slice(0, 3).join(", ")}${cands.length > 3 ? '...' : ''})` : "Full market scan";
+      }
+      const scrInterval = document.getElementById("strat-val-screener-interval");
+      if (scrInterval) scrInterval.textContent = `${scr.refresh_interval_minutes || 360} min (${((scr.refresh_interval_minutes || 360) / 60).toFixed(1)} hrs)`;
+
+      // 2. Pattern card
+      const patTf = document.getElementById("strat-val-pattern-tf");
+      if (patTf) patTf.textContent = `${cfg.timeframe || "HOUR_4"} (${TF_LABEL[cfg.timeframe] || cfg.timeframe || "4 hours"})`;
+      const patLb = document.getElementById("strat-val-pattern-lb");
+      if (patLb) patLb.textContent = `${cfg.lookback_bars || 200} closed bars`;
+
+      // 3. Kronos card
+      const kronos = cfg.kronos || {};
+      const kModel = document.getElementById("strat-val-kronos-model");
+      if (kModel) kModel.textContent = kronos.model_name || "NeoQuasar/Kronos-base";
+      const kDevice = document.getElementById("strat-val-kronos-device");
+      if (kDevice) kDevice.textContent = `${kronos.device || "cpu"} (Offline local mode)`;
+      const kHorizon = document.getElementById("strat-val-kronos-horizon");
+      if (kHorizon) kHorizon.textContent = `${cfg.forecast_horizon || 6} bars ahead`;
+      const kConf = document.getElementById("strat-val-kronos-conf");
+      if (kConf) kConf.textContent = `${((cfg.kronos_confidence_threshold || 0.62) * 100).toFixed(1)}% required`;
+      const kSamples = document.getElementById("strat-val-kronos-samples");
+      if (kSamples) kSamples.textContent = `${kronos.sample_count || 3} paths (temp: ${kronos.temperature || 0.5})`;
+
+      // 4. Execution card
+      const ordType = document.getElementById("strat-val-order-type");
+      if (ordType) {
+        const oType = cfg.order_type || "LIMIT";
+        ordType.textContent = oType === "LIMIT" ? "LIMIT (Safe Off-Hours Queuing)" : "MARKET (Regular Trading Hours Only)";
+        ordType.style.color = oType === "LIMIT" ? "var(--accent-green)" : "var(--accent-amber)";
+      }
+      const ordQty = document.getElementById("strat-val-order-qty");
+      if (ordQty) ordQty.textContent = `${cfg.default_quantity || 100} shares default`;
+
+      // 5. Risk card
+      const risk = cfg.risk || {};
+      const rLoss = document.getElementById("strat-val-risk-loss");
+      if (rLoss) rLoss.textContent = `-$${(risk.max_daily_loss || 300).toFixed(2)} ${CCY}`;
+      const rMaxPos = document.getElementById("strat-val-risk-maxpos");
+      if (rMaxPos) rMaxPos.textContent = `${risk.max_open_positions || 3} positions max`;
+      const rStop = document.getElementById("strat-val-risk-stop");
+      if (rStop) rStop.textContent = `${risk.stop_loss_points || 0.15} ${CCY} / share`;
+      const rTarget = document.getElementById("strat-val-risk-target");
+      if (rTarget) rTarget.textContent = `${risk.take_profit_points || 0.30} ${CCY} (${((risk.take_profit_points || 0.3) / (risk.stop_loss_points || 0.15)).toFixed(1)} R:R)`;
+
+      // 6. Trailing stop card
+      const trail = cfg.trailing_stop || {};
+      const trStatus = document.getElementById("strat-val-trail-status");
+      if (trStatus) {
+        trStatus.textContent = trail.enabled ? "Active (High-Water Ratchet)" : "Disabled (Fixed Brackets)";
+        trStatus.style.color = trail.enabled ? "var(--accent-green)" : "var(--accent-amber)";
+      }
+      const trCadence = document.getElementById("strat-val-trail-cadence");
+      if (trCadence) trCadence.textContent = `Every ${trail.check_interval_seconds || 20}s`;
+      const trTrig = document.getElementById("strat-val-trail-trigger");
+      if (trTrig) trTrig.textContent = `${trail.trigger_points || 0.10} ${CCY} profit`;
+      const trDist = document.getElementById("strat-val-trail-dist");
+      if (trDist) trDist.textContent = `${trail.trail_distance || 0.15} ${CCY} behind peak`;
+      const trAtr = document.getElementById("strat-val-trail-atr");
+      if (trAtr) trAtr.textContent = trail.use_atr ? `Dynamic ATR (${trail.atr_multiplier || 3.0}x)` : "Fixed Distance";
+    }
+
+    // ---- Settings tab: built from /api/settings (dashboard/schema.py) ----
+    let settingsData = null;
+    let settingsScope = "shared";
+    let settingsDirty = {};     // key -> new value
+    let settingsResets = new Set();
+
+    function _fieldValue(key) {
+      const vals = (settingsData.values || {})[settingsScope] || {};
+      return vals[key];
+    }
+
+    function _isOverride(key) {
+      return settingsScope !== "shared" && ((settingsData.overrides || {})[settingsScope] || []).includes(key)
+             && !settingsResets.has(key);
+    }
+
+    function _fmt(v) {
+      if (v === null || v === undefined || v === "") return "off";
+      if (Array.isArray(v)) return v.join(", ");
+      return String(v);
+    }
+
+    function renderSettings() {
+      const form = document.getElementById("settings-form");
+      if (!settingsData) { form.textContent = "Settings unavailable."; return; }
+      const isShared = settingsScope === "shared";
+      const help = document.getElementById("settings-scope-help");
+      const meta = (settingsData.brokers || {})[settingsScope];
+      help.innerHTML = isShared
+        ? "Shared settings apply to every broker unless a broker overrides them."
+        : `Overrides for <b>${esc(meta.label)}</b> (${esc(meta.adapter)}${meta.status && meta.status !== "ready" ? ", " + esc(meta.status) : ""}). ` +
+          "Fields marked <span class='ovr-tag'>override</span> differ from the shared value; ↺ goes back to shared.";
+      const html = [];
+      for (const sec of settingsData.schema) {
+        const fields = sec.fields.filter(f => isShared ? f.scope !== "broker" : f.scope !== "shared");
+        if (!fields.length) continue;
+        html.push(`<section class="settings-section${sec.danger ? " danger" : ""}"><h4>${esc(sec.title)}${sec.danger ? " <span class='danger-tag'>changes real order sizes and stops</span>" : ""}</h4><div class="settings-grid">`);
+        for (const f of fields) {
+          const dirty = Object.prototype.hasOwnProperty.call(settingsDirty, f.key);
+          const value = dirty ? settingsDirty[f.key] : _fieldValue(f.key);
+          const ovr = _isOverride(f.key);
+          const shared = (settingsData.values.shared || {})[f.key];
+          const id = "set-" + f.key.replace(/\./g, "__");
+          let input;
+          if (f.type === "bool") {
+            input = `<input type="checkbox" id="${id}" ${value ? "checked" : ""}>`;
+          } else if (f.type === "select") {
+            let opts = f.options || [];
+            if (f.key === "market" && meta) opts = meta.markets || opts;
+            const blank = f.nullable ? `<option value="">(from .env)</option>` : "";
+            input = `<select id="${id}">${blank}${opts.map(o => `<option value="${esc(o)}" ${o === value ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+          } else {
+            const v = value === null || value === undefined ? "" : (Array.isArray(value) ? value.join(", ") : value);
+            const type = (f.type === "int" || f.type === "float") ? "number" : "text";
+            const step = f.type === "float" ? "any" : "1";
+            input = `<input type="${type}" id="${id}" value="${esc(v)}" ${type === "number" ? `step="${step}"` : ""}
+                      ${f.min !== undefined ? `min="${f.min}"` : ""} ${f.max !== undefined ? `max="${f.max}"` : ""}
+                      placeholder="${f.nullable ? (f.type === "text" ? "default" : "empty = off") : ""}">`;
+          }
+          const tags = [];
+          if (ovr) tags.push(`<span class="ovr-tag">override</span><button class="ovr-reset" data-key="${esc(f.key)}" title="Use the shared value (${esc(_fmt(shared))})">↺</button>`);
+          else if (!isShared && f.scope === "any") tags.push(`<span class="inherit-tag" title="Shared value">shared</span>`);
+          if (dirty) tags.push(`<span class="dirty-tag">changed</span>`);
+          html.push(`<div class="settings-field${dirty ? " dirty" : ""}">
+              <label for="${id}">${esc(f.label)} ${tags.join("")}</label>
+              ${input}
+              ${f.help ? `<div class="field-help">${esc(f.help)}</div>` : ""}
+            </div>`);
+        }
+        html.push(`</div></section>`);
+      }
+      form.innerHTML = html.join("");
+      for (const sec of settingsData.schema) {
+        for (const f of sec.fields) {
+          const el = document.getElementById("set-" + f.key.replace(/\./g, "__"));
+          if (!el) continue;
+          el.addEventListener("change", () => {
+            let v;
+            if (f.type === "bool") v = el.checked;
+            else if (f.type === "int") v = el.value === "" ? null : parseInt(el.value, 10);
+            else if (f.type === "float") v = el.value === "" ? null : parseFloat(el.value);
+            else v = el.value === "" ? null : el.value;
+            settingsDirty[f.key] = v;
+            settingsResets.delete(f.key);
+            renderSettings();
+            updateSettingsButtons();
+          });
+        }
+      }
+      form.querySelectorAll(".ovr-reset").forEach(btn => btn.addEventListener("click", () => {
+        settingsResets.add(btn.dataset.key);
+        delete settingsDirty[btn.dataset.key];
+        renderSettings();
+        updateSettingsButtons();
+      }));
+    }
+
+    function updateSettingsButtons() {
+      const n = Object.keys(settingsDirty).length + settingsResets.size;
+      document.getElementById("btn-settings-save").disabled = n === 0;
+      document.getElementById("btn-settings-discard").disabled = n === 0;
+      document.getElementById("btn-settings-save").textContent = n ? `Save (${n})` : "Save";
+    }
+
+    async function loadSettings(keepScope = true) {
+      try {
+        const res = await fetch("/api/settings");
+        settingsData = await res.json();
+        if (settingsData.error) throw new Error(settingsData.error);
+        const sel = document.getElementById("settings-scope");
+        const names = settingsData.broker_order || Object.keys(settingsData.brokers || {});
+        if (!keepScope || (settingsScope !== "shared" && !names.includes(settingsScope))) {
+          settingsScope = "shared";
+        }
+        sel.innerHTML = `<option value="shared">Shared settings (all brokers)</option>` +
+          names.map(n => `<option value="${esc(n)}">${esc(settingsData.brokers[n].label)} only (${esc(n)})</option>`).join("");
+        sel.value = settingsScope;
+        settingsDirty = {}; settingsResets = new Set();
+        renderSettings();
+        updateSettingsButtons();
+      } catch (err) {
+        document.getElementById("settings-form").textContent = "Could not load settings: " + err.message;
+      }
+    }
+
+    function discardSettings() {
+      settingsDirty = {}; settingsResets = new Set();
+      renderSettings(); updateSettingsButtons();
+    }
+
+    async function saveSettings() {
+      const keys = Object.keys(settingsDirty);
+      const riskKeys = keys.concat([...settingsResets]).filter(k => k.startsWith("risk."));
+      if (riskKeys.length && !window.confirm(
+          `You are changing risk limits (${riskKeys.join(", ")}) for ${settingsScope === "shared" ? "all brokers" : settingsScope}. ` +
+          "They apply to real orders after the agent restarts. Save?")) return;
+      try {
+        const res = await fetch("/api/settings", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scope: settingsScope, changes: settingsDirty, reset: [...settingsResets] }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || res.statusText);
+        showToast(data.message || "Settings saved");
+        await loadSettings();
+        loadConfigData();
+        loadBrokers();
+      } catch (err) {
+        showToast("Not saved: " + err.message);
+      }
+    }
+
+
+    // ---- Market Sentiment Meter ----
+    const REGIME_CLASS = {"Up trend": "up", "Down trend": "down", "Sideways": "side", "Stable": "stable"};
+    const REGIME_ICON = {"Up trend": "▲", "Down trend": "▼", "Sideways": "↔", "Stable": "■"};
+
+    function needleTo(score) {
+      const v = Math.max(-100, Math.min(100, Number(score) || 0));
+      const theta = Math.PI * (1 - (v + 100) / 200);
+      const x = 100 + 66 * Math.cos(theta), y = 100 - 66 * Math.sin(theta);
+      const n = document.getElementById("sent-needle");
+      n.setAttribute("x2", x.toFixed(1)); n.setAttribute("y2", y.toFixed(1));
+    }
+
+    function leanWord(score) {
+      if (score == null) return "";
+      if (score >= 60) return "strongly bullish";
+      if (score >= 20) return "bullish";
+      if (score > -20) return "neutral";
+      if (score > -60) return "bearish";
+      return "strongly bearish";
+    }
+
+    async function loadSentiment(force = false) {
+      const bar = document.getElementById("sentiment-bar");
+      try {
+        const res = await fetch("/api/sentiment" + (force ? "?refresh=1" : ""));
+        const d = await res.json();
+        if (d.enabled === false) { bar.style.display = "none"; return; }
+        bar.style.display = "";
+        const o = d.overall || {};
+        document.getElementById("sent-market").textContent =
+          [d.market, d.timeframe ? d.timeframe.replace("_", " ").toLowerCase() : ""].filter(Boolean).join(" · ");
+        const reg = document.getElementById("sent-regime");
+        if (!o.regime) {
+          reg.className = "sent-regime";
+          reg.textContent = d.error ? "Unavailable" : "No data";
+          document.getElementById("sent-sub").textContent = d.error || "None of the benchmarks returned enough bars.";
+          document.getElementById("sent-score").textContent = "–";
+          needleTo(0);
+        } else {
+          reg.className = "sent-regime " + (REGIME_CLASS[o.regime] || "");
+          reg.innerHTML = `${REGIME_ICON[o.regime] || ""} ${esc(o.regime)}`;
+          document.getElementById("sent-sub").textContent =
+            `${o.agreement} of ${o.of} benchmark${o.of === 1 ? "" : "s"} agree · needle ${leanWord(o.score)}` +
+            (d.stale ? " · last reading (broker offline)" : "");
+          document.getElementById("sent-score").textContent = (o.score > 0 ? "+" : "") + Math.round(o.score);
+          needleTo(o.score);
+        }
+        const b = d.breadth;
+        document.getElementById("sent-breadth").innerHTML = b
+          ? `<div class="breadth-label">Breadth: ${b.above} of ${b.of} active symbols above EMA50 (${esc(b.label)})</div>
+             <div class="breadth-track"><div class="breadth-fill" style="width:${b.above_ema50_pct}%"></div></div>`
+          : "";
+        document.getElementById("sent-benchmarks").innerHTML = (d.benchmarks || []).map(x => {
+          if (x.error || !x.regime) {
+            return `<div class="sent-row err" title="${esc(x.error || "")}"><span class="sb-name">${esc(x.name)}</span>
+              <span class="sb-sym">${esc(x.symbol)}</span><span class="sb-pill na">n/a</span><span class="sb-num"></span></div>`;
+          }
+          const r = x.return_20_bars_pct;
+          return `<div class="sent-row" title="${esc(x.reason)} · RSI ${x.rsi != null ? x.rsi.toFixed(0) : "–"} · ATR ${x.atr_pct ?? "–"}%">
+              <span class="sb-name">${esc(x.name)}</span><span class="sb-sym">${esc(x.symbol)}</span>
+              <span class="sb-pill ${REGIME_CLASS[x.regime] || ""}">${REGIME_ICON[x.regime] || ""} ${esc(x.regime)}</span>
+              <span class="sb-num ${r > 0 ? "pos" : r < 0 ? "neg" : ""}">${r != null ? (r > 0 ? "+" : "") + r.toFixed(1) + "%" : ""}</span>
+            </div>`;
+        }).join("") + `<div class="sent-row-note">20-bar change · hover a row for details</div>`;
+        const when = d.updated ? new Date(d.updated * 1000).toLocaleTimeString() : "";
+        document.getElementById("sent-updated").textContent =
+          `From ${d.source || "broker"}${when ? " · " + when : ""}${d.cached ? " (cached)" : ""}`;
+      } catch (err) {
+        console.warn("Sentiment unavailable:", err);
+      }
+    }
+
+    // ---- Broker switcher ----
+    async function loadBrokers() {
+      try {
+        const res = await fetch("/api/brokers");
+        const data = await res.json();
+        const list = data.brokers || [];
+        const wrap = document.getElementById("broker-switch-wrap");
+        const sel = document.getElementById("broker-switch");
+        if (!list.some(b => b.name === currentBroker)) currentBroker = "";
+        const showing = currentBroker || data.current;
+        sel.innerHTML = list.map(b => {
+          const h = b.agent_health;
+          const dot = !b.enabled ? "○" : (h && h.ok === false ? "●" : "●");
+          const state = !b.enabled ? " (off)" : (h && h.ok === false ? " (down)" : "");
+          return `<option value="${esc(b.name)}" ${b.name === showing ? "selected" : ""}>${dot} ${esc(b.label)} · ${esc(b.market)}${state}</option>`;
+        }).join("");
+        wrap.style.display = list.length > 1 ? "" : "none";
+      } catch (err) {
+        console.warn("Could not load brokers:", err);
+      }
+    }
+
+    function initBrokerSwitch() {
+      const sel = document.getElementById("broker-switch");
+      sel.addEventListener("change", () => {
+        try { localStorage.setItem("broker", sel.value); } catch (e) {}
+        // Every panel reloads for the new broker; symbols differ per broker.
+        try { localStorage.removeItem("activeSymbol"); } catch (e) {}
+        location.reload();
+      });
+      document.getElementById("settings-scope").addEventListener("change", (e) => {
+        if ((Object.keys(settingsDirty).length || settingsResets.size) &&
+            !window.confirm("Discard unsaved changes?")) { e.target.value = settingsScope; return; }
+        settingsScope = e.target.value;
+        settingsDirty = {}; settingsResets = new Set();
+        renderSettings(); updateSettingsButtons();
+      });
+    }
+
+    // Auto-refresh control
+    function toggleAutoRefresh() {
+      autoRefresh = !autoRefresh;
+      const stateEl = document.getElementById("auto-refresh-state");
+      stateEl.textContent = autoRefresh ? "ON (5s)" : "OFF";
+      stateEl.style.color = autoRefresh ? "var(--accent-green)" : "var(--accent-red)";
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById("toast");
+      toast.textContent = msg;
+      toast.style.display = "block";
+      setTimeout(() => { toast.style.display = "none"; }, 3500);
+    }
+
+    // ---- Market bar: exchange clocks, sessions and agent phase ----
+    let marketData = null, marketFetchedAt = 0, serverSkew = 0;
+    const STATE_CLASS = { open: "open", pre: "pre", post: "pre", lunch: "pre",
+                          closed: "closed", holiday: "holiday", weekend: "closed" };
+
+    function fmtDuration(sec) {
+      if (sec == null || !isFinite(sec)) return "";
+      sec = Math.max(0, Math.round(sec));
+      const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600),
+            m = Math.floor(sec % 3600 / 60), s = sec % 60;
+      if (d) return `${d}d ${h}h ${m}m`;
+      if (h) return `${h}h ${String(m).padStart(2, "0")}m`;
+      return `${m}m ${String(s).padStart(2, "0")}s`;
+    }
+
+    function zoneTime(tz, withDate) {
+      const opts = { timeZone: tz, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false };
+      if (withDate) Object.assign(opts, { weekday: "short", day: "2-digit", month: "short" });
+      return new Date(Date.now() + serverSkew).toLocaleString("en-GB", opts);
+    }
+
+    function renderMarkets() {
+      if (!marketData) return;
+      const box = document.getElementById("mkt-sessions");
+      box.innerHTML = marketData.sessions.map(s => {
+        const cls = STATE_CLASS[s.state] || "closed";
+        const changeLabel = (s.state === "open" || s.state === "lunch") ? "closes in" : "opens in";
+        const hol = (s.upcoming_holidays || [])[0];
+        const notes = [s.special, s.calendar_note].filter(Boolean).map(n => `<div class="mkt-note">${esc(n)}</div>`).join("");
+        return `
+          <div class="mkt-card ${cls} ${s.agent ? "is-agent" : ""}">
+            <div class="mkt-head">
+              <span class="mkt-name">${esc(s.name)}</span>
+              <span class="mkt-city">${esc(s.city)} · ${esc(s.tz_label)}</span>
+              ${s.agent ? '<span class="mkt-tag">AGENT MARKET</span>' : ""}
+            </div>
+            <div class="mkt-clock mono" data-tz="${esc(s.tz)}">${zoneTime(s.tz)}</div>
+            <div class="mkt-date">${esc(zoneTime(s.tz, true).split(",")[0])} · hours ${esc(s.regular)}</div>
+            <div class="mkt-state"><span class="state-pill ${cls}">${esc(s.label)}</span>
+              <span class="mkt-cd mono" data-next="${s.next_change || ""}" data-label="${changeLabel}"></span></div>
+            ${hol ? `<div class="mkt-hol">Next holiday: ${esc(hol.date)} · ${esc(hol.name)}</div>` : ""}
+            ${notes}
+          </div>`;
+      }).join("");
+      renderPhase();
+      tickMarkets();
+    }
+
+    function renderPhase() {
+      const el = document.getElementById("mkt-agent-phase");
+      const sub = document.getElementById("mkt-agent-sub");
+      const p = marketData && marketData.phase;
+      const fresh = p && (Date.now() / 1000 - p.ts) < 180;
+      const names = { active: "Active · scanning", always: "Always on", warmup: "Warming up",
+                      sleeping: "Sleeping" };
+      const phase = fresh ? p.phase : "offline";
+      el.className = `mkt-agent-phase ${phase}`;
+      el.innerHTML = `<span class="phase-dot"></span><span>${esc(fresh ? (names[phase] || phase) : "Not reporting")}</span>`;
+      sub.dataset.next = fresh && p.next_open ? p.next_open : "";
+      sub.dataset.exchange = p ? p.exchange : "";
+      if (!fresh) sub.textContent = "Agent process is not running or has not published its phase yet";
+    }
+
+    function tickMarkets() {
+      document.querySelectorAll(".mkt-clock[data-tz]").forEach(el => { el.textContent = zoneTime(el.dataset.tz); });
+      const nowSec = (Date.now() + serverSkew) / 1000;
+      document.querySelectorAll(".mkt-cd[data-next]").forEach(el => {
+        const t = parseFloat(el.dataset.next);
+        el.textContent = t ? `${el.dataset.label} ${fmtDuration(t - nowSec)}` : "";
+        if (t && t - nowSec < -2 && Date.now() - marketFetchedAt > 5000) loadMarkets();  // session changed
+      });
+      const sub = document.getElementById("mkt-agent-sub");
+      if (sub && sub.dataset.next) {
+        sub.textContent = `${sub.dataset.exchange} opens in ${fmtDuration(parseFloat(sub.dataset.next) - nowSec)}`;
+      } else if (sub && marketData && marketData.phase && (Date.now() / 1000 - marketData.phase.ts) < 180) {
+        sub.textContent = marketData.phase.phase === "always" ? "Not following the market calendar"
+                                                              : `${marketData.phase.exchange} session`;
+      }
+      document.getElementById("current-clock").textContent = new Date().toLocaleTimeString() + " local";
+    }
+
+    async function loadMarkets() {
+      marketFetchedAt = Date.now();
+      try {
+        const res = await fetch("/api/markets");
+        if (!res.ok) return;
+        marketData = await res.json();
+        serverSkew = marketData.server_time * 1000 - Date.now();
+        renderMarkets();
+      } catch (err) {
+        console.error("Failed to load markets:", err);
+      }
+    }
+
+    function renderAlerts(data) {
+      const b = document.getElementById("alert-broker");
+      const ab = data.agent_broker;
+      const agentDown = ab && ab.ok === false && (Date.now() / 1000 - ab.ts) < 180;
+      if (agentDown) {
+        b.innerHTML = `<strong>Agent paused - ${esc((data.broker || {}).label || "broker")} problem.</strong> ${esc(ab.detail || "")}
+          <span class="alert-sub">Down for ${fmtDuration(Date.now() / 1000 - (ab.since || ab.ts))}. The agent reconnects automatically; no orders are placed meanwhile.</span>`;
+        b.style.display = "";
+      } else if (data.broker && !data.broker.connected) {
+        b.innerHTML = `<strong>Dashboard can't reach ${esc(data.broker.label || "the broker")}.</strong> ${esc(data.broker.error || "")}`;
+        b.style.display = "";
+      } else {
+        b.style.display = "none";
+      }
+
+      const u = data.unmanaged || {};
+      const items = [
+        ...(u.positions || []).map(p => `${esc(p.symbol)} ${p.quantity > 0 ? "LONG" : "SHORT"} ${Math.abs(p.quantity)}`
+          + (p.average_cost ? ` @ ${Number(p.average_cost).toFixed(2)}` : "")),
+        ...(u.orders || []).map(o => `${esc(o.symbol)} order #${esc(o.id)} (${esc(o.action || "")})`),
+      ];
+      const ub = document.getElementById("alert-unmanaged");
+      if (items.length) {
+        ub.innerHTML = `<strong>Not managed by the agent:</strong> ${items.join(" · ")}
+          <span class="alert-sub">moomoo holds these but the agent has no stop/target for them. Close them in moomoo, or protect them manually.</span>`;
+        ub.style.display = "";
+      } else {
+        ub.style.display = "none";
+      }
+    }
+
+    setInterval(tickMarkets, 1000);
+    setInterval(() => { if (!document.hidden) loadMarkets(); }, 30000);
+    loadMarkets();
+
+    // Polling loop
+    setInterval(() => {
+      if (autoRefresh) {
+        loadStatus();
+        loadPositions();
+        loadDecisions();
+      }
+    }, 5000);
+
+    // Chart view controls
+    function updateChartTfNote() {
+      const agentTf = currentConfig.timeframe;
+      const opt = document.querySelector('#chart-tf option[value=""]');
+      if (opt) opt.textContent = agentTf ? `Agent (${TF_LABEL[agentTf] || agentTf})` : "Agent setting";
+      const note = document.getElementById("chart-tf-note");
+      if (note) {
+        note.textContent = (chartTimeframe && agentTf && chartTimeframe !== agentTf)
+          ? `View only - agent trades ${TF_LABEL[agentTf] || agentTf}` : "";
+      }
+    }
+
+    function scheduleChartRefresh() {
+      if (chartRefreshTimer) clearInterval(chartRefreshTimer);
+      chartRefreshTimer = null;
+      if (chartRefreshSec > 0) {
+        chartRefreshTimer = setInterval(() => {
+          if (autoRefresh && activeSymbol && !document.hidden) {
+            loadChartData(activeSymbol, { forecast: false });
+          }
+        }, chartRefreshSec * 1000);
+      }
+    }
+
+    // ---- Indicator overlays (MAs / VWAP on the candles, RSI in its own pane) ----
+    let overlayPrefs = { ma: true, vwap: true, rsi: true };
+    try { Object.assign(overlayPrefs, JSON.parse(lsGet("chartOverlays", "{}")) || {}); } catch (e) {}
+    const overlaySeries = {};   // line id -> series
+    let rsiSeries = null;
+    let rsiLines = [];
+    let lastOverlays = null;
+    const RSI_PANE_HEIGHT = 110;
+
+    function lineSeriesOptions(color, extra = {}) {
+      return Object.assign({
+        color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      }, extra);
+    }
+
+    function addLine(opts, paneIndex) {
+      if (!chartInstance) return null;
+      if (typeof chartInstance.addSeries === "function" && LightweightCharts.LineSeries) {
+        return paneIndex ? chartInstance.addSeries(LightweightCharts.LineSeries, opts, paneIndex)
+                         : chartInstance.addSeries(LightweightCharts.LineSeries, opts);
+      }
+      if (!paneIndex && typeof chartInstance.addLineSeries === "function") {
+        return chartInstance.addLineSeries(opts);   // v4 fallback: no RSI pane
+      }
+      return null;
+    }
+
+    function removeSeriesSafe(series) {
+      try { if (series && chartInstance) chartInstance.removeSeries(series); } catch (e) {}
+    }
+
+    function applyOverlays(ov) {
+      if (!chartInstance) return;
+      const lines = (ov && ov.lines) || [];
+      const wanted = new Set();
+      for (const line of lines) {
+        if (!overlayPrefs[line.group]) continue;
+        wanted.add(line.id);
+        let series = overlaySeries[line.id];
+        if (!series) {
+          series = addLine(lineSeriesOptions(line.color, { title: "" }));
+          if (!series) continue;
+          overlaySeries[line.id] = series;
+        }
+        series.applyOptions({ color: line.color });
+        series.setData(line.data || []);
+        series._label = line.label;
+      }
+      for (const id of Object.keys(overlaySeries)) {
+        if (!wanted.has(id)) { removeSeriesSafe(overlaySeries[id]); delete overlaySeries[id]; }
+      }
+
+      const rsi = ov && ov.rsi;
+      if (overlayPrefs.rsi && rsi && rsi.data && rsi.data.length) {
+        if (!rsiSeries) {
+          rsiSeries = addLine(lineSeriesOptions(rsi.color, {
+            lineWidth: 2, lastValueVisible: true, title: `RSI ${rsi.period}`,
+            autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
+          }), 1);
+          try {
+            const panes = chartInstance.panes ? chartInstance.panes() : [];
+            if (panes[1] && panes[1].setHeight) panes[1].setHeight(RSI_PANE_HEIGHT);
+          } catch (e) {}
+        }
+        if (rsiSeries) {
+          rsiSeries.setData(rsi.data);
+          rsiLines.forEach(l => { try { rsiSeries.removePriceLine(l); } catch (e) {} });
+          rsiLines = [];
+          const level = (price, color, title) => rsiLines.push(rsiSeries.createPriceLine({
+            price, color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true, title,
+          }));
+          if (rsi.upper != null) level(rsi.upper, "rgba(239, 68, 68, 0.7)", "no BUY above");
+          if (rsi.lower != null) level(rsi.lower, "rgba(16, 185, 129, 0.7)", "no SELL below");
+          level(50, "rgba(148, 163, 184, 0.35)", "");
+        }
+      } else if (rsiSeries) {
+        removeSeriesSafe(rsiSeries); rsiSeries = null; rsiLines = [];
+      }
+      updateIndicatorLegend(ov);
+    }
+
+    function updateIndicatorLegend(ov) {
+      const el = document.getElementById("ind-legend");
+      if (!el) return;
+      if (!ov) { el.innerHTML = ""; return; }
+      const last = arr => (arr && arr.length ? arr[arr.length - 1].value : null);
+      const parts = [];
+      for (const line of ov.lines || []) {
+        if (!overlayPrefs[line.group]) continue;
+        const v = last(line.data);
+        parts.push(`<span><i style="background:${line.color}"></i>${esc(line.label)} ${v != null ? v.toFixed(2) : "—"}</span>`);
+      }
+      if (overlayPrefs.rsi && ov.rsi) {
+        const v = last(ov.rsi.data);
+        let cls = "";
+        if (v != null && ov.rsi.upper != null && v >= ov.rsi.upper) cls = "hot";
+        if (v != null && ov.rsi.lower != null && v <= ov.rsi.lower) cls = "cold";
+        parts.push(`<span class="${cls}"><i style="background:${ov.rsi.color}"></i>RSI ${ov.rsi.period} ${v != null ? v.toFixed(1) : "—"}</span>`);
+      }
+      const g = ov.gate || {};
+      const fast = (ov.lines || []).find(l => l.id === "ma_fast"), slow = (ov.lines || []).find(l => l.id === "ma_slow");
+      const fv = fast && last(fast.data), sv = slow && last(slow.data);
+      if (overlayPrefs.ma && fv != null && sv != null) {
+        const up = fv > sv;
+        parts.push(`<span class="${up ? "trend-up" : "trend-down"}">Trend ${up ? "up - BUYs allowed" : "down - SELLs allowed"}${g.require_ma_trend ? "" : " (rule off)"}</span>`);
+      }
+      if (!g.enabled) parts.push(`<span class="gate-off">Indicator filter off</span>`);
+      else if (g.mode === "log") parts.push(`<span class="gate-off">Filter in log-only mode</span>`);
+      el.innerHTML = parts.join("");
+    }
+
+    function initOverlayToggles() {
+      for (const key of ["ma", "vwap", "rsi"]) {
+        const box = document.getElementById(`ov-${key}`);
+        if (!box) continue;
+        box.checked = !!overlayPrefs[key];
+        box.addEventListener("change", () => {
+          const wasAllOff = !overlayPrefs.ma && !overlayPrefs.vwap && !overlayPrefs.rsi;
+          overlayPrefs[key] = box.checked;
+          lsSet("chartOverlays", JSON.stringify(overlayPrefs));
+          // Re-use the data we have; fetch only if overlays weren't requested last time.
+          if (lastOverlays && !wasAllOff) applyOverlays(lastOverlays);
+          else if (activeSymbol) loadChartData(activeSymbol, { forecast: false });
+        });
+      }
+    }
+
+    function initChartControls() {
+      initOverlayToggles();
+      const tfSel = document.getElementById("chart-tf");
+      const limSel = document.getElementById("chart-limit");
+      const refSel = document.getElementById("chart-refresh");
+      if (!tfSel || !limSel || !refSel) return;
+      tfSel.value = chartTimeframe;
+      if (![...limSel.options].some(o => o.value === String(chartLimit))) chartLimit = 80;
+      limSel.value = String(chartLimit);
+      if (![...refSel.options].some(o => o.value === String(chartRefreshSec))) chartRefreshSec = 60;
+      refSel.value = String(chartRefreshSec);
+
+      tfSel.addEventListener("change", () => {
+        chartTimeframe = tfSel.value;
+        lsSet("chartTimeframe", chartTimeframe);
+        updateChartTfNote();
+        if (activeSymbol) loadChartData(activeSymbol, { fit: true });
+      });
+      limSel.addEventListener("change", () => {
+        chartLimit = parseInt(limSel.value, 10);
+        lsSet("chartLimit", String(chartLimit));
+        if (activeSymbol) loadChartData(activeSymbol, { forecast: false, fit: true });
+      });
+      refSel.addEventListener("change", () => {
+        chartRefreshSec = parseInt(refSel.value, 10);
+        lsSet("chartRefreshSec", String(chartRefreshSec));
+        scheduleChartRefresh();
+      });
+      updateChartTfNote();
+      scheduleChartRefresh();
+    }
+
+    // Initialization
+    window.addEventListener("DOMContentLoaded", () => {
+      initChart();
+      initChartControls();
+      initChartFullscreen();
+      loadStatus();  // picks the symbol and loads its chart
+      loadDecisions();
+      loadPositions();
+      loadConfigData();
+      initBrokerSwitch();
+      loadBrokers();
+      loadSentiment();
+      document.getElementById("sent-refresh").addEventListener("click", () => loadSentiment(true));
+      setInterval(() => { if (autoRefresh && !document.hidden) loadSentiment(); }, 60000);
+      loadSettings(false);
+    });
+  </script>
+</body>
+</html>

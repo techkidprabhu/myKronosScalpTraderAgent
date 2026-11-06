@@ -1,0 +1,46 @@
+# --- Secrets: never commit ---------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*_token
+*.token
+
+# --- Runtime data: trade audit DBs, broker session tokens, scrip masters --
+data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# --- Your live settings (config.example.yaml is the tracked template) ---
+config/config.yaml
+config/backups/
+config/*.bak
+config/*.tmp
+
+# --- Model weights / caches (downloaded at runtime) ----------------------
+models/
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+
+# --- Python / tooling ------------------------------------------------------
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+venv/
+.venv/
+*.egg-info/
+*.log
+logs/
+*.patch
+.claude/
+.vscode/
+.idea/
+.DS_Store

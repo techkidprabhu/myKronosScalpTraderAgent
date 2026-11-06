@@ -1,0 +1,20 @@
+moomoo-api>=9.0
+pandas>=2.0
+numpy>=1.24
+python-dotenv>=1.0
+PyYAML>=6.0
+requests>=2.31
+schedule>=1.2
+torch>=2.1
+huggingface_hub>=0.20
+Flask>=2.3.0
+ruamel.yaml>=0.18   # dashboard Settings: saves config.yaml keeping its comments
+pytest>=7.0.0
+# Optional broker SDKs - install only for the brokers you enable:
+#   pip install tigeropen                   # brokers.tiger
+#   pip install -U kiteconnect              # brokers.zerodha - needs market_protection support (5.2.2 verified)
+#   pip install smartapi-python pyotp       # brokers.angel
+#   (IG uses plain requests - nothing extra)
+# Kronos itself is not on PyPI - install from source, see README:
+#   git clone https://github.com/shiyu-coder/Kronos.git vendor/Kronos
+#   pip install -e vendor/Kronos
