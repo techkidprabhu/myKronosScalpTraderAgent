@@ -78,6 +78,10 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
         Strategies & Tactics
       </button>
+      <button class="tab-btn" onclick="switchTab('risk-model')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M8 13l3 3 5-6"/></svg>
+        Risk Model
+      </button>
       <button class="tab-btn" onclick="switchTab('settings')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Config & Risk
@@ -953,6 +957,102 @@
     </div>
 
     <!-- TAB 6: CONFIG & RISK -->
+    <div id="tab-risk-model" class="tab-panel">
+      <div class="rm-top">
+        <div>
+          <h2 class="rm-title">Risk Model</h2>
+          <div class="rm-sub" id="rm-sub">How one trade and the whole account are protected. Drag the lines or edit the numbers, then save.</div>
+        </div>
+        <div class="rm-scope">
+          <label for="rm-scope">Apply changes to</label>
+          <select id="rm-scope" class="form-control" onchange="rmScopeChanged()"></select>
+        </div>
+      </div>
+
+      <div class="rm-grid">
+        <div class="panel-card rm-model-card">
+          <div class="panel-header">
+            <div class="panel-title"><span>One trade, step by step</span></div>
+            <div class="rm-controls">
+              <div class="rm-seg" role="group" aria-label="Direction">
+                <button id="rm-dir-BUY" class="active" onclick="rmSetDir('BUY')">Long</button>
+                <button id="rm-dir-SELL" onclick="rmSetDir('SELL')">Short</button>
+              </div>
+              <label class="rm-inline">Entry price
+                <input id="rm-ref" type="number" step="0.01" min="0.01" class="form-control" oninput="rmRefChanged()">
+              </label>
+              <span id="rm-ref-src" class="rm-muted"></span>
+            </div>
+          </div>
+          <svg id="rm-svg" viewBox="0 0 800 420" preserveAspectRatio="none" role="img"
+               aria-label="Trade model: entry, stop loss, take profit and trailing stop on an example price path"></svg>
+          <div class="rm-legend">
+            <span><i style="background:#22c55e"></i>Take profit</span>
+            <span><i style="background:#60a5fa"></i>Entry</span>
+            <span><i style="background:#ef4444"></i>Stop loss</span>
+            <span><i class="dash" style="border-color:#f59e0b"></i>Trailing starts</span>
+            <span><i style="background:#f59e0b"></i>Trailing stop</span>
+            <span><i style="background:#e2e8f0"></i>Example price path</span>
+            <span class="rm-muted">Drag the ● handles to change a level.</span>
+          </div>
+          <div class="rm-stats" id="rm-stats"></div>
+          <div class="rm-fields" id="rm-trade-fields"></div>
+        </div>
+
+        <div class="rm-side">
+          <div class="panel-card">
+            <div class="panel-header"><div class="panel-title"><span>Open positions</span></div></div>
+            <div id="rm-slots" class="rm-slots"></div>
+            <div class="rm-stepper">
+              <button onclick="rmStep('risk.max_open_positions', -1)" aria-label="Fewer positions">−</button>
+              <span>max <b id="rm-maxpos"></b> at once</span>
+              <button onclick="rmStep('risk.max_open_positions', 1)" aria-label="More positions">+</button>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-header"><div class="panel-title"><span>Daily loss cap</span></div><span id="rm-halt"></span></div>
+            <div class="rm-bar"><div id="rm-bar-fill"></div><div id="rm-bar-stop" class="rm-bar-mark"></div></div>
+            <div class="rm-bar-labels"><span id="rm-pnl"></span><span id="rm-cap-label"></span></div>
+            <div class="rm-fields" id="rm-daily-fields"></div>
+            <div class="rm-note" id="rm-cap-note"></div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-header"><div class="panel-title"><span>Cooldown per symbol</span></div></div>
+            <div class="rm-cool" id="rm-cool-visual"></div>
+            <div class="rm-fields" id="rm-cool-fields"></div>
+            <div id="rm-cool-list" class="rm-note"></div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-header"><div class="panel-title"><span>Order size & shorts</span></div></div>
+            <div class="rm-fields" id="rm-size-fields"></div>
+            <div class="rm-note" id="rm-size-note"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rm-savebar" id="rm-savebar">
+        <div id="rm-changes" class="rm-changes">No unsaved changes.</div>
+        <div class="rm-save-actions">
+          <button class="btn" onclick="rmDiscard()" id="rm-discard" disabled>Discard</button>
+          <button class="btn btn-primary" onclick="rmConfirmSave()" id="rm-save" disabled>Save to config</button>
+        </div>
+      </div>
+
+      <div id="rm-modal" class="manual-modal" style="display:none;" onclick="if (event.target === this) rmCloseModal()">
+        <div class="manual-modal-box" role="dialog" aria-modal="true" aria-labelledby="rm-modal-title">
+          <h3 id="rm-modal-title">Save risk changes?</h3>
+          <div id="rm-modal-body" class="manual-modal-body"></div>
+          <div class="manual-modal-actions">
+            <button class="btn" onclick="rmCloseModal()">Cancel</button>
+            <button class="btn btn-primary" id="rm-modal-go" onclick="rmSave()">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="tab-settings" class="tab-panel">
       <div class="panel-card">
         <div class="panel-header">
@@ -1208,6 +1308,7 @@
 
       const panel = document.getElementById(`tab-${tabId}`);
       if (panel) panel.classList.add("active");
+      if (tabId === "risk-model") rmOpen();
 
       if (tabId === "terminal" && chartInstance) {
         setTimeout(() => {
@@ -1797,6 +1898,522 @@
     setInterval(() => {
       if (autoRefresh && document.getElementById("tab-positions").classList.contains("active")) loadPositions();
     }, 2500);
+
+    // ================= Risk Model screen =================
+    // Visual model of the risk settings. Edits go through /api/settings
+    // (same validation, comment-preserving writer and backups as the
+    // Settings tab). Nothing here changes how the agent trades until the
+    // config is saved and the agent restarted.
+    const RM_KEYS = [
+      "risk.stop_loss_pct", "risk.take_profit_pct", "risk.stop_loss_points", "risk.take_profit_points",
+      "trailing_stop.enabled", "trailing_stop.trigger_points", "trailing_stop.trail_distance",
+      "trailing_stop.use_atr", "trailing_stop.atr_multiplier",
+      "risk.max_open_positions", "risk.max_daily_loss", "risk.min_minutes_between_trades",
+      "default_quantity", "risk.max_stake_per_point", "risk.lot_size", "risk.allow_short",
+    ];
+    const RM = { loaded: false, schema: {}, all: null, orig: {}, cur: {}, scope: "shared", dir: "BUY",
+                 ref: 100, refSrc: "example", refTouched: false, state: null, drag: null, frozen: null };
+
+    const rmNumOr = (v, d) => (v === null || v === undefined || v === "" || isNaN(Number(v))) ? d : Number(v);
+    const rmDp = p => (p < 1 ? 4 : 2);
+    const rmRound = (v, dp) => Math.round(v * 10 ** dp) / 10 ** dp;
+    const rmMoney = v => `${CCY} ${Number(v).toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+    function rmFmtMinutes(m) {
+      m = Math.round(m);
+      if (m <= 0) return "none";
+      const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+      return [d ? `${d} d` : "", h ? `${h} h` : "", mm ? `${mm} m` : ""].filter(Boolean).join(" ");
+    }
+
+    async function rmOpen() {
+      if (!RM.loaded || !rmDirty().length) await rmLoad();
+      rmLoadState();
+    }
+
+    async function rmLoad() {
+      try {
+        const res = await fetch("/api/settings");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        RM.all = data;
+        RM.schema = {};
+        data.schema.forEach(sec => sec.fields.forEach(f => { RM.schema[f.key] = f; }));
+        const cur = data.current;
+        const ovr = (data.overrides[cur] || []).filter(k => RM_KEYS.includes(k));
+        if (!RM.loaded) RM.scope = ovr.length ? cur : "shared";
+        if (RM.scope !== "shared" && !data.values[RM.scope]) RM.scope = "shared";
+        const sel = document.getElementById("rm-scope");
+        sel.innerHTML = `<option value="shared">All brokers (shared settings)</option>` +
+          data.broker_order.map(b => `<option value="${esc(b)}">Only ${esc(data.brokers[b].label || b)}${b === cur ? " (selected broker)" : ""}</option>`).join("");
+        sel.value = RM.scope;
+        rmTakeValues();
+        RM.loaded = true;
+        rmRenderFields();
+        rmSync();
+      } catch (err) {
+        document.getElementById("rm-sub").textContent = `Could not load the settings: ${err.message}`;
+      }
+    }
+
+    function rmTakeValues() {
+      const vals = RM.all.values[RM.scope] || RM.all.values.shared;
+      RM.orig = {}; RM.cur = {};
+      RM_KEYS.forEach(k => { RM.orig[k] = vals[k] === undefined ? null : vals[k]; RM.cur[k] = RM.orig[k]; });
+    }
+
+    function rmScopeChanged() {
+      const next = document.getElementById("rm-scope").value;
+      if (rmDirty().length) showToast("Unsaved changes discarded - switched scope");
+      RM.scope = next;
+      rmTakeValues();
+      rmRenderFields();
+      rmSync();
+    }
+
+    async function rmLoadState() {
+      try {
+        const sym = activeSymbol || "";
+        const res = await fetch(`/api/risk_state${sym ? "?symbol=" + encodeURIComponent(sym) : ""}`);
+        RM.state = await res.json();
+        if (!RM.refTouched && RM.state.reference_price) {
+          RM.ref = RM.state.reference_price;
+          RM.refSrc = `live ${RM.state.symbol}`;
+        }
+        rmSync();
+      } catch (err) { console.error("risk state", err); }
+    }
+
+    // ---- derived model -------------------------------------------------
+    function rmModel() {
+      const c = RM.cur, P = Math.max(0.0001, RM.ref);
+      const stopPct = c["risk.stop_loss_pct"], tpPct = c["risk.take_profit_pct"];
+      const S = stopPct != null ? P * stopPct / 100 : rmNumOr(c["risk.stop_loss_points"], 1);
+      const T = tpPct != null ? P * tpPct / 100 : rmNumOr(c["risk.take_profit_points"], 2);
+      const en = !!c["trailing_stop.enabled"], atr = !!c["trailing_stop.use_atr"];
+      const atrEst = P * 0.01;   // illustrative ATR: 1% of price
+      const G = rmNumOr(c["trailing_stop.trigger_points"], 0);
+      const D = atr ? atrEst * rmNumOr(c["trailing_stop.atr_multiplier"], 3) : rmNumOr(c["trailing_stop.trail_distance"], 0);
+      const lot = Math.max(1, rmNumOr(c["risk.lot_size"], 1));
+      const maxQ = rmNumOr(c["risk.max_stake_per_point"], 1);
+      const defQ = rmNumOr(c["default_quantity"], 1);
+      const qty = Math.max(0, Math.floor(Math.min(defQ, maxQ) / lot) * lot);
+      return { P, S: Math.max(S, 1e-9), T: Math.max(T, 1e-9), G, D: Math.max(D, 0), en, atr, atrEst,
+               stopPct, tpPct, qty, defQ, maxQ, lot, d: RM.dir === "BUY" ? 1 : -1 };
+    }
+
+    // Example path in "favourable units" (u > 0 = profit), run through the
+    // same trailing logic as src/trailing_stop.py.
+    function rmSimulate(m) {
+      const N = 90, path = [];
+      const trails = m.en && m.G < m.T && m.D > 0;
+      const peak = trails ? Math.min(m.T * 0.93, Math.max(m.G + m.D * 1.5, m.G * 1.2 + 0.05 * m.S)) : m.T * 1.04;
+      const low = trails ? peak - m.D * 1.8 : 0;
+      const ease = t => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, t)));
+      for (let i = 0; i <= N; i++) {
+        let u;
+        if (i <= 12) u = -0.38 * m.S * ease(i / 12);
+        else if (i <= 52) u = -0.38 * m.S + (peak + 0.38 * m.S) * ease((i - 12) / 40);
+        else u = trails ? peak - (peak - low) * ease((i - 52) / 38) : peak;
+        u += Math.sin(i * 1.7) * 0.05 * m.S + Math.sin(i * 0.63) * 0.04 * m.S;
+        if (i === 52) u = peak;
+        path.push(u);
+      }
+      let stop = -m.S, ext = 0, active = false, exit = null, peakIdx = 0;
+      const trail = [];
+      for (let i = 0; i < path.length; i++) {
+        const u = path[i];
+        if (u > ext) { ext = u; peakIdx = i; }
+        if (m.en && !active && ext >= m.G) active = true;
+        if (active && ext - m.D > stop) stop = ext - m.D;
+        trail.push({ i, stop, active });
+        if (u <= stop) { exit = { i, u: stop, why: active && stop > -m.S ? (stop >= 0 ? "trailing stop (profit locked)" : "trailing stop") : "stop loss" }; break; }
+        if (u >= m.T) { exit = { i, u: m.T, why: "take profit" }; break; }
+      }
+      const end = exit ? exit.i : path.length - 1;
+      return { path: path.slice(0, end + 1), trail: trail.slice(0, end + 1), exit, N, peakIdx, peakU: ext, trails };
+    }
+
+    // ---- drawing -------------------------------------------------------
+    function rmDraw() {
+      const svg = document.getElementById("rm-svg");
+      if (!svg) return;
+      const m = rmModel(), sim = rmSimulate(m);
+      const W = 800, H = 420, x0 = 64, x1 = 600, yTop = 22, yBot = H - 26;
+      // Draw in real price orientation (v = price - entry): a short's
+      // target sits below the entry and its stop above.
+      const vs = [-m.S * 1.35, m.T * 1.12, (m.en ? m.G : 0) * 1.1, ...sim.path].map(u => m.d * u);
+      let vMin = Math.min(...vs), vMax = Math.max(...vs);
+      if (RM.frozen) ({ vMin, vMax } = RM.frozen);
+      RM.scale = { vMin, vMax, yTop, yBot, H, d: m.d };
+      const y = u => yBot - (m.d * u - vMin) / (vMax - vMin) * (yBot - yTop);
+      const x = i => x0 + (i / sim.N) * (x1 - x0);
+      const price = u => m.P + m.d * u;
+      const dp = rmDp(m.P);
+      const pctOf = u => `${m.d * u >= 0 ? "+" : "−"}${Math.abs(u / m.P * 100).toFixed(2)}%`;
+
+      const parts = [];
+      // zones
+      parts.push(`<rect x="${x0}" y="${y(m.T)}" width="${x1 - x0}" height="${y(0) - y(m.T)}" fill="rgba(34,197,94,0.08)"/>`);
+      parts.push(`<rect x="${x0}" y="${y(0)}" width="${x1 - x0}" height="${y(-m.S) - y(0)}" fill="rgba(239,68,68,0.09)"/>`);
+      // grid / price axis
+      for (let k = 0; k <= 5; k++) {
+        const u = m.d * (vMin + (vMax - vMin) * k / 5), yy = y(u);
+        parts.push(`<line x1="${x0}" x2="${x1}" y1="${yy}" y2="${yy}" stroke="rgba(148,163,184,0.08)"/>`);
+        parts.push(`<text x="${x0 - 8}" y="${yy + 4}" text-anchor="end" font-size="10" fill="#64748b">${price(u).toFixed(dp)}</text>`);
+      }
+      const level = (u, color, label, sub, key, dash) => {
+        const yy = y(u);
+        parts.push(`<line x1="${x0}" x2="${x1}" y1="${yy}" y2="${yy}" stroke="${color}" stroke-width="2" ${dash ? 'stroke-dasharray="6 5"' : ""}/>`);
+        parts.push(`<text x="${x1 + 16}" y="${yy - 3}" font-size="12" fill="${color}" font-weight="700">${label}</text>`);
+        parts.push(`<text x="${x1 + 16}" y="${yy + 12}" font-size="10.5" fill="#94a3b8">${sub}</text>`);
+        if (key) parts.push(`<g class="rm-handle" data-key="${key}" tabindex="0" role="slider" aria-label="${label}"><circle cx="${x1}" cy="${yy}" r="7" fill="${color}" stroke="#0b1220" stroke-width="2"/><rect x="${x1 - 14}" y="${yy - 10}" width="28" height="20" fill="transparent"/></g>`);
+      };
+      level(m.T, "#22c55e", "Take profit", `${price(m.T).toFixed(dp)}  (${pctOf(m.T)})`, "target");
+      level(0, "#60a5fa", RM.dir === "BUY" ? "Entry (buy)" : "Entry (short)", `${m.P.toFixed(dp)}`, null);
+      level(-m.S, "#ef4444", "Stop loss", `${price(-m.S).toFixed(dp)}  (${pctOf(-m.S)})`, "stop");
+      if (m.en) level(m.G, "#f59e0b", "Trailing starts", `${price(m.G).toFixed(dp)}  (${pctOf(m.G)})`, "trigger", true);
+
+      // trailing stop line (only where active)
+      if (m.en) {
+        const pts = sim.trail.filter(t => t.active).map(t => `${x(t.i)},${y(t.stop)}`);
+        if (pts.length > 1) parts.push(`<polyline points="${pts.join(" ")}" fill="none" stroke="#f59e0b" stroke-width="2.5"/>`);
+      }
+      // price path
+      parts.push(`<polyline points="${sim.path.map((u, i) => `${x(i)},${y(u)}`).join(" ")}" fill="none" stroke="#e2e8f0" stroke-width="2" stroke-linejoin="round"/>`);
+      parts.push(`<circle cx="${x(0)}" cy="${y(0)}" r="5" fill="#60a5fa"/>`);
+      // trail distance bracket + handle at the peak
+      if (m.en && sim.trails && m.D > 0 && sim.peakU >= m.G) {
+        const px = x(sim.peakIdx), ya = y(sim.peakU), yb = y(sim.peakU - m.D);
+        parts.push(`<line x1="${px}" x2="${px}" y1="${ya}" y2="${yb}" stroke="#f59e0b" stroke-dasharray="3 3"/>`);
+        parts.push(`<text x="${px + 8}" y="${(ya + yb) / 2 + 4}" font-size="10.5" fill="#f59e0b">trail ${m.D.toFixed(dp)}${m.atr ? ` (ATR×${rmNumOr(RM.cur["trailing_stop.atr_multiplier"], 3)})` : ""}</text>`);
+        parts.push(`<g class="rm-handle" data-key="trail" data-peak="${sim.peakU}" tabindex="0" role="slider" aria-label="Trail distance"><circle cx="${px}" cy="${yb}" r="7" fill="#f59e0b" stroke="#0b1220" stroke-width="2"/><rect x="${px - 14}" y="${yb - 10}" width="28" height="20" fill="transparent"/></g>`);
+      }
+      // exit marker
+      if (sim.exit) {
+        const ex = x(sim.exit.i), ey = y(sim.exit.u);
+        const pnl = sim.exit.u * m.qty, good = sim.exit.u >= 0;
+        const col = good ? "#22c55e" : "#ef4444";
+        parts.push(`<circle cx="${ex}" cy="${ey}" r="6" fill="none" stroke="${col}" stroke-width="2.5"/>`);
+        const label = `Exit: ${sim.exit.why}  ${pnl >= 0 ? "+" : "−"}${CCY} ${Math.abs(pnl).toFixed(2)}`;
+        const bw = label.length * 6.9 + 18, tx = Math.max(x0 + 4, Math.min(ex - bw / 2, x1 - bw));
+        const ty = (m.d * sim.exit.u >= 0) ? ey + 14 : ey - 38;
+        parts.push(`<rect x="${tx}" y="${ty}" width="${bw}" height="24" rx="5" fill="rgba(15,23,42,0.94)" stroke="${col}"/>`);
+        parts.push(`<text x="${tx + 9}" y="${ty + 16}" font-size="11" fill="${col}">${label}</text>`);
+      }
+      if (m.en && m.G < m.T && m.D > m.G) parts.push(`<text x="${x0 + 8}" y="${yBot - 24}" font-size="11" fill="#f59e0b">Trail distance (${m.D.toFixed(dp)}) is wider than the trigger (${m.G.toFixed(dp)}): a trailed exit can still close at a loss.</text>`);
+      if (m.en && m.G >= m.T) parts.push(`<text x="${x0 + 8}" y="${yTop + 14}" font-size="11" fill="#f59e0b">Trailing never starts: the trigger is at or beyond the take profit.</text>`);
+      if (RM.dir === "SELL" && !RM.cur["risk.allow_short"]) parts.push(`<text x="${x0 + 8}" y="${yBot - 8}" font-size="11.5" fill="#f59e0b">Shorts are off - the agent rejects SELL signals. Turn on "Allow short selling" to trade this.</text>`);
+      parts.push(`<text x="${x0}" y="${H - 6}" font-size="10" fill="#64748b">Example path for ${m.qty} shares - illustrative, not a forecast${m.atr ? "; ATR shown as 1% of price" : ""}</text>`);
+      svg.innerHTML = parts.join("");
+      svg.querySelectorAll(".rm-handle").forEach(h => h.addEventListener("pointerdown", rmDragStart));
+      svg.querySelectorAll(".rm-handle").forEach(h => h.addEventListener("keydown", rmKeyNudge));
+      return { m, sim };
+    }
+
+    function rmPointerU(ev) {
+      const r = document.getElementById("rm-svg").getBoundingClientRect();
+      const s = RM.scale, yy = (ev.clientY - r.top) / r.height * s.H;
+      return s.d * (s.vMin + (s.yBot - yy) / (s.yBot - s.yTop) * (s.vMax - s.vMin));
+    }
+
+    function rmDragStart(ev) {
+      ev.preventDefault();
+      const h = ev.currentTarget;
+      RM.drag = { key: h.dataset.key, peak: Number(h.dataset.peak) };
+      RM.frozen = { vMin: RM.scale.vMin, vMax: RM.scale.vMax };
+      h.classList.add("dragging");
+      const move = e => { rmApplyDrag(rmPointerU(e)); };
+      const up = () => {
+        window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+        RM.drag = null; RM.frozen = null; rmSync();
+      };
+      window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    }
+
+    function rmKeyNudge(ev) {
+      if (!["ArrowUp", "ArrowDown"].includes(ev.key)) return;
+      ev.preventDefault();
+      const key = ev.currentTarget.dataset.key, m = rmModel(), step = (ev.key === "ArrowUp" ? 1 : -1) * m.d * m.P * 0.001;
+      RM.drag = { key, peak: Number(ev.currentTarget.dataset.peak) };
+      const cur = { target: m.T, stop: -m.S, trigger: m.G, trail: Number(ev.currentTarget.dataset.peak) - m.D }[key];
+      rmApplyDrag(cur + step);
+      RM.drag = null;
+      rmSync();
+      document.querySelector(`#rm-svg .rm-handle[data-key="${key}"]`)?.focus();
+    }
+
+    function rmClamp(key, v) {
+      const f = RM.schema[key] || {};
+      if (f.min !== undefined) v = Math.max(f.min, v);
+      if (f.max !== undefined) v = Math.min(f.max, v);
+      return v;
+    }
+
+    function rmApplyDrag(u) {
+      const m = rmModel(), dp = rmDp(m.P), k = RM.drag.key, c = RM.cur;
+      if (k === "target") {
+        const T = Math.max(u, m.P * 0.0005);
+        if (m.tpPct != null) c["risk.take_profit_pct"] = rmClamp("risk.take_profit_pct", rmRound(T / m.P * 100, 2));
+        else c["risk.take_profit_points"] = rmClamp("risk.take_profit_points", rmRound(T, dp));
+      } else if (k === "stop") {
+        const S = Math.max(-u, m.P * 0.0005);
+        if (m.stopPct != null) c["risk.stop_loss_pct"] = rmClamp("risk.stop_loss_pct", rmRound(S / m.P * 100, 2));
+        else c["risk.stop_loss_points"] = rmClamp("risk.stop_loss_points", rmRound(S, dp));
+      } else if (k === "trigger") {
+        c["trailing_stop.trigger_points"] = rmClamp("trailing_stop.trigger_points", rmRound(Math.max(0, u), dp));
+      } else if (k === "trail") {
+        const D = Math.max(RM.drag.peak - u, m.P * 0.0005);
+        if (m.atr) c["trailing_stop.atr_multiplier"] = rmClamp("trailing_stop.atr_multiplier", rmRound(D / m.atrEst, 1));
+        else c["trailing_stop.trail_distance"] = rmClamp("trailing_stop.trail_distance", rmRound(D, dp));
+      }
+      rmSync();
+    }
+
+    // ---- fields ----------------------------------------------------------
+    function rmField(key, label, help, extra = "") {
+      const f = RM.schema[key] || {};
+      const ovr = RM.scope === "shared" && (RM.all.overrides[RM.all.current] || []).includes(key)
+        ? `<span class="rm-ovr">The selected broker overrides this (${esc(RM.all.values[RM.all.current][key])}) - change it under "Only ${esc(RM.all.brokers[RM.all.current].label)}"</span>` : "";
+      if (f.type === "bool") {
+        return `<div class="rm-field" data-field="${key}"><label class="rm-check"><input type="checkbox" data-key="${key}" onchange="rmInput(this)"> ${esc(label || f.label)}</label>${help ? `<span class="rm-help">${help}</span>` : ""}${ovr}</div>`;
+      }
+      const step = f.type === "int" ? 1 : "any";
+      return `<label class="rm-field" data-field="${key}">${esc(label || f.label)}${extra}
+        <input type="number" class="form-control" data-key="${key}" step="${step}" ${f.min !== undefined ? `min="${f.min}"` : ""} ${f.max !== undefined ? `max="${f.max}"` : ""} oninput="rmInput(this)">
+        ${help ? `<span class="rm-help">${help}</span>` : ""}${ovr}</label>`;
+    }
+
+    function rmModeSelect(kind) {
+      return ` <select class="form-control" style="padding:2px 6px; font-size:11px; width:auto; display:inline-block;" data-mode="${kind}" onchange="rmSetMode('${kind}', this.value)">
+        <option value="pts">price units</option><option value="pct">% of entry</option></select>`;
+    }
+
+    function rmRenderFields() {
+      document.getElementById("rm-trade-fields").innerHTML =
+        `<div class="rm-field" data-field="risk.stop_loss_points"><span>Stop loss ${rmModeSelect("stop")}</span><span id="rm-slot-stop"></span></div>` +
+        `<div class="rm-field" data-field="risk.take_profit_points"><span>Take profit ${rmModeSelect("target")}</span><span id="rm-slot-target"></span></div>` +
+        rmField("trailing_stop.enabled", "Trailing stop on", "Moves the stop up behind the best price once in profit") +
+        rmField("trailing_stop.trigger_points", "Trailing starts after profit of", "price units") +
+        rmField("trailing_stop.trail_distance", "Trail distance", "price units behind the best price") +
+        rmField("trailing_stop.use_atr", "Trail distance from ATR", "Adapts the trail to volatility") +
+        rmField("trailing_stop.atr_multiplier", "ATR multiplier", "");
+      document.getElementById("rm-daily-fields").innerHTML =
+        rmField("risk.max_daily_loss", "Stop trading for the day after losing", `${CCY} (resets at midnight exchange time)`);
+      document.getElementById("rm-cool-fields").innerHTML =
+        rmField("risk.min_minutes_between_trades", "Minutes between trades in one symbol", "");
+      document.getElementById("rm-size-fields").innerHTML =
+        rmField("default_quantity", "Order quantity", "Used for screener picks") +
+        rmField("risk.max_stake_per_point", "Max quantity per position", "Bigger orders are rejected") +
+        rmField("risk.lot_size", "Lot size", "Quantities must be a multiple") +
+        rmField("risk.allow_short", "Allow short selling", "Needs a margin account");
+      rmRenderModeInputs();
+    }
+
+    function rmRenderModeInputs() {
+      const m = rmModel();
+      const slot = (id, key, unit) => {
+        const f = RM.schema[key] || {};
+        document.getElementById(id).innerHTML =
+          `<input type="number" class="form-control" data-key="${key}" step="any" ${f.min !== undefined ? `min="${f.min}"` : ""} ${f.max !== undefined ? `max="${f.max}"` : ""} oninput="rmInput(this)"><span class="rm-help">${unit}</span>`;
+      };
+      slot("rm-slot-stop", m.stopPct != null ? "risk.stop_loss_pct" : "risk.stop_loss_points", m.stopPct != null ? "% below entry (long)" : "price units from entry");
+      slot("rm-slot-target", m.tpPct != null ? "risk.take_profit_pct" : "risk.take_profit_points", m.tpPct != null ? "% above entry (long)" : "price units from entry");
+      document.querySelector('[data-mode="stop"]').value = m.stopPct != null ? "pct" : "pts";
+      document.querySelector('[data-mode="target"]').value = m.tpPct != null ? "pct" : "pts";
+    }
+
+    function rmSetMode(kind, mode) {
+      const m = rmModel(), dp = rmDp(m.P), c = RM.cur;
+      if (kind === "stop") {
+        if (mode === "pct") c["risk.stop_loss_pct"] = rmClamp("risk.stop_loss_pct", rmRound(m.S / m.P * 100, 2));
+        else { c["risk.stop_loss_points"] = rmClamp("risk.stop_loss_points", rmRound(m.S, dp)); c["risk.stop_loss_pct"] = null; }
+      } else {
+        if (mode === "pct") c["risk.take_profit_pct"] = rmClamp("risk.take_profit_pct", rmRound(m.T / m.P * 100, 2));
+        else { c["risk.take_profit_points"] = rmClamp("risk.take_profit_points", rmRound(m.T, dp)); c["risk.take_profit_pct"] = null; }
+      }
+      rmRenderModeInputs();
+      rmSync();
+    }
+
+    function rmInput(el) {
+      const key = el.dataset.key;
+      if (el.type === "checkbox") RM.cur[key] = el.checked;
+      else if (el.value === "") return;          // wait for a number
+      else RM.cur[key] = (RM.schema[key] || {}).type === "int" ? Math.round(Number(el.value)) : Number(el.value);
+      rmSync();
+    }
+
+    function rmStep(key, delta) {
+      RM.cur[key] = rmClamp(key, rmNumOr(RM.cur[key], 1) + delta);
+      rmSync();
+    }
+
+    function rmSetDir(dir) {
+      RM.dir = dir;
+      ["BUY", "SELL"].forEach(d => document.getElementById(`rm-dir-${d}`).classList.toggle("active", d === dir));
+      rmSync();
+    }
+
+    function rmRefChanged() {
+      const v = Number(document.getElementById("rm-ref").value);
+      if (v > 0) { RM.ref = v; RM.refTouched = true; RM.refSrc = "your example"; rmSync(); }
+    }
+
+    const rmSame = (a, b) => (a === null || a === undefined ? null : a) === (b === null || b === undefined ? null : b)
+      || (typeof a === "number" && typeof b === "number" && Math.abs(a - b) < 1e-9);
+    function rmDirty() { return RM_KEYS.filter(k => !rmSame(RM.cur[k], RM.orig[k])); }
+
+    // ---- sync everything from RM.cur -------------------------------------
+    function rmSync() {
+      if (!RM.loaded) return;
+      const panel = document.getElementById("tab-risk-model");
+      panel.querySelectorAll("input[data-key]").forEach(el => {
+        if (el === document.activeElement) return;
+        const v = RM.cur[el.dataset.key];
+        if (el.type === "checkbox") el.checked = !!v; else el.value = v === null || v === undefined ? "" : v;
+      });
+      const dirty = rmDirty();
+      panel.querySelectorAll(".rm-field[data-field]").forEach(f => {
+        const k = f.dataset.field;
+        const keys = k === "risk.stop_loss_points" ? ["risk.stop_loss_points", "risk.stop_loss_pct"]
+                   : k === "risk.take_profit_points" ? ["risk.take_profit_points", "risk.take_profit_pct"] : [k];
+        f.classList.toggle("changed", keys.some(x => dirty.includes(x)));
+      });
+      const c = RM.cur, atr = !!c["trailing_stop.use_atr"], en = !!c["trailing_stop.enabled"];
+      const show = (key, on) => { const f = panel.querySelector(`.rm-field[data-field="${key}"]`); if (f) f.style.display = on ? "" : "none"; };
+      show("trailing_stop.trigger_points", en); show("trailing_stop.use_atr", en);
+      show("trailing_stop.trail_distance", en && !atr); show("trailing_stop.atr_multiplier", en && atr);
+
+      const refEl = document.getElementById("rm-ref");
+      if (refEl !== document.activeElement) refEl.value = rmRound(RM.ref, rmDp(RM.ref));
+      document.getElementById("rm-ref-src").textContent = RM.refSrc === "example" ? "example price" : RM.refSrc;
+
+      const { m, sim } = rmDraw();
+      rmStats(m, sim);
+      rmSide(m);
+      rmSaveBar(dirty);
+    }
+
+    function rmStats(m, sim) {
+      const risk = m.S * m.qty, reward = m.T * m.qty, rr = m.T / m.S;
+      const be = m.S / (m.S + m.T) * 100;
+      const cap = rmNumOr(RM.cur["risk.max_daily_loss"], 0);
+      const stops = risk > 0 ? Math.floor(cap / risk) : 0;
+      const stat = (k, v, s, col) => `<div class="rm-stat"><div class="k">${k}</div><div class="v" ${col ? `style="color:${col}"` : ""}>${v}</div><div class="s">${s}</div></div>`;
+      document.getElementById("rm-stats").innerHTML =
+        stat("Risk per trade", rmMoney(risk), `${m.qty} × ${m.S.toFixed(rmDp(m.P))} (${(m.S / m.P * 100).toFixed(2)}%)`, "#fca5a5") +
+        stat("Reward at target", rmMoney(reward), `${m.qty} × ${m.T.toFixed(rmDp(m.P))} (${(m.T / m.P * 100).toFixed(2)}%)`, "#86efac") +
+        stat("Reward : risk", `${rr.toFixed(2)} : 1`, rr < 1 ? "target is closer than the stop" : "target vs stop distance", rr < 1 ? "#f59e0b" : null) +
+        stat("Break-even win rate", `${be.toFixed(1)}%`, "wins needed to break even, before fees") +
+        stat("Daily cap allows", `${stops} stop-out${stops === 1 ? "" : "s"}`, `before trading halts for the day`, stops < 1 ? "#ef4444" : null);
+    }
+
+    function rmSide(m) {
+      const c = RM.cur, st = RM.state || {};
+      // positions
+      const maxPos = rmNumOr(c["risk.max_open_positions"], 1), open = st.open_positions || 0;
+      document.getElementById("rm-maxpos").textContent = maxPos;
+      const held = st.positions || [];
+      document.getElementById("rm-slots").innerHTML = Array.from({ length: Math.max(maxPos, open) }, (_, i) => {
+        const p = held[i];
+        const cls = i >= maxPos ? "rm-slot used over" : (p ? "rm-slot used" : "rm-slot");
+        return `<div class="${cls}" title="${p ? esc(p.symbol + " " + p.direction + " (" + p.status + ")") : "free slot"}">${p ? esc(String(p.symbol).replace(/^[A-Z]+\./, "").slice(0, 5)) : i + 1}</div>`;
+      }).join("");
+
+      // daily loss
+      const cap = rmNumOr(c["risk.max_daily_loss"], 0), pnl = Number(st.daily_pnl || 0);
+      const used = cap > 0 ? Math.min(1, Math.max(0, -pnl) / cap) : 0;
+      document.getElementById("rm-bar-fill").style.width = `${used * 100}%`;
+      document.getElementById("rm-bar-fill").style.left = "0";
+      document.getElementById("rm-bar-stop").style.left = "calc(100% - 2px)";
+      document.getElementById("rm-pnl").innerHTML = `Today: <span style="color:${pnl >= 0 ? "var(--accent-green)" : "var(--accent-red)"}">${pnl >= 0 ? "+" : "−"}${rmMoney(Math.abs(pnl))}</span>`;
+      document.getElementById("rm-cap-label").textContent = `cap −${rmMoney(cap)}`;
+      document.getElementById("rm-halt").innerHTML = st.halted ? '<span class="badge danger">HALTED TODAY</span>' : '<span class="badge success">TRADING</span>';
+      const worst = maxPos * m.S * m.qty, note = document.getElementById("rm-cap-note");
+      if (worst > cap) {
+        note.className = "rm-note warn";
+        note.textContent = `If all ${maxPos} positions hit their stops together you'd lose about ${rmMoney(worst)}, more than the cap - the halt only stops new trades after the loss.`;
+      } else {
+        note.className = "rm-note";
+        note.textContent = `All ${maxPos} positions stopping out together ≈ ${rmMoney(worst)}, within the cap.`;
+      }
+
+      // cooldown
+      const cool = rmNumOr(c["risk.min_minutes_between_trades"], 0), span = Math.max(60, cool * 1.6);
+      const pc = v => `${v / span * 100}%`;
+      document.getElementById("rm-cool-visual").innerHTML =
+        `<div class="line"></div><div class="block" style="left:0; width:${pc(cool)}"></div>` +
+        `<div class="dot" style="left:0"></div><div class="lbl" style="left:14px">trade</div>` +
+        (cool > 0 ? `<div class="dot" style="left:${pc(cool)}; background:var(--accent-green)"></div><div class="lbl" style="left:${pc(cool)}">next allowed · ${rmFmtMinutes(cool)}</div>` : "");
+      const cools = st.cooldowns || [];
+      document.getElementById("rm-cool-list").innerHTML = (cool > 0
+        ? `After a trade in a symbol, new signals on that symbol are ignored for ${rmFmtMinutes(cool)}.`
+        : "No cooldown: a symbol can be traded again right after an exit.") +
+        (cools.length ? `<br>Cooling down now: ${cools.map(x => `<b>${esc(x.symbol)}</b> ${rmFmtMinutes(x.minutes_left)}`).join(", ")}` : "");
+
+      // size
+      const sn = document.getElementById("rm-size-note"), warns = [];
+      if (m.defQ > m.maxQ) warns.push(`Order quantity ${m.defQ} is above the max ${m.maxQ} - those orders will be rejected.`);
+      if (m.defQ % m.lot !== 0) warns.push(`Order quantity ${m.defQ} isn't a multiple of the lot size ${m.lot}.`);
+      sn.className = warns.length ? "rm-note warn" : "rm-note";
+      sn.textContent = warns.length ? warns.join(" ") : `Each order: ${m.qty} shares ≈ ${rmMoney(m.qty * m.P)} at the entry price above.`;
+    }
+
+    function rmSaveBar(dirty) {
+      const bar = document.getElementById("rm-savebar");
+      bar.classList.toggle("dirty", dirty.length > 0);
+      document.getElementById("rm-save").disabled = !dirty.length;
+      document.getElementById("rm-discard").disabled = !dirty.length;
+      document.getElementById("rm-changes").innerHTML = dirty.length
+        ? `<span>${dirty.length} unsaved change${dirty.length > 1 ? "s" : ""}:</span>` + dirty.map(k =>
+            `<span>${esc((RM.schema[k] || {}).label || k)}: ${esc(rmShow(RM.orig[k]))} → <b>${esc(rmShow(RM.cur[k]))}</b></span>`).join("")
+        : "No unsaved changes.";
+    }
+    const rmShow = v => v === null || v === undefined ? "off" : (v === true ? "on" : v === false ? "off" : String(v));
+
+    function rmDiscard() { RM_KEYS.forEach(k => { RM.cur[k] = RM.orig[k]; }); rmRenderModeInputs(); rmSync(); }
+
+    function rmConfirmSave() {
+      const dirty = rmDirty();
+      if (!dirty.length) return;
+      const scopeLabel = RM.scope === "shared" ? "all brokers (shared settings)" : `only ${RM.all.brokers[RM.scope].label || RM.scope}`;
+      document.getElementById("rm-modal-body").innerHTML =
+        `<p>Write these to <b>config.yaml</b> for <b>${esc(scopeLabel)}</b>:</p>` +
+        `<p>${dirty.map(k => `${esc((RM.schema[k] || {}).label || k)}: ${esc(rmShow(RM.orig[k]))} → <b>${esc(rmShow(RM.cur[k]))}</b>`).join("<br>")}</p>` +
+        `<p>A backup of the current file is kept. The agent uses the new limits after it's restarted.</p>`;
+      document.getElementById("rm-modal").style.display = "flex";
+      document.getElementById("rm-modal-go").disabled = false;
+      document.getElementById("rm-modal-go").focus();
+    }
+    function rmCloseModal() { document.getElementById("rm-modal").style.display = "none"; }
+
+    async function rmSave() {
+      const go = document.getElementById("rm-modal-go");
+      go.disabled = true;
+      const changes = {};
+      rmDirty().forEach(k => { changes[k] = RM.cur[k]; });
+      try {
+        const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                   body: JSON.stringify({ scope: RM.scope, changes }) });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || res.statusText);
+        rmCloseModal();
+        showToast(data.message || "Saved");
+        await rmLoad();
+      } catch (err) {
+        go.disabled = false;
+        showToast(`Not saved: ${err.message}`);
+      }
+    }
+
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape" && document.getElementById("rm-modal").style.display === "flex") rmCloseModal();
+    });
+    window.addEventListener("beforeunload", e => { if (RM.loaded && rmDirty().length) { e.preventDefault(); e.returnValue = ""; } });
+    setInterval(() => {
+      if (document.getElementById("tab-risk-model").classList.contains("active")) rmLoadState();
+    }, 10000);
+    window.addEventListener("resize", () => { if (RM.loaded) rmDraw(); });
 
     // Trigger Scan Now
     async function triggerScanNow() {
