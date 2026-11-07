@@ -169,6 +169,22 @@ def _close_time(ex: Exchange, d: date) -> time:
     return ex.early_close if (ex.early_close and early_close(ex.code, d)) else ex.close
 
 
+def session_minutes(code: str, now: datetime | None = None) -> tuple[float, float] | None:
+    """(minutes since the regular open, minutes to today's close - early
+    closes included) while the regular session is on, else None. A lunch
+    break counts as part of the session."""
+    ex = EXCHANGES[code]
+    tz = ZoneInfo(ex.tz)
+    now = (now or datetime.now(timezone.utc)).astimezone(tz)
+    d = now.date()
+    if not is_trading_day(code, d):
+        return None
+    opened, closes = _at(d, ex.open, tz), _at(d, _close_time(ex, d), tz)
+    if not (opened <= now < closes):
+        return None
+    return (now - opened).total_seconds() / 60, (closes - now).total_seconds() / 60
+
+
 def next_open(code: str, now: datetime | None = None) -> datetime:
     ex = EXCHANGES[code]
     tz = ZoneInfo(ex.tz)

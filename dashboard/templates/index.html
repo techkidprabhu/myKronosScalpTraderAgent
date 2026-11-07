@@ -1030,6 +1030,14 @@
             <div id="rm-cool-list" class="rm-note"></div>
           </div>
 
+          <div class="panel-card rm-dt-card">
+            <div class="panel-header"><div class="panel-title"><span>Day-trader rules</span></div><span id="rm-dt-badge"></span></div>
+            <div class="rm-note" style="margin:0 0 10px">From the Day Trader skill pack. Empty or unticked = the rule is off.</div>
+            <div id="rm-session" class="rm-session"></div>
+            <div class="rm-fields" id="rm-dt-fields"></div>
+            <div class="rm-note" id="rm-dt-note"></div>
+          </div>
+
           <div class="panel-card">
             <div class="panel-header"><div class="panel-title"><span>Order size & shorts</span></div></div>
             <div class="rm-fields" id="rm-size-fields"></div>
@@ -1915,6 +1923,11 @@
       "trailing_stop.use_atr", "trailing_stop.atr_multiplier",
       "risk.max_open_positions", "risk.max_daily_loss", "risk.min_minutes_between_trades",
       "default_quantity", "risk.max_stake_per_point", "risk.lot_size", "risk.allow_short",
+      // Day-trader rules (off when empty)
+      "risk.max_loss_per_trade", "risk.max_position_pct", "risk.cash_buffer_pct", "risk.min_reward_risk",
+      "risk.max_trades_per_day", "risk.daily_loss_includes_open_risk", "risk.stop_atr_multiple", "risk.atr_period",
+      "risk.target_r_multiple", "risk.min_stop_pct", "risk.no_entries_first_minutes", "risk.no_entries_last_minutes",
+      "risk.flat_by_minutes_before_close", "risk.blocked_symbols",
     ];
     const RM = { loaded: false, schema: {}, all: null, orig: {}, cur: {}, scope: "shared", dir: "BUY",
                  ref: 100, refSrc: "example", refTouched: false, state: null, drag: null, frozen: null,
@@ -1994,18 +2007,27 @@
     function rmModel() {
       const c = RM.cur, P = Math.max(0.0001, RM.ref);
       const stopPct = c["risk.stop_loss_pct"], tpPct = c["risk.take_profit_pct"];
-      const S = stopPct != null ? P * stopPct / 100 : rmNumOr(c["risk.stop_loss_points"], 1);
-      const T = tpPct != null ? P * tpPct / 100 : rmNumOr(c["risk.take_profit_points"], 2);
+      const liveAtr = RM.mode === "live" ? rmLiveAtr(rmNumOr(c["risk.atr_period"], 14)) : null;
+      const atrEst = liveAtr || P * 0.01;   // live: real ATR of the candles; example: 1% of price
+      const atrK = c["risk.stop_atr_multiple"], rMult = c["risk.target_r_multiple"];
+      let S = stopPct != null ? P * stopPct / 100 : rmNumOr(c["risk.stop_loss_points"], 1);
+      if (atrK) S = atrEst * atrK;
+      let T = tpPct != null ? P * tpPct / 100 : rmNumOr(c["risk.take_profit_points"], 2);
+      if (rMult) T = S * rMult;
       const en = !!c["trailing_stop.enabled"], atr = !!c["trailing_stop.use_atr"];
-      const atrEst = P * 0.01;   // illustrative ATR: 1% of price
       const G = rmNumOr(c["trailing_stop.trigger_points"], 0);
       const D = atr ? atrEst * rmNumOr(c["trailing_stop.atr_multiplier"], 3) : rmNumOr(c["trailing_stop.trail_distance"], 0);
       const lot = Math.max(1, rmNumOr(c["risk.lot_size"], 1));
       const maxQ = rmNumOr(c["risk.max_stake_per_point"], 1);
       const defQ = rmNumOr(c["default_quantity"], 1);
-      const qty = Math.max(0, Math.floor(Math.min(defQ, maxQ) / lot) * lot);
-      return { P, S: Math.max(S, 1e-9), T: Math.max(T, 1e-9), G, D: Math.max(D, 0), en, atr, atrEst,
-               stopPct, tpPct, qty, defQ, maxQ, lot, d: RM.dir === "BUY" ? 1 : -1 };
+      const maxLoss = c["risk.max_loss_per_trade"];
+      const caps = maxLoss ? { "max loss per trade": maxLoss / Math.max(S, 1e-9), "max quantity per position": maxQ }
+                           : { "configured quantity": defQ, "max quantity per position": maxQ };
+      const [sizedBy, raw] = Object.entries(caps).reduce((a, b) => (b[1] < a[1] ? b : a));
+      const qty = Math.max(0, Math.floor(raw / lot) * lot);
+      return { P, S: Math.max(S, 1e-9), T: Math.max(T, 1e-9), G, D: Math.max(D, 0), en, atr, atrEst, liveAtr,
+               atrK, rMult, stopPct: atrK ? null : stopPct, tpPct: rMult ? null : tpPct, qty, defQ, maxQ, lot,
+               maxLoss, sizedBy, d: RM.dir === "BUY" ? 1 : -1 };
     }
 
     // Example path in "favourable units" (u > 0 = profit), run through the
@@ -2409,7 +2431,11 @@
 
     function rmApplyDrag(u) {
       const m = rmModel(), dp = rmDp(m.P), k = RM.drag.key, c = RM.cur;
-      if (k === "target") {
+      if (k === "target" && m.rMult) {
+        c["risk.target_r_multiple"] = rmClamp("risk.target_r_multiple", rmRound(Math.max(u, m.P * 0.0005) / m.S, 2));
+      } else if (k === "stop" && m.atrK) {
+        c["risk.stop_atr_multiple"] = rmClamp("risk.stop_atr_multiple", rmRound(Math.max(-u, m.P * 0.0005) / m.atrEst, 2));
+      } else if (k === "target") {
         const T = Math.max(u, m.P * 0.0005);
         if (m.tpPct != null) c["risk.take_profit_pct"] = rmClamp("risk.take_profit_pct", rmRound(T / m.P * 100, 2));
         else c["risk.take_profit_points"] = rmClamp("risk.take_profit_points", rmRound(T, dp));
@@ -2432,12 +2458,18 @@
       const f = RM.schema[key] || {};
       const ovr = RM.scope === "shared" && (RM.all.overrides[RM.all.current] || []).includes(key)
         ? `<span class="rm-ovr">The selected broker overrides this (${esc(RM.all.values[RM.all.current][key])}) - change it under "Only ${esc(RM.all.brokers[RM.all.current].label)}"</span>` : "";
+      const ph = key === "risk.atr_period" ? 'placeholder="14"' : "";
+      if (f.type === "list") {
+        return `<label class="rm-field" data-field="${key}">${esc(label || f.label)}
+          <input type="text" class="form-control" data-key="${key}" data-list="1" placeholder="e.g. US.GME, TSLA" oninput="rmInput(this)">
+          ${help ? `<span class="rm-help">${help}</span>` : ""}${ovr}</label>`;
+      }
       if (f.type === "bool") {
         return `<div class="rm-field" data-field="${key}"><label class="rm-check"><input type="checkbox" data-key="${key}" onchange="rmInput(this)"> ${esc(label || f.label)}</label>${help ? `<span class="rm-help">${help}</span>` : ""}${ovr}</div>`;
       }
       const step = f.type === "int" ? 1 : "any";
       return `<label class="rm-field" data-field="${key}">${esc(label || f.label)}${extra}
-        <input type="number" class="form-control" data-key="${key}" step="${step}" ${f.min !== undefined ? `min="${f.min}"` : ""} ${f.max !== undefined ? `max="${f.max}"` : ""} oninput="rmInput(this)">
+        <input type="number" class="form-control" data-key="${key}" step="${step}" ${ph} ${f.min !== undefined ? `min="${f.min}"` : ""} ${f.max !== undefined ? `max="${f.max}"` : ""} oninput="rmInput(this)">
         ${help ? `<span class="rm-help">${help}</span>` : ""}${ovr}</label>`;
     }
 
@@ -2459,6 +2491,21 @@
         rmField("risk.max_daily_loss", "Stop trading for the day after losing", `${CCY} (resets at midnight exchange time)`);
       document.getElementById("rm-cool-fields").innerHTML =
         rmField("risk.min_minutes_between_trades", "Minutes between trades in one symbol", "");
+      document.getElementById("rm-dt-fields").innerHTML =
+        rmField("risk.max_loss_per_trade", "Max loss per trade", `${CCY} lost if the stop fills; sets the quantity`) +
+        rmField("risk.min_reward_risk", "Min reward:risk", "skip trades below, e.g. 1 or 2") +
+        rmField("risk.max_trades_per_day", "Max new trades per day", "") +
+        rmField("risk.daily_loss_includes_open_risk", "Daily cap counts open risk", "closed P&L + every open stop + the new trade") +
+        rmField("risk.stop_atr_multiple", "Stop = ATR ×", "replaces the stop above") +
+        rmField("risk.atr_period", "ATR period", "bars (default 14)") +
+        rmField("risk.target_r_multiple", "Target = R ×", "2 = twice the risk; replaces the target above") +
+        rmField("risk.min_stop_pct", "Min stop distance %", "refuse stops tighter than this, e.g. 0.05") +
+        rmField("risk.no_entries_first_minutes", "No entries: first N min", "after the open") +
+        rmField("risk.no_entries_last_minutes", "No entries: last N min", "before the close") +
+        rmField("risk.flat_by_minutes_before_close", "Close everything N min before close", "day-trade mode; empty = swing") +
+        rmField("risk.max_position_pct", "Max position % of account", "") +
+        rmField("risk.cash_buffer_pct", "Cash buffer %", "always left in cash") +
+        rmField("risk.blocked_symbols", "Never trade", "comma-separated");
       document.getElementById("rm-size-fields").innerHTML =
         rmField("default_quantity", "Order quantity", "Used for screener picks") +
         rmField("risk.max_stake_per_point", "Max quantity per position", "Bigger orders are rejected") +
@@ -2468,16 +2515,16 @@
     }
 
     function rmRenderModeInputs() {
-      const m = rmModel();
+      const c = RM.cur, stopPct = c["risk.stop_loss_pct"] != null, tpPct = c["risk.take_profit_pct"] != null;
       const slot = (id, key, unit) => {
         const f = RM.schema[key] || {};
         document.getElementById(id).innerHTML =
-          `<input type="number" class="form-control" data-key="${key}" step="any" ${f.min !== undefined ? `min="${f.min}"` : ""} ${f.max !== undefined ? `max="${f.max}"` : ""} oninput="rmInput(this)"><span class="rm-help">${unit}</span>`;
+          `<input type="number" class="form-control" data-key="${key}" step="any" ${f.min !== undefined ? `min="${f.min}"` : ""} ${f.max !== undefined ? `max="${f.max}"` : ""} oninput="rmInput(this)"><span class="rm-help" data-unit="${id}">${unit}</span>`;
       };
-      slot("rm-slot-stop", m.stopPct != null ? "risk.stop_loss_pct" : "risk.stop_loss_points", m.stopPct != null ? "% of entry, against the trade" : "price units from entry");
-      slot("rm-slot-target", m.tpPct != null ? "risk.take_profit_pct" : "risk.take_profit_points", m.tpPct != null ? "% of entry, in the trade's favour" : "price units from entry");
-      document.querySelector('[data-mode="stop"]').value = m.stopPct != null ? "pct" : "pts";
-      document.querySelector('[data-mode="target"]').value = m.tpPct != null ? "pct" : "pts";
+      slot("rm-slot-stop", stopPct ? "risk.stop_loss_pct" : "risk.stop_loss_points", stopPct ? "% of entry, against the trade" : "price units from entry");
+      slot("rm-slot-target", tpPct ? "risk.take_profit_pct" : "risk.take_profit_points", tpPct ? "% of entry, in the trade's favour" : "price units from entry");
+      document.querySelector('[data-mode="stop"]').value = stopPct ? "pct" : "pts";
+      document.querySelector('[data-mode="target"]').value = tpPct ? "pct" : "pts";
     }
 
     function rmSetMode(kind, mode) {
@@ -2495,9 +2542,11 @@
 
     function rmInput(el) {
       const key = el.dataset.key;
+      const f = RM.schema[key] || {};
       if (el.type === "checkbox") RM.cur[key] = el.checked;
-      else if (el.value === "") return;          // wait for a number
-      else RM.cur[key] = (RM.schema[key] || {}).type === "int" ? Math.round(Number(el.value)) : Number(el.value);
+      else if (f.type === "list") RM.cur[key] = el.value.split(/[\s,]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
+      else if (el.value === "") { if (!f.nullable) return; RM.cur[key] = null; }   // empty = rule off
+      else RM.cur[key] = f.type === "int" ? Math.round(Number(el.value)) : Number(el.value);
       rmSync();
     }
 
@@ -2518,7 +2567,8 @@
     }
 
     const rmSame = (a, b) => (a === null || a === undefined ? null : a) === (b === null || b === undefined ? null : b)
-      || (typeof a === "number" && typeof b === "number" && Math.abs(a - b) < 1e-9);
+      || (typeof a === "number" && typeof b === "number" && Math.abs(a - b) < 1e-9)
+      || ((Array.isArray(a) || Array.isArray(b)) && JSON.stringify(a || []) === JSON.stringify(b || []));
     function rmDirty() { return RM_KEYS.filter(k => !rmSame(RM.cur[k], RM.orig[k])); }
 
     // ---- sync everything from RM.cur -------------------------------------
@@ -2528,7 +2578,9 @@
       panel.querySelectorAll("input[data-key]").forEach(el => {
         if (el === document.activeElement) return;
         const v = RM.cur[el.dataset.key];
-        if (el.type === "checkbox") el.checked = !!v; else el.value = v === null || v === undefined ? "" : v;
+        if (el.type === "checkbox") el.checked = !!v;
+        else if (el.dataset.list) el.value = Array.isArray(v) ? v.join(", ") : "";
+        else el.value = v === null || v === undefined ? "" : v;
       });
       const dirty = rmDirty();
       panel.querySelectorAll(".rm-field[data-field]").forEach(f => {
@@ -2538,6 +2590,13 @@
         f.classList.toggle("changed", keys.some(x => dirty.includes(x)));
       });
       const c = RM.cur, atr = !!c["trailing_stop.use_atr"], en = !!c["trailing_stop.enabled"];
+      [["rm-slot-stop", c["risk.stop_atr_multiple"], `replaced by Stop = ATR × ${c["risk.stop_atr_multiple"]} (Day-trader rules)`],
+       ["rm-slot-target", c["risk.target_r_multiple"], `replaced by Target = ${c["risk.target_r_multiple"]}R (Day-trader rules)`]].forEach(([id, over, txt]) => {
+        const box = document.getElementById(id), help = box && box.querySelector(".rm-help");
+        if (!box) return;
+        box.style.opacity = over ? 0.5 : 1;
+        if (help) { help.dataset.orig = help.dataset.orig || help.textContent; help.textContent = over ? txt : help.dataset.orig; }
+      });
       const show = (key, on) => { const f = panel.querySelector(`.rm-field[data-field="${key}"]`); if (f) f.style.display = on ? "" : "none"; };
       show("trailing_stop.trigger_points", en); show("trailing_stop.use_atr", en);
       show("trailing_stop.trail_distance", en && !atr); show("trailing_stop.atr_multiplier", en && atr);
@@ -2563,7 +2622,7 @@
       const stops = risk > 0 ? Math.floor(cap / risk) : 0;
       const stat = (k, v, s, col) => `<div class="rm-stat"><div class="k">${k}</div><div class="v" ${col ? `style="color:${col}"` : ""}>${v}</div><div class="s">${s}</div></div>`;
       document.getElementById("rm-stats").innerHTML =
-        stat("Risk per trade", rmMoney(risk), `${m.qty} × ${m.S.toFixed(rmDp(m.P))} (${(m.S / m.P * 100).toFixed(2)}%)`, "#fca5a5") +
+        stat("Risk per trade", rmMoney(risk), `${m.qty} × ${m.S.toFixed(rmDp(m.P))} (${(m.S / m.P * 100).toFixed(2)}%)${m.maxLoss ? ` · sized by ${m.sizedBy}` : ""}`, "#fca5a5") +
         stat("Reward at target", rmMoney(reward), `${m.qty} × ${m.T.toFixed(rmDp(m.P))} (${(m.T / m.P * 100).toFixed(2)}%)`, "#86efac") +
         stat("Reward : risk", `${rr.toFixed(2)} : 1`, rr < 1 ? "target is closer than the stop" : "target vs stop distance", rr < 1 ? "#f59e0b" : null) +
         stat("Break-even win rate", `${be.toFixed(1)}%`, "wins needed to break even, before fees") +
@@ -2613,12 +2672,57 @@
         : "No cooldown: a symbol can be traded again right after an exit.") +
         (cools.length ? `<br>Cooling down now: ${cools.map(x => `<b>${esc(x.symbol)}</b> ${rmFmtMinutes(x.minutes_left)}`).join(", ")}` : "");
 
+      rmDayTrader(m);
+
       // size
       const sn = document.getElementById("rm-size-note"), warns = [];
       if (m.defQ > m.maxQ) warns.push(`Order quantity ${m.defQ} is above the max ${m.maxQ} - those orders will be rejected.`);
       if (m.defQ % m.lot !== 0) warns.push(`Order quantity ${m.defQ} isn't a multiple of the lot size ${m.lot}.`);
       sn.className = warns.length ? "rm-note warn" : "rm-note";
       sn.textContent = warns.length ? warns.join(" ") : `Each order: ${m.qty} shares ≈ ${rmMoney(m.qty * m.P)} at the entry price above.`;
+    }
+
+    function rmDayTrader(m) {
+      const c = RM.cur, st = RM.state || {};
+      const on = ["risk.max_loss_per_trade", "risk.min_reward_risk", "risk.max_trades_per_day", "risk.stop_atr_multiple",
+                  "risk.target_r_multiple", "risk.min_stop_pct", "risk.no_entries_first_minutes", "risk.no_entries_last_minutes",
+                  "risk.flat_by_minutes_before_close", "risk.max_position_pct", "risk.cash_buffer_pct"]
+        .filter(k => c[k] != null && c[k] !== 0).length
+        + (c["risk.daily_loss_includes_open_risk"] ? 1 : 0) + ((c["risk.blocked_symbols"] || []).length ? 1 : 0);
+      document.getElementById("rm-dt-badge").innerHTML = on ? `<span class="badge info">${on} ON</span>` : '<span class="badge">ALL OFF</span>';
+
+      // session timeline (minutes of the regular session)
+      const len = 390, first = rmNumOr(c["risk.no_entries_first_minutes"], 0), last = rmNumOr(c["risk.no_entries_last_minutes"], 0);
+      const flat = rmNumOr(c["risk.flat_by_minutes_before_close"], 0), stopNew = Math.max(last, flat);
+      const pc = v => `${Math.min(100, Math.max(0, v / len * 100))}%`;
+      document.getElementById("rm-session").innerHTML =
+        `<div class="rm-sess-bar">` +
+          `<div class="seg ok" style="left:${pc(first)}; width:${pc(len - first - stopNew)}"></div>` +
+          (first ? `<div class="seg no" style="left:0; width:${pc(first)}" title="no new entries"></div>` : "") +
+          (stopNew ? `<div class="seg no" style="left:${pc(len - stopNew)}; width:${pc(stopNew)}" title="no new entries"></div>` : "") +
+          (flat ? `<div class="flat" style="left:${pc(len - flat)}" title="close everything"></div>` : "") +
+        `</div><div class="rm-sess-lbl"><span>open</span><span>${first || stopNew ? `entries ${first ? `+${first}m` : "from open"} → ${stopNew ? `−${stopNew}m` : "close"}` : "entries allowed all session"}</span><span>close</span></div>` +
+        (flat ? `<div class="rm-note warn" style="margin-top:4px">Day-trade mode: the agent closes its positions ${flat} min before the close, win or lose (no overnight holds).</div>` : "");
+
+      const notes = [];
+      if (c["risk.max_trades_per_day"]) notes.push(`Today: ${st.trades_today || 0} of ${c["risk.max_trades_per_day"]} trades.`);
+      if (c["risk.daily_loss_includes_open_risk"]) notes.push(`Open risk at the stops now: ${rmMoney(st.open_risk || 0)}.`);
+      if (m.maxLoss) notes.push(`Size: ${m.qty} shares, decided by <b>${esc(m.sizedBy)}</b>${(c["risk.max_position_pct"] || c["risk.cash_buffer_pct"]) ? "; account % / cash buffer can lower it at order time" : ""}.`);
+      if (m.atrK) notes.push(`Stop ${m.atrK} × ATR ${m.liveAtr ? `(${m.atrEst.toFixed(rmDp(m.P))} on these candles)` : "(example uses 1% of price - Live market mode shows the real ATR)"}.`);
+      if (c["risk.min_reward_risk"] && m.T / m.S + 1e-9 < c["risk.min_reward_risk"]) notes.push(`<span style="color:var(--accent-red)">These levels would be refused: reward:risk ${(m.T / m.S).toFixed(2)} is below ${c["risk.min_reward_risk"]}.</span>`);
+      if (c["risk.min_stop_pct"] && m.S / m.P * 100 < c["risk.min_stop_pct"]) notes.push(`<span style="color:var(--accent-red)">These levels would be refused: the stop is tighter than ${c["risk.min_stop_pct"]}%.</span>`);
+      if (m.maxLoss && m.qty < m.lot) notes.push(`<span style="color:var(--accent-red)">Max loss ${rmMoney(m.maxLoss)} is too small for one lot at this stop - trades would be skipped.</span>`);
+      document.getElementById("rm-dt-note").innerHTML = notes.join("<br>");
+    }
+
+    function rmLiveAtr(period) {
+      const b = RM.live.bars;
+      if (!b || b.length < 2) return null;
+      const tr = b.slice(1).map((x, i) => Math.max(x.high - x.low, Math.abs(x.high - b[i].close), Math.abs(x.low - b[i].close)));
+      const n = Math.min(period, tr.length);
+      let a = tr.slice(0, n).reduce((p, v) => p + v, 0) / n;             // Wilder smoothing, like the agent
+      for (let i = n; i < tr.length; i++) a = (a * (period - 1) + tr[i]) / period;
+      return a > 0 ? a : null;
     }
 
     function rmSaveBar(dirty) {
@@ -2631,7 +2735,8 @@
             `<span>${esc((RM.schema[k] || {}).label || k)}: ${esc(rmShow(RM.orig[k]))} → <b>${esc(rmShow(RM.cur[k]))}</b></span>`).join("")
         : "No unsaved changes.";
     }
-    const rmShow = v => v === null || v === undefined ? "off" : (v === true ? "on" : v === false ? "off" : String(v));
+    const rmShow = v => v === null || v === undefined ? "off" : (v === true ? "on" : v === false ? "off"
+      : Array.isArray(v) ? (v.length ? v.join(", ") : "none") : String(v));
 
     function rmDiscard() { RM_KEYS.forEach(k => { RM.cur[k] = RM.orig[k]; }); rmRenderModeInputs(); rmSync(); }
 

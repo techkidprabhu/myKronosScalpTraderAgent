@@ -92,6 +92,29 @@ SECTIONS = [
         ("risk.allow_short", "Allow short selling", "bool", {}),
         ("risk.lot_size", "Lot size", "int", {"min": 1, "max": 100000}),
     ]},
+    {"id": "daytrader", "title": "Day-trader rules (empty / off = not used)", "danger": True, "fields": [
+        ("risk.max_loss_per_trade", "Max loss per trade (account ccy)", "float", {"min": 0.01, "nullable": True,
+         "help": "Sizes each order: quantity = this / stop distance. Empty = fixed quantity"}),
+        ("risk.max_position_pct", "Max position % of account", "float", {"min": 1, "max": 100, "nullable": True}),
+        ("risk.cash_buffer_pct", "Cash buffer % of account", "float", {"min": 0, "max": 90, "nullable": True}),
+        ("risk.min_reward_risk", "Min reward:risk", "float", {"min": 0.1, "max": 10, "nullable": True,
+         "help": "Skip trades whose target is closer than this many times the stop"}),
+        ("risk.max_trades_per_day", "Max new trades per day", "int", {"min": 1, "max": 200, "nullable": True}),
+        ("risk.daily_loss_includes_open_risk", "Daily cap counts open risk at the stops", "bool", {
+         "help": "Closed P&L + what open trades lose if every stop fills + the new trade's max loss"}),
+        ("risk.stop_atr_multiple", "Stop = ATR \u00d7", "float", {"min": 0.1, "max": 10, "nullable": True,
+         "help": "Overrides the % / price-unit stop"}),
+        ("risk.atr_period", "ATR period (bars)", "int", {"min": 2, "max": 100}),
+        ("risk.target_r_multiple", "Target = R \u00d7 stop distance", "float", {"min": 0.25, "max": 10, "nullable": True,
+         "help": "2 = 2R. Overrides the % / price-unit target"}),
+        ("risk.min_stop_pct", "Min stop distance % of price", "float", {"min": 0.001, "max": 5, "nullable": True,
+         "help": "Refuse stops tighter than this (spread and noise)"}),
+        ("risk.no_entries_first_minutes", "No entries in first N min of session", "int", {"min": 0, "max": 240, "nullable": True}),
+        ("risk.no_entries_last_minutes", "No entries in last N min of session", "int", {"min": 0, "max": 240, "nullable": True}),
+        ("risk.flat_by_minutes_before_close", "Close all agent positions N min before close", "int",
+         {"min": 1, "max": 240, "nullable": True, "help": "Day-trade mode: no overnight holds. Empty = swing (hold)"}),
+        ("risk.blocked_symbols", "Never trade these symbols", "list", {"nullable": True}),
+    ]},
     {"id": "sentiment", "title": "Market sentiment meter (display only)", "fields": [
         ("sentiment.enabled", "Show the sentiment meter", "bool", {}),
         ("sentiment.timeframe", "Candles used", "select", {"options": TIMEFRAMES,
@@ -193,4 +216,15 @@ def cross_check(cfg: dict) -> list[str]:
     lb, mb = cfg.get("lookback_bars"), ind.get("min_bars")
     if ind.get("enabled") and lb and mb and mb > lb:
         errs.append("Indicator min bars is larger than lookback bars - the filter would never run")
+    risk = cfg.get("risk", {}) or {}
+    if risk.get("stop_atr_multiple") and lb and (risk.get("atr_period") or 14) >= lb:
+        errs.append("ATR period must be smaller than lookback bars for the ATR stop")
+    if risk.get("max_loss_per_trade") and risk.get("max_daily_loss") \
+            and risk["max_loss_per_trade"] > risk["max_daily_loss"]:
+        errs.append("Max loss per trade is larger than the max daily loss - one stop-out would halt the day")
+    first, last = risk.get("no_entries_first_minutes") or 0, risk.get("no_entries_last_minutes") or 0
+    if first + max(last, risk.get("flat_by_minutes_before_close") or 0) >= 375:
+        errs.append("Entry window leaves no time to trade (NSE's session is 375 min)")
+    if risk.get("flat_by_minutes_before_close") and cfg.get("timeframe") in ("DAY", "WEEK", "MONTH"):
+        errs.append("Flat-by-close needs an intraday timeframe - on daily bars every trade would close the day it opens")
     return errs

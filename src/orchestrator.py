@@ -34,7 +34,8 @@ from src import indicator_gate
 from src.kronos_agent import KronosAgent
 from src.market import drop_unclosed_bar, is_market_open, market_timezone
 from src.patterns import scan
-from src.risk import RiskConfig, RiskManager
+from src.kronos_indicators.indicators import atr as atr_series
+from src.risk import RiskConfig, RiskManager, open_risk_at_stops
 from src.telegram_bot import TelegramReporter, esc
 from src.brokers import base_symbol, connect_with_timeout as connect_broker
 from src.moomoo_client import MoomooClient, connect_with_timeout
@@ -227,7 +228,20 @@ class SymbolWorker:
             self.reporter.report_rejected(self.symbol, signal.name, f"risk: {risk_reason}")
             return
 
-        stop_points, limit_points = self.risk_manager.bracket_distances(float(last_close))
+        plan = self._plan(float(last_close), self.quantity, df)
+        self.audit_log.log_snapshot(self.symbol, float(last_close), "risk_plan", {
+            "allowed": plan.allowed, "reason": plan.reason, "quantity": plan.quantity,
+            "sized_by": plan.sized_by, "max_loss": round(plan.max_loss, 2),
+            "reward_risk": round(plan.reward_risk, 2), **plan.details})
+        if not plan.allowed:
+            self.audit_log.log_decision(
+                self.symbol, signal.name, signal.direction, signal.strength,
+                confirmed, confidence, False, plan.reason, "rejected", details={"risk_plan": plan.details},
+            )
+            self.reporter.report_rejected(self.symbol, signal.name, f"risk: {plan.reason}")
+            return
+        quantity = plan.quantity
+        stop_points, limit_points = plan.stop_distance, plan.target_distance
         round_price = self.broker.round_price
         stop_price = round_price(last_close - stop_points if signal.direction == "BUY"
                                  else last_close + stop_points)
@@ -242,7 +256,7 @@ class SymbolWorker:
 
         try:
             entry_id = self.broker.create_entry(
-                self.symbol, signal.direction, self.quantity, entry_limit_price,
+                self.symbol, signal.direction, quantity, entry_limit_price,
             )
         except Exception as exc:
             logger.exception("Entry order failed for %s", self.symbol)
@@ -257,7 +271,7 @@ class SymbolWorker:
         # Record before anything else can fail, so the duplicate guard and
         # cooldown hold even if a later step (logging, Telegram) errors.
         self.audit_log.record_pending_entry(
-            self.symbol, signal.direction, self.quantity,
+            self.symbol, signal.direction, quantity,
             float(entry_limit_price or last_close), float(stop_price), float(limit_price),
             entry_order_id=str(entry_id),
         )
@@ -268,7 +282,9 @@ class SymbolWorker:
             confirmed, confidence, True, risk_reason, "opened",
             deal_id=str(entry_id),
             details={"status": "entry_submitted", "entry": float(entry_limit_price or last_close),
-                     "stop": float(stop_price), "target": float(limit_price), "quantity": self.quantity,
+                     "stop": float(stop_price), "target": float(limit_price), "quantity": quantity,
+                     "sized_by": plan.sized_by, "max_loss": round(plan.max_loss, 2),
+                     "reward_risk": round(plan.reward_risk, 2),
                      **({"indicators": ind_verdict.summary} if ind_verdict and ind_verdict.summary else {})},
         )
         self.audit_log.log_snapshot(
@@ -277,7 +293,7 @@ class SymbolWorker:
              "stop": float(stop_price), "target": float(limit_price)},
         )
         self.reporter.report_trade_opened(
-            self.symbol, signal.direction, self.quantity,
+            self.symbol, signal.direction, quantity,
             entry=entry_limit_price or last_close, stop=stop_price, limit=limit_price,
             pattern=signal.name, kronos_confidence=confidence,
             indicators=ind_verdict.short_text() if ind_verdict is not None else None,
@@ -331,10 +347,48 @@ class SymbolWorker:
             except Exception as exc:
                 logger.exception("Could not query broker exposure for %s", self.symbol)
                 return False, f"could not verify broker exposure: {exc}"
+        sized = bool(self.risk_manager.config.max_loss_per_trade)
         return self.risk_manager.can_trade(
-            self.symbol, self.quantity, active_count,
+            self.symbol, None if sized else self.quantity, active_count,
             direction=direction, has_position=has_position,
+            session_minutes=self._session_minutes(),
         )
+
+    def _session_minutes(self):
+        """(minutes since open, minutes to close) of today's regular session."""
+        try:
+            return cal.session_minutes(cal.exchange_for_market(self.market))
+        except Exception:
+            logger.exception("Session clock unavailable for %s", self.symbol)
+            return None
+
+    def _atr(self, df: pd.DataFrame | None) -> float | None:
+        cfg = self.risk_manager.config
+        if not cfg.stop_atr_multiple:
+            return None
+        try:
+            if df is None:
+                df = drop_unclosed_bar(bars_to_df(self.broker.get_historical_bars(
+                    self.symbol, self.timeframe, max(self.lookback_bars, cfg.atr_period + 5))), self.timeframe)
+            value = float(atr_series(df, cfg.atr_period).iloc[-1])
+            return value if value == value and value > 0 else None
+        except Exception:
+            logger.exception("ATR unavailable for %s", self.symbol)
+            return None
+
+    def _plan(self, price: float, quantity: int, df: pd.DataFrame | None = None):
+        """Size the trade and run the trade-level risk checks (risk.plan_entry)."""
+        cfg = self.risk_manager.config
+        account = None
+        if cfg.max_position_pct or cfg.cash_buffer_pct:
+            try:
+                account = self.broker.get_account_summary()
+            except Exception:
+                logger.exception("Account summary unavailable for sizing %s", self.symbol)
+        open_risk = open_risk_at_stops(self.audit_log.get_active_positions()) \
+            if cfg.daily_loss_includes_open_risk else 0.0
+        return self.risk_manager.plan_entry(price, quantity, atr=self._atr(df),
+                                            account=account, open_risk=open_risk)
 
     # ------------------------------------------------------------------
     # Position monitor (fast cadence, independent of the bar scan)
@@ -354,7 +408,7 @@ class SymbolWorker:
             raise RuntimeError(f"the broker already shows a holding or working order in {self.symbol}")
         price = float(self.broker.get_current_price(self.symbol))
         round_price = self.broker.round_price
-        stop_points, limit_points = self.risk_manager.bracket_distances(price)
+        stop_points, limit_points = self.risk_manager.bracket_distances(price, self._atr(None))
         sign = 1 if direction == "BUY" else -1
         stop_price = round_price(price - sign * stop_points)
         limit_price = round_price(price + sign * limit_points)
@@ -445,7 +499,14 @@ class SymbolWorker:
         # Anchor the bracket to the actual fill, not the signal bar's close:
         # a marketable limit (or a market order) can fill well away from it,
         # which would otherwise put a BUY's stop above the fill price.
-        stop_points, limit_points = self.risk_manager.bracket_distances(float(fill_price))
+        if self.risk_manager.config.plans_distances:
+            # ATR / R-multiple brackets were sized at signal time: keep those
+            # distances (the bars' ATR isn't re-read at the fill).
+            stop_points = abs(float(pos["entry_price"]) - float(pos["initial_stop"]))
+            limit_points = abs(float(pos["target"]) - float(pos["entry_price"])) if pos.get("target") is not None \
+                else self.risk_manager.bracket_distances(float(fill_price))[1]
+        else:
+            stop_points, limit_points = self.risk_manager.bracket_distances(float(fill_price))
         sign = 1 if pos["direction"] == "BUY" else -1
         stop_price = self.broker.round_price(fill_price - sign * stop_points)
         target_price = self.broker.round_price(fill_price + sign * limit_points)
@@ -1137,6 +1198,36 @@ class Orchestrator:
             self._check_unmanaged(now)
 
         self.process_manual_orders()
+        self.flat_by_close()
+
+    def flat_by_close(self):
+        """Day-trade mode: in the last N minutes of the session, close every
+        position the agent manages and cancel unfilled entries, win or lose.
+        Holdings the agent doesn't manage are left alone."""
+        minutes = self.risk_manager.config.flat_by_minutes_before_close
+        if not minutes:
+            return
+        try:
+            mins = cal.session_minutes(cal.exchange_for_market(self.broker.market))
+        except Exception:
+            logger.exception("Session clock unavailable - flat-by-close skipped")
+            return
+        if mins is None or mins[1] > minutes:
+            return
+        for pos in self.audit_log.get_active_positions():
+            worker = self._worker_for(pos["symbol"])
+            try:
+                if pos["status"] == "pending_entry":
+                    if pos.get("entry_order_id"):
+                        self.broker.cancel_order(pos["entry_order_id"])
+                        self.audit_log.log_snapshot(pos["symbol"], None, "flat_by_cancel_entry", {})
+                    continue
+                price = float(self.broker.get_current_price(pos["symbol"]))
+                logger.info("%s: flat by close (%.0f min left) - closing %s %g",
+                            pos["symbol"], mins[1], pos["direction"], pos["quantity"])
+                worker._software_exit(pos, "flat_by_close", price)
+            except Exception:
+                logger.exception("Flat-by-close failed for %s", pos["symbol"])
 
     def _worker_for(self, symbol: str) -> SymbolWorker:
         """Existing worker for this symbol (matched with or without the
