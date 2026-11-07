@@ -15,6 +15,17 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added
+- **Audit trail prices**: new "Price at Decision -> Now" column on the
+  Decision & Audit Log screen. Shows the entry price for opened orders (or
+  the closed-bar price the agent evaluated for rejected signals), the live
+  price now, and the % move in the signal's direction ("with" / "against
+  signal").
+
+### Changed
+- Live quotes are cached per symbol for 3 s and shared by the Positions
+  table and the audit trail, so the two don't make separate broker calls.
+
 ## [1.0.0] - 2026-11-07
 
 First version under Git. Everything below was built before the project

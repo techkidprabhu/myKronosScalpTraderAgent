@@ -666,6 +666,49 @@ def run_forecast():
         _kronos_lock.release()
 
 
+def _decision_price(cur, item: dict):
+    """Price the agent acted on: the order's entry price for an opened
+    trade, otherwise the closed-bar price it snapshotted while evaluating
+    the signal (the latest snapshot for the symbol at or just before the
+    decision)."""
+    details = item.get("details")
+    if isinstance(details, dict) and details.get("entry") is not None:
+        try:
+            return float(details["entry"])
+        except (TypeError, ValueError):
+            pass
+    row = cur.execute(
+        "SELECT price FROM snapshots WHERE symbol = ? AND price IS NOT NULL "
+        "AND ts <= ? AND ts >= ? ORDER BY ts DESC LIMIT 1",
+        (item["epic"], item["ts"] + 1, item["ts"] - 3600),
+    ).fetchone()
+    return float(row[0]) if row else None
+
+
+def _attach_current_prices(decisions: list[dict]):
+    """Live last price per symbol, plus the move since the decision in the
+    signal's direction (positive = the market went the way the signal said)."""
+    client = None
+    try:
+        client = get_broker()
+    except Exception:
+        pass
+    prices = {}
+    if client is not None and decisions:
+        try:
+            prices = _live_prices(client, [d["epic"] for d in decisions])
+        except Exception:
+            logger.warning("Could not price the audit trail", exc_info=True)
+    for d in decisions:
+        now = prices.get(base_symbol(d["epic"]))
+        d["current_price"] = now
+        then = d.get("decision_price")
+        d["move_pct"] = None
+        if now is not None and then:
+            sign = -1 if d.get("pattern_direction") == "SELL" else 1
+            d["move_pct"] = round(sign * (now - then) / then * 100, 2)
+
+
 @app.route("/api/decisions", methods=["GET"])
 def get_decisions():
     limit = _int_param(request.args, "limit", 50, 1, 500)
@@ -691,8 +734,10 @@ def get_decisions():
                     item["details"] = json.loads(item["details"])
                 except Exception:
                     pass
+            item["decision_price"] = _decision_price(cur, item)
             results.append(item)
         conn.close()
+        _attach_current_prices(results)
         return jsonify({"decisions": results})
     except Exception as exc:
         return jsonify({"decisions": [], "error": str(exc)})
@@ -749,7 +794,7 @@ def _broker_snapshot(client):
         return positions, orders
 
 
-_quote_cache: dict = {}    # broker name -> {"ts", "key", "data"}
+_quote_cache: dict = {}    # broker name -> {base symbol: (fetched_at, price)}
 QUOTE_CACHE_SECONDS = 3
 
 
@@ -759,27 +804,32 @@ def _live_prices(client, symbols: list[str]) -> dict:
     The position query returns the price the broker last stamped on the
     holding - with moomoo that's OpenD's cached account data, which can lag
     the tape by a minute or more. The Live Terminal reads the quote feed, so
-    the positions table does too: one snapshot call for every held symbol."""
+    the positions table and the audit trail do too. Prices are cached per
+    symbol for a few seconds, so both tables share one quote call."""
     symbols = sorted({s for s in symbols if s})
     if not symbols:
         return {}
+    now = time.time()
     with _broker_cache_lock:
-        now = time.time()
-        cache = _quote_cache.setdefault(current_spec().name, {"ts": 0.0, "key": None, "data": {}})
-        if cache["key"] == symbols and now - cache["ts"] < QUOTE_CACHE_SECONDS:
-            return cache["data"]
+        cache = _quote_cache.setdefault(current_spec().name, {})
+        prices = {base_symbol(s): cache[base_symbol(s)][1] for s in symbols
+                  if base_symbol(s) in cache and now - cache[base_symbol(s)][0] < QUOTE_CACHE_SECONDS}
+    stale = [s for s in symbols if base_symbol(s) not in prices]
+    if not stale:
+        return prices
     try:
-        df = client.get_snapshots(symbols)
-        prices = {}
+        df = client.get_snapshots(stale)
+        fetched = {}
         for _, r in df.iterrows():
             price = r.get("last_price")
             if price is not None and price == price and float(price) > 0:
-                prices[base_symbol(str(r["code"]))] = float(price)
+                fetched[base_symbol(str(r["code"]))] = float(price)
     except Exception:
-        logger.warning("Live quote snapshot failed - showing broker position prices", exc_info=True)
-        return {}
+        logger.warning("Live quote snapshot failed - showing last known prices", exc_info=True)
+        return prices
     with _broker_cache_lock:
-        cache.update(ts=time.time(), key=symbols, data=prices)
+        cache.update({k: (time.time(), v) for k, v in fetched.items()})
+    prices.update(fetched)
     return prices
 
 
