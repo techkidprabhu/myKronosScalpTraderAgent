@@ -2100,7 +2100,7 @@
         parts.push(`<rect x="${tx}" y="${ty}" width="${bw}" height="24" rx="5" fill="rgba(15,23,42,0.94)" stroke="${col}"/>`);
         parts.push(`<text x="${tx + 9}" y="${ty + 16}" font-size="11" fill="${col}">${label}</text>`);
       }
-      if (m.en && m.G < m.T && m.D > m.G) parts.push(`<text x="${x0 + 8}" y="${yBot - 24}" font-size="11" fill="#f59e0b">Trail distance (${m.D.toFixed(dp)}) is wider than the trigger (${m.G.toFixed(dp)}): a trailed exit can still close at a loss.</text>`);
+      if (m.en && m.G < m.T && m.D > m.G) parts.push(`<text x="${x0 + 8}" y="${yTop + 14}" font-size="11" fill="#f59e0b">Trail ${m.D.toFixed(dp)} is wider than the trigger ${m.G.toFixed(dp)} - a trailed exit can still lose.</text>`);
       if (m.en && m.G >= m.T) parts.push(`<text x="${x0 + 8}" y="${yTop + 14}" font-size="11" fill="#f59e0b">Trailing never starts: the trigger is at or beyond the take profit.</text>`);
       if (RM.dir === "SELL" && !RM.cur["risk.allow_short"]) parts.push(`<text x="${x0 + 8}" y="${yBot - 8}" font-size="11.5" fill="#f59e0b">Shorts are off - the agent rejects SELL signals. Turn on "Allow short selling" to trade this.</text>`);
       parts.push(`<text x="${x0}" y="${H - 6}" font-size="10" fill="#64748b">Example path for ${m.qty} shares - illustrative, not a forecast${m.atr ? "; ATR shown as 1% of price" : ""}</text>`);
