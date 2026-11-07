@@ -357,11 +357,12 @@
                 <th>Kronos Confirmed</th>
                 <th>Kronos Confidence</th>
                 <th>Action Taken</th>
+                <th title="Price when the agent decided (entry price for opened orders) and the live price now. The % is the move in the signal's direction: green = price went the way the signal said.">Price at Decision → Now</th>
                 <th>Details</th>
               </tr>
             </thead>
             <tbody id="decisions-table-body">
-              <tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:24px;">Loading decisions log...</td></tr>
+              <tr><td colspan="10" style="text-align:center; color:var(--text-muted); padding:24px;">Loading decisions log...</td></tr>
             </tbody>
           </table>
         </div>
@@ -1548,6 +1549,22 @@
       }
     }
 
+    function decisionPriceCell(d) {
+      const then = d.decision_price, now = d.current_price;
+      if (then == null && now == null) return '<span style="color:var(--text-muted);">—</span>';
+      const nowHtml = now == null
+        ? '<span style="color:var(--text-muted);" title="No live quote (broker offline or no quote rights)">—</span>'
+        : `${fmtPrice(now)}<span class="live-dot" title="Live quote"></span>`;
+      let move = "";
+      if (d.move_pct != null) {
+        const good = d.move_pct >= 0;
+        move = `<div style="font-size:11px; color:${good ? 'var(--accent-green)' : 'var(--accent-red)'};"
+                     title="Move since the decision, in the ${esc(d.pattern_direction || '')} signal's direction">
+                  ${d.move_pct > 0 ? '+' : ''}${d.move_pct.toFixed(2)}% ${good ? 'with' : 'against'} signal</div>`;
+      }
+      return `<span class="mono" style="white-space:nowrap;">${fmtPrice(then)} → ${nowHtml}</span>${move}`;
+    }
+
     function renderDecisionsTable() {
       const tbody = document.getElementById("decisions-table-body");
       const search = (document.getElementById("decision-search").value || "").toLowerCase();
@@ -1557,7 +1574,7 @@
       });
 
       if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:20px;">No decisions logged yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:var(--text-muted); padding:20px;">No decisions logged yet.</td></tr>`;
         return;
       }
 
@@ -1581,6 +1598,7 @@
             <td>${confirmedBadge}</td>
             <td class="mono">${confStr}</td>
             <td>${actionBadge}</td>
+            <td>${decisionPriceCell(d)}</td>
             <td class="mono" style="font-size:11px; color:var(--text-muted);">${esc(d.deal_id ? 'Deal: ' + d.deal_id : (d.risk_reason || 'Confidence low'))}</td>
           </tr>
         `;
