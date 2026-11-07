@@ -16,6 +16,12 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Risk Model - Live market graph**: switch the trade graph from the
+  example path to real candles for any watched or held symbol, with the
+  live quote updating every 3 s. For a symbol you hold it shows your actual
+  entry, live P&L, the stop / target the agent is really using and how far
+  price is from each; otherwise it shows where your settings would place a
+  long or short entered at the live price. Levels stay draggable.
 - **Risk Model screen** (new tab): an interactive diagram of one trade -
   entry, stop loss, take profit, trailing-stop trigger and trail distance on
   an example price path (long or short), using the same trailing logic as
@@ -32,6 +38,10 @@ that heading to the new version and date, and tag the commit
   the closed-bar price the agent evaluated for rejected signals), the live
   price now, and the % move in the signal's direction ("with" / "against
   signal").
+
+### Fixed
+- Risk Model example graph: shaded risk / reward zones were not drawn for
+  short trades (negative SVG height).
 
 ### Changed
 - Live quotes are cached per symbol for 3 s and shared by the Positions
