@@ -8,6 +8,7 @@ import sqlite3
 import sys
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -1290,6 +1291,64 @@ def _get_path(cfg: dict, key: str):
             return None, False
         cur = cur[part]
     return cur, True
+
+
+@app.route("/api/risk_state", methods=["GET"])
+def get_risk_state():
+    """Today's live risk state for the Risk Model screen: the agent's
+    persisted daily P&L / halt flag / cooldowns (read-only - the agent owns
+    them), its open + pending positions, and optionally a live reference
+    price for drawing the trade model."""
+    cfg = load_config()
+    risk_cfg = cfg.get("risk", {}) or {}
+    state, active = {}, []
+    try:
+        conn = get_db()
+        row = conn.execute("SELECT value FROM kv WHERE key = 'risk_state'").fetchone()
+        state = json.loads(row[0]) if row else {}
+        active = [dict(r) for r in conn.execute(
+            "SELECT symbol, direction, status FROM positions WHERE status IN ('pending_entry', 'open')")]
+        conn.close()
+    except (sqlite3.Error, ValueError):
+        pass
+
+    # A stale day's numbers are reset by the agent at its next check;
+    # show them as zero so the gauge doesn't claim yesterday's loss.
+    today = None
+    try:
+        today = datetime.now(market_timezone(_spec_market(current_spec()))).date().isoformat()
+    except Exception:
+        pass
+    stale = bool(today and state.get("trading_day") and state["trading_day"] != today)
+    cooldown_min = float(risk_cfg.get("min_minutes_between_trades") or 0)
+    now = time.time()
+    cooldowns = []
+    for sym, ts in (state.get("last_trade_time") or {}).items():
+        left = cooldown_min - (now - float(ts)) / 60
+        if left > 0:
+            cooldowns.append({"symbol": sym, "minutes_left": round(left, 1)})
+    cooldowns.sort(key=lambda c: c["minutes_left"])
+
+    reference = None
+    symbol = request.args.get("symbol")
+    if symbol:
+        try:
+            client = get_broker()
+            if client is not None:
+                reference = _live_prices(client, [symbol]).get(base_symbol(symbol))
+        except Exception:
+            logger.warning("Risk model: no reference price for %s", symbol, exc_info=True)
+
+    return jsonify({
+        "daily_pnl": 0.0 if stale else float(state.get("daily_pnl") or 0.0),
+        "halted": False if stale else bool(state.get("trading_halted")),
+        "trading_day": today or state.get("trading_day"),
+        "open_positions": len(active),
+        "positions": active,
+        "cooldowns": cooldowns,
+        "reference_price": reference,
+        "symbol": symbol,
+    })
 
 
 @app.route("/api/settings", methods=["GET", "POST"])

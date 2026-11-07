@@ -16,6 +16,17 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Risk Model screen** (new tab): an interactive diagram of one trade -
+  entry, stop loss, take profit, trailing-stop trigger and trail distance on
+  an example price path (long or short), using the same trailing logic as
+  the agent. Drag a level or type a value to edit it. Shows risk and reward
+  per trade, reward:risk, break-even win rate and how many stop-outs the
+  daily cap allows, plus account limits: open-position slots (live), daily
+  loss cap with today's P&L, per-symbol cooldown with symbols cooling down
+  now, and order size / lot size / shorts. Saves through the Settings API
+  (validated, comments kept, backup made) to shared or per-broker settings.
+- `GET /api/risk_state`: today's daily P&L, halt flag, open positions and
+  cooldowns from the agent's own records (read-only).
 - **Audit trail prices**: new "Price at Decision -> Now" column on the
   Decision & Audit Log screen. Shows the entry price for opened orders (or
   the closed-bar price the agent evaluated for rejected signals), the live
