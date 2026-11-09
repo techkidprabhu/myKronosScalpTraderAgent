@@ -58,7 +58,11 @@
   <!-- Navigation Bar -->
   <nav class="nav-bar">
     <div class="tabs-list">
-      <button class="tab-btn active" onclick="switchTab('terminal')">
+      <button class="tab-btn active" onclick="switchTab('command-center')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+        Command Center <span class="cc-live-dot" id="cc-tab-dot" title="Live connection"></span>
+      </button>
+      <button class="tab-btn" onclick="switchTab('terminal')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
         Live Terminal
       </button>
@@ -188,7 +192,87 @@
     </div>
 
     <!-- TAB 1: TERMINAL -->
-    <div id="tab-terminal" class="tab-panel active">
+    <!-- TAB 0: COMMAND CENTER -->
+    <div id="tab-command-center" class="tab-panel active">
+      <section class="cc-strip" aria-label="Market session">
+        <div class="cc-clock">
+          <span class="cc-label" id="cc-exchange">Exchange</span>
+          <span class="cc-label">Today's session</span>
+        </div>
+        <div class="cc-session">
+          <div class="cc-session-top"><span id="cc-open-lbl">open</span><b id="cc-session-left">—</b><span id="cc-close-lbl">close</span></div>
+          <div class="cc-session-bar" id="cc-session-bar"></div>
+          <div class="cc-session-legend" id="cc-session-legend"></div>
+        </div>
+        <div class="cc-live" id="cc-live"><span class="cc-live-dot"></span><span id="cc-live-text">Connecting…</span></div>
+      </section>
+
+      <section class="cc-kpis" aria-label="Key figures">
+        <div class="cc-tile">
+          <div class="cc-tile-head"><span>Today's P&amp;L <span class="cc-ccy"></span></span><span id="cc-today-sub" class="cc-muted"></span></div>
+          <div class="cc-big" id="cc-today">—</div>
+          <div class="cc-muted" id="cc-today-split">realized — · open —</div>
+        </div>
+        <div class="cc-tile">
+          <div class="cc-tile-head"><span>30-day P&amp;L <span class="cc-ccy"></span></span><span id="cc-30d-n" class="cc-muted"></span></div>
+          <div class="cc-big" id="cc-30d">—</div>
+          <svg class="cc-spark" viewBox="0 0 200 44" preserveAspectRatio="none" aria-hidden="true">
+            <path id="cc-spark-area" d=""></path><path id="cc-spark-line" d=""></path>
+          </svg>
+        </div>
+        <div class="cc-tile cc-tile-row">
+          <svg width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Win rate" id="cc-ring">
+            <circle cx="32" cy="32" r="26" class="cc-ring-bg"></circle>
+            <circle cx="32" cy="32" r="26" class="cc-ring-fg" id="cc-ring-fg" stroke-dasharray="0 163.4" transform="rotate(-90 32 32)"></circle>
+          </svg>
+          <div>
+            <div class="cc-tile-head"><span>Win rate · 30 days</span></div>
+            <div class="cc-big" id="cc-win">—</div>
+            <div class="cc-muted" id="cc-win-sub"></div>
+          </div>
+        </div>
+        <div class="cc-tile">
+          <div class="cc-tile-head"><span>Trades today</span><span id="cc-halt"></span></div>
+          <div class="cc-big"><span id="cc-trades">0</span> <span class="cc-of" id="cc-trades-of"></span></div>
+          <div class="cc-segs" id="cc-trade-segs"></div>
+          <div class="cc-muted" id="cc-pos-count"></div>
+        </div>
+        <div class="cc-tile">
+          <div class="cc-tile-head"><span>Risk at stops vs daily cap</span><span class="cc-muted" id="cc-cap"></span></div>
+          <div class="cc-big cc-amber"><span id="cc-risk-pct">0</span>%</div>
+          <div class="cc-bar"><div class="cc-bar-fill" id="cc-risk-bar"></div></div>
+          <div class="cc-muted" id="cc-risk-sub"></div>
+        </div>
+        <div class="cc-tile">
+          <div class="cc-tile-head"><span>Account equity <span class="cc-ccy"></span></span><span class="cc-muted" id="cc-acct-sub"></span></div>
+          <div class="cc-big" id="cc-equity">—</div>
+          <div class="cc-split" id="cc-split"><div></div><div></div></div>
+          <div class="cc-muted" id="cc-cash"></div>
+        </div>
+      </section>
+
+      <section class="cc-card" aria-label="Agent pipeline today">
+        <div class="cc-card-head">
+          <h2>What the agent did today</h2>
+          <span class="cc-muted">Signals flowing through each gate · counts since midnight exchange time</span>
+        </div>
+        <div class="cc-pipe" id="cc-pipe"></div>
+        <div class="cc-reasons" id="cc-reasons"></div>
+      </section>
+
+      <div class="cc-row">
+        <section class="cc-card cc-grow" aria-label="Open positions">
+          <div class="cc-card-head"><h2>Open positions</h2><button class="cc-link" type="button" onclick="switchTab('positions')">All positions →</button></div>
+          <div id="cc-positions" class="cc-positions"><div class="cc-empty">No open positions.</div></div>
+        </section>
+        <section class="cc-card cc-grow" aria-label="Activity">
+          <div class="cc-card-head"><h2>Activity</h2><span class="cc-muted">newest first</span></div>
+          <ol id="cc-activity" class="cc-activity"><li class="cc-empty">Nothing yet today.</li></ol>
+        </section>
+      </div>
+    </div>
+
+    <div id="tab-terminal" class="tab-panel">
       <div class="chart-pipeline-grid">
         <!-- Candlestick & Forecast Chart Card -->
         <div class="panel-card chart-card" id="chart-card">
@@ -1728,12 +1812,25 @@
       missing_at_broker: '<span class="badge warning" title="Agent thinks this is open but the broker shows no holding">NOT AT BROKER</span>',
     };
 
-    async function loadPositions() {
+    async function loadPositions(force) {
+      if (LIVE.connected && !force) return;          // the live stream keeps it current
       if (positionsInFlight) return;
       positionsInFlight = true;
       try {
         const res = await fetch("/api/positions", { cache: "no-store" });
         const data = await res.json();
+        LIVE.positions = data;
+        renderPositions(data);
+        renderCommandCenter();
+      } catch (err) {
+        console.error("Failed to load positions:", err);
+      } finally {
+        positionsInFlight = false;
+      }
+    }
+
+    function renderPositions(data) {
+      try {
         const positions = data.positions || [];
         const orders = data.orders || [];
         const held = positions.filter(p => p.state !== "pending_entry" && p.state !== "missing_at_broker");
@@ -1813,9 +1910,7 @@
         if (!symEl.value && document.activeElement !== symEl && activeSymbol) symEl.placeholder = activeSymbol;
         renderManualOrders(data.manual_orders || []);
       } catch (err) {
-        console.error("Failed to load positions:", err);
-      } finally {
-        positionsInFlight = false;
+        console.error("Failed to render positions:", err);
       }
     }
 
@@ -1881,7 +1976,7 @@
         if (!res.ok) throw new Error(data.error || res.statusText);
         showToast(data.message || "Order queued");
         closeManualConfirm();
-        loadPositions();
+        loadPositions(true);
       } catch (err) {
         go.disabled = false;
         showToast(`Order not queued: ${err.message}`);
@@ -2782,6 +2877,288 @@
     }, 10000);
     window.addEventListener("resize", () => { if (RM.loaded) rmDraw(); });
 
+    // ================= Command Center + live stream =================
+    // One server-sent-event connection (/api/stream) pushes the overview and
+    // positions the moment they change. If it drops, the page falls back to
+    // polling until EventSource reconnects by itself.
+    const LIVE = { es: null, connected: false, overview: null, positions: null, seen: null, lastMsg: 0, started: false };
+
+    function startLiveStream() {
+      if (!window.EventSource || LIVE.es) return;
+      const url = "/api/stream" + (currentBroker ? "?broker=" + encodeURIComponent(currentBroker) : "");
+      const es = new EventSource(url);
+      LIVE.es = es;
+      es.onopen = () => { LIVE.connected = true; ccLiveBadge(); };
+      es.onerror = () => { LIVE.connected = false; ccLiveBadge(); };
+      es.addEventListener("overview", e => {
+        LIVE.lastMsg = Date.now(); LIVE.connected = true;
+        try { LIVE.overview = JSON.parse(e.data); } catch (err) { return; }
+        renderCommandCenter();
+      });
+      es.addEventListener("positions", e => {
+        LIVE.lastMsg = Date.now(); LIVE.connected = true;
+        let data;
+        try { data = JSON.parse(e.data); } catch (err) { return; }
+        LIVE.positions = data;
+        renderPositions(data);
+        renderCommandCenter();
+      });
+    }
+
+    async function pollOverview() {
+      if (LIVE.connected) return;
+      try {
+        LIVE.overview = await (await fetch("/api/overview", { cache: "no-store" })).json();
+        renderCommandCenter();
+      } catch (err) { console.warn("overview", err); }
+    }
+
+    function ccLiveBadge() {
+      const on = LIVE.connected;
+      document.querySelectorAll("#cc-live .cc-live-dot, #cc-tab-dot").forEach(d => {
+        d.classList.toggle("on", on); d.classList.toggle("poll", !on && autoRefresh);
+      });
+      const ago = LIVE.lastMsg ? Math.round((Date.now() - LIVE.lastMsg) / 1000) : null;
+      document.getElementById("cc-live-text").textContent = on
+        ? `Live${ago !== null ? ` · last change ${ago < 2 ? "just now" : ago + "s ago"}` : ""}`
+        : (autoRefresh ? "Reconnecting · polling meanwhile" : "Paused");
+    }
+
+    // Count a number up/down to its new value; flash green/red on change.
+    function ccTween(el, to, fmt, flash = true) {
+      if (!el || to === null || to === undefined || isNaN(to)) { if (el) el.textContent = "—"; return; }
+      const from = el._v === undefined ? 0 : el._v;
+      el._v = to;
+      if (flash && el._shown && Math.abs(to - from) > 1e-9) {
+        el.classList.remove("flash-up", "flash-down"); void el.offsetWidth;
+        el.classList.add(to > from ? "flash-up" : "flash-down");
+      }
+      el._shown = true;
+      const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduce || from === to) { el.textContent = fmt(to); return; }
+      const t0 = performance.now(), dur = 900;
+      const step = now => {
+        if (el._v !== to) return;                       // a newer value took over
+        const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+        el.textContent = fmt(from + (to - from) * e);
+        if (k < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+    const ccMoney = (v, sign = true) => `${sign ? (v >= 0 ? "+" : "−") : ""}${CCY} ${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    // Big tile figures: no currency code (it's in the tile title), no decimals past 10,000.
+    const ccBig = (v, sign = true) => `${sign ? (v > 0 ? "+" : v < 0 ? "−" : "") : ""}${Math.abs(v).toLocaleString(undefined,
+      Math.abs(v) >= 10000 ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const ccSetSign = (el, v) => { el.classList.toggle("cc-pos", v > 0); el.classList.toggle("cc-neg", v < 0); };
+
+    function renderCommandCenter() {
+      const o = LIVE.overview;
+      if (!o) return;
+      ccLiveBadge();
+      const r = o.results || {}, risk = o.risk || {}, pos = (LIVE.positions && LIVE.positions.positions) || [];
+      document.querySelectorAll(".cc-ccy").forEach(e => { e.textContent = `· ${CCY}`; });
+
+      // today's P&L = closed today + open positions marked to market
+      const open = pos.reduce((a, p) => a + (Number(p.unrealized_pnl) || 0), 0);
+      const today = (r.realized_today || 0) + open;
+      const tEl = document.getElementById("cc-today");
+      ccTween(tEl, today, v => ccBig(v)); ccSetSign(tEl, today);
+      document.getElementById("cc-today-split").textContent =
+        `closed ${ccMoney(r.realized_today || 0)} · open ${ccMoney(open)}`;
+      document.getElementById("cc-today-sub").textContent = `${r.closed_today || 0} closed today`;
+
+      const pEl = document.getElementById("cc-30d");
+      ccTween(pEl, r.pnl_30d || 0, v => ccBig(v)); ccSetSign(pEl, r.pnl_30d || 0);
+      document.getElementById("cc-30d-n").textContent = `${r.trades_30d || 0} trades`;
+      const curve = [0, ...(r.curve_30d || [])];
+      if (curve.length > 1) {
+        const lo = Math.min(...curve), hi = Math.max(...curve), span = hi - lo || 1;
+        const line = curve.map((v, i) => `${i ? "L" : "M"}${(i / (curve.length - 1) * 200).toFixed(1)} ${(40 - (v - lo) / span * 36).toFixed(1)}`).join(" ");
+        const ln = document.getElementById("cc-spark-line");
+        if (ln.getAttribute("d") !== line) { ln.setAttribute("d", line); document.getElementById("cc-spark-area").setAttribute("d", line + " L200 44 L0 44 Z"); }
+      }
+
+      const wr = r.win_rate_30d;
+      ccTween(document.getElementById("cc-win"), wr, v => `${v.toFixed(0)}%`, false);
+      document.getElementById("cc-ring-fg").setAttribute("stroke-dasharray", `${((wr || 0) / 100 * 163.4).toFixed(1)} 163.4`);
+      document.getElementById("cc-ring").setAttribute("aria-label", wr === null ? "No closed trades yet" : `Win rate ${wr}%`);
+      document.getElementById("cc-win-sub").textContent = r.trades_30d
+        ? `${r.wins_30d} wins · ${r.losses_30d} losses${r.profit_factor ? ` · profit factor ${r.profit_factor}` : ""}`
+        : "No closed trades in 30 days";
+
+      const n = risk.trades_today || 0, lim = risk.max_trades_per_day;
+      document.getElementById("cc-trades").textContent = n;
+      document.getElementById("cc-trades-of").textContent = lim ? `of ${lim} allowed` : "no daily limit";
+      const segs = Math.max(lim || 0, n, 1);
+      document.getElementById("cc-trade-segs").innerHTML = lim
+        ? Array.from({ length: segs }, (_, i) => `<span class="${i < n ? (i >= lim ? "over" : "used") : ""}"></span>`).join("") : "";
+      document.getElementById("cc-pos-count").textContent =
+        `${risk.open_positions || 0} of ${risk.max_open_positions || "?"} position slots in use`;
+      document.getElementById("cc-halt").innerHTML = risk.halted ? '<span class="badge danger">HALTED</span>' : "";
+
+      const cap = Number(risk.max_daily_loss) || 0, used = Math.max(0, -(r.realized_today || 0)) + (risk.open_risk || 0);
+      const pct = cap ? Math.min(100, used / cap * 100) : 0;
+      ccTween(document.getElementById("cc-risk-pct"), pct, v => v.toFixed(0), false);
+      document.getElementById("cc-risk-bar").style.width = `${pct}%`;
+      document.getElementById("cc-cap").textContent = cap ? `cap ${CCY} ${cap}` : "";
+      document.getElementById("cc-risk-sub").textContent =
+        `${ccMoney(risk.open_risk || 0, false)} at the stops + ${ccMoney(Math.max(0, -(r.realized_today || 0)), false)} lost today`;
+
+      const a = o.account;
+      if (a && a.total_assets) {
+        ccTween(document.getElementById("cc-equity"), Number(a.total_assets), v => ccBig(v, false));
+        const cashPct = Math.max(0, Math.min(100, (Number(a.cash) || 0) / Number(a.total_assets) * 100));
+        const sp = document.getElementById("cc-split").children;
+        sp[0].style.width = `${cashPct}%`; sp[1].style.width = `${100 - cashPct}%`;
+        document.getElementById("cc-cash").textContent = `cash ${cashPct.toFixed(0)}% · in positions ${(100 - cashPct).toFixed(0)}%`;
+        document.getElementById("cc-acct-sub").textContent = a.buying_power ? `buying power ${ccMoney(Number(a.buying_power), false)}` : "";
+      } else {
+        document.getElementById("cc-equity").textContent = "—";
+        document.getElementById("cc-cash").textContent = "Broker not connected";
+      }
+
+      ccRenderPipeline(o.pipeline || {}, o.top_reasons || []);
+      ccRenderPositions(pos);
+      ccRenderActivity(o.activity || []);
+      ccRenderSession(o.session);
+    }
+
+    function ccRenderPipeline(p, reasons) {
+      const afterInd = (p.patterns || 0) - (p.indicators || 0);
+      const afterKr = afterInd - (p.kronos || 0);
+      const afterRisk = afterKr - (p.risk || 0) - (p.errors || 0);
+      const top = Math.max(p.patterns || 0, 1);
+      const stages = [
+        { k: "watch", name: "Watching", num: p.watching || 0, note: "symbols", color: "#94a3b8", w: 100 },
+        { k: "scan", name: "Bars checked", num: p.scanned || 0, note: "closed candles", color: "#64748b", w: 100 },
+        { k: "pat", name: "Patterns", num: p.patterns || 0, note: "signals found", color: "#a855f7", w: 100 },
+        { k: "ind", name: "Indicators", num: afterInd, note: `${p.indicators || 0} filtered out`, color: "#06b6d4", w: afterInd / top * 100 },
+        { k: "kr", name: "Kronos", num: afterKr, note: `${p.kronos || 0} not confirmed`, color: "#38bdf8", w: afterKr / top * 100 },
+        { k: "risk", name: "Risk", num: afterRisk, note: `${p.risk || 0} blocked${p.errors ? ` · ${p.errors} errors` : ""}`, color: "#f59e0b", w: afterRisk / top * 100 },
+        { k: "ord", name: "Orders", num: p.opened || 0, note: "entries sent", color: "#10b981", w: (p.opened || 0) / top * 100 },
+      ];
+      const box = document.getElementById("cc-pipe");
+      if (!box.children.length) {
+        box.innerHTML = stages.map((s, i) => `
+          <div class="cc-stage-wrap">
+            <div class="cc-stage" id="cc-st-${s.k}">
+              <div class="cc-stage-name"><i style="background:${s.color}"></i>${s.name}</div>
+              <div class="cc-stage-num">0</div>
+              <div class="cc-stage-note"></div>
+              <div class="cc-stage-bar"><div style="background:${s.color}; width:0"></div></div>
+            </div>
+            ${i < stages.length - 1 ? `<div class="cc-link-line" aria-hidden="true"><span style="background:${stages[i + 1].color}; animation-delay:${(i * 0.35).toFixed(2)}s"></span></div>` : ""}
+          </div>`).join("");
+      }
+      stages.forEach(s => {
+        const el = document.getElementById(`cc-st-${s.k}`);
+        const num = el.querySelector(".cc-stage-num");
+        if (num._v !== undefined && num._v !== s.num) {          // a new signal reached this gate
+          el.classList.add("bump"); setTimeout(() => el.classList.remove("bump"), 900);
+        }
+        ccTween(num, s.num, v => Math.round(v).toString(), false);
+        el.querySelector(".cc-stage-note").textContent = s.note;
+        el.querySelector(".cc-stage-bar div").style.width = `${Math.max(0, Math.min(100, s.w))}%`;
+      });
+      const label = { indicators: "Indicators", kronos: "Kronos", risk: "Risk" };
+      document.getElementById("cc-reasons").innerHTML = reasons.length
+        ? `<span>Top rejections today:</span>` + reasons.map(x =>
+            `<span class="cc-chip" title="${esc(x.reason)}">${label[x.stage] || x.stage} · ${esc(x.reason || "no reason given")} <b>${x.count}</b></span>`).join("")
+        : `<span>No rejections today.</span>`;
+    }
+
+    function ccRenderPositions(pos) {
+      const box = document.getElementById("cc-positions");
+      const held = pos.filter(p => p.state !== "missing_at_broker");
+      if (!held.length) { box.innerHTML = `<div class="cc-empty">No open positions.</div>`; return; }
+      const dp = v => (Math.abs(v) < 1 ? 4 : 2);
+      box.innerHTML = held.map(p => {
+        const price = Number(p.current_price), entry = Number(p.avg_cost);
+        const long = p.side !== "SHORT", stop = p.stop != null ? Number(p.stop) : null, tgt = p.target != null ? Number(p.target) : null;
+        let track = "";
+        if (stop !== null && tgt !== null && price) {
+          const span = tgt - stop || 1;
+          const at = Math.max(2, Math.min(98, (price - stop) / span * 100));
+          const ent = Math.max(0, Math.min(100, (entry - stop) / span * 100));
+          const riskPer = Math.abs(entry - stop) || null;
+          const rNow = riskPer ? ((long ? price - entry : entry - price) / riskPer) : null;
+          track = `<div class="cc-track" aria-hidden="true"><div class="entry" style="left:${ent}%"></div><div class="dot" style="left:${at}%"></div></div>
+                   <div class="cc-track-lbl"><span>stop ${stop.toFixed(dp(stop))}${p.trail_active ? " (trailing)" : ""}</span><span>${rNow !== null ? (rNow >= 0 ? "+" : "") + rNow.toFixed(2) + "R" : ""}</span><span>target ${tgt.toFixed(dp(tgt))}</span></div>`;
+        } else {
+          track = `<div class="cc-muted">${p.state === "unmanaged" ? "Not managed by the agent - no stop or target" : "Waiting for the entry to fill"}</div>`;
+        }
+        const u = Number(p.unrealized_pnl) || 0;
+        return `<button type="button" class="cc-pcard" onclick="switchTab('positions')">
+          <div class="cc-pcard-top"><b>${esc(p.symbol)}</b><span class="cc-side">${esc(p.side || "")}</span>
+            <span class="cc-muted">${esc(p.quantity)} @ ${entry ? entry.toFixed(dp(entry)) : "—"}</span><span style="flex:1"></span>
+            <span class="${u > 0 ? "cc-pos" : u < 0 ? "cc-neg" : ""}" style="font-family:var(--font-mono); font-weight:600">${ccMoney(u)}</span></div>
+          ${track}</button>`;
+      }).join("");
+    }
+
+    const CC_ICON = { opened: "↑", win: "✓", loss: "↓", risk: "✕", kronos: "K", indicators: "≈", error: "!", manual: "M", cancel: "–" };
+    function ccRenderActivity(items) {
+      const list = document.getElementById("cc-activity");
+      if (!items.length) { list.innerHTML = `<li class="cc-empty">Nothing yet today.</li>`; return; }
+      const key = a => `${a.ts}|${a.text}`;
+      const first = LIVE.seen === null;
+      const seen = LIVE.seen || new Set();
+      const fresh = items.filter(a => !seen.has(key(a)));
+      list.innerHTML = items.map(a => {
+        const isNew = !first && !seen.has(key(a));
+        const when = new Date(a.ts * 1000);
+        const pnl = a.pnl !== undefined ? ` <b class="${a.pnl >= 0 ? "cc-pos" : "cc-neg"}">${ccMoney(a.pnl)}</b>` : "";
+        return `<li class="${isNew ? "new" : ""}"><span class="cc-ico ${esc(a.kind)}" aria-hidden="true">${CC_ICON[a.kind] || "•"}</span>
+          <div><div class="cc-act-text">${esc(a.text)}${pnl}</div>
+          <div class="cc-act-meta">${when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${when.toLocaleDateString([], { month: "short", day: "numeric" })}</div></div></li>`;
+      }).join("");
+      LIVE.seen = new Set(items.map(key));
+      if (!first) fresh.filter(a => ["opened", "win", "loss", "error"].includes(a.kind)).slice(0, 2)
+        .forEach(a => showToast(a.text + (a.pnl !== undefined ? ` ${ccMoney(a.pnl)}` : "")));
+    }
+
+    function ccRenderSession(s) {
+      const bar = document.getElementById("cc-session-bar"), leg = document.getElementById("cc-session-legend");
+      if (!s) { document.getElementById("cc-session-left").textContent = "Session clock unavailable"; return; }
+      CC_SESSION.tz = s.tz; CC_SESSION.exchange = s.exchange;
+      document.getElementById("cc-exchange").textContent = `${s.exchange} · ${(s.tz || "").split("/").pop().replace("_", " ")}`;
+      if (!s.open) {
+        bar.innerHTML = "";
+        const nx = s.next_open ? s.next_open.replace("T", " ").slice(0, 16) : "";
+        document.getElementById("cc-session-left").textContent = `Closed${nx ? ` · opens ${nx} local` : ""}`;
+        leg.innerHTML = "";
+        CC_SESSION.base = null;
+        return;
+      }
+      CC_SESSION.base = { since: s.minutes_since_open, len: s.length, at: Date.now() };
+      const len = s.length, first = s.no_entries_first || 0, last = Math.max(s.no_entries_last || 0, s.flat_by || 0);
+      const pc = v => `${Math.max(0, Math.min(100, v / len * 100))}%`;
+      bar.innerHTML = `<div class="ok" style="left:${pc(first)}; width:${pc(len - first - last)}"></div>` +
+        (first ? `<div class="no" style="left:0; width:${pc(first)}"></div>` : "") +
+        (last ? `<div class="no" style="left:${pc(len - last)}; width:${pc(last)}"></div>` : "") +
+        `<div class="now" id="cc-now"></div>` +
+        (s.flat_by ? `<div class="flat" style="left:${pc(len - s.flat_by)}"></div>` : "");
+      leg.innerHTML = `<span><i style="background:rgba(16,185,129,.45)"></i>new entries allowed</span>` +
+        (first || last ? `<span><i style="background:rgba(244,63,94,.4)"></i>no new entries</span>` : "") +
+        (s.flat_by ? `<span><i style="background:#f59e0b; width:3px"></i>close everything ${s.flat_by} min before the close</span>` : "");
+      ccTickSession();
+    }
+
+    const CC_SESSION = { tz: null, exchange: null, base: null };
+    function ccTickSession() {
+      if (CC_SESSION.tz) {
+        /* the exchange clock is in the market bar above */
+      }
+      const b = CC_SESSION.base;
+      if (!b) return;
+      const since = b.since + (Date.now() - b.at) / 60000, left = Math.max(0, b.len - since);
+      const now = document.getElementById("cc-now");
+      if (now) now.style.width = `${Math.min(100, since / b.len * 100)}%`;
+      document.getElementById("cc-session-left").textContent = `${Math.floor(left / 60)}h ${Math.floor(left % 60)}m to close`;
+    }
+    setInterval(ccTickSession, 1000);
+    setInterval(() => { if (document.getElementById("tab-command-center").classList.contains("active")) ccLiveBadge(); }, 5000);
+
     // Trigger Scan Now
     async function triggerScanNow() {
       const btn = document.getElementById("btn-scan-now");
@@ -2796,7 +3173,7 @@
         loadStatus();
         if (activeSymbol) loadChartData(activeSymbol);
         loadDecisions();
-        loadPositions();
+        loadPositions(true);
       } catch (err) {
         showToast("Error triggering scan: " + err.message);
       } finally {
@@ -3375,6 +3752,7 @@
         loadStatus();
         loadPositions();
         loadDecisions();
+        pollOverview();
       }
     }, 5000);
 
@@ -3571,6 +3949,8 @@
       loadStatus();  // picks the symbol and loads its chart
       loadDecisions();
       loadPositions();
+      pollOverview();
+      startLiveStream();
       loadConfigData();
       initBrokerSwitch();
       loadBrokers();
