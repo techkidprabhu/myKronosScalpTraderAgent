@@ -74,6 +74,10 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         Positions & Trailing Stop
       </button>
+      <button class="tab-btn" onclick="switchTab('performance')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 6-7"/></svg>
+        Performance
+      </button>
       <button class="tab-btn" onclick="switchTab('kronos-lab')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
         Kronos Model Lab
@@ -433,6 +437,31 @@
           </div>
         </div>
 
+        <div class="ds-head">
+          <div class="rm-seg" role="group" aria-label="Analytics period">
+            <button type="button" data-ddays="1" onclick="dsSetDays(1)">Today</button>
+            <button type="button" data-ddays="7" class="active" onclick="dsSetDays(7)">7D</button>
+            <button type="button" data-ddays="30" onclick="dsSetDays(30)">30D</button>
+            <button type="button" data-ddays="all" onclick="dsSetDays('all')">All</button>
+          </div>
+          <span class="cc-muted" id="ds-signals"></span>
+        </div>
+        <div class="ds-grid">
+          <div class="ds-box"><div class="ds-box-title">Signal funnel</div><div id="ds-funnel"></div></div>
+          <div class="ds-box"><div class="ds-box-title">Outcome per day</div><div id="ds-daily" class="pf-chart pf-chart-sm"></div><div class="ds-legend" id="ds-legend"></div></div>
+          <div class="ds-box"><div class="ds-box-title">Kronos confidence on evaluated signals</div><div id="ds-conf" class="pf-chart pf-chart-sm"></div></div>
+          <div class="ds-box"><div class="ds-box-title">Top rejection reasons</div><div id="ds-reasons"></div></div>
+        </div>
+        <div class="ds-filters" role="group" aria-label="Filter decisions" id="ds-filters">
+          <button type="button" class="cc-chip active" data-stage="all" onclick="dsFilter('all')">All</button>
+          <button type="button" class="cc-chip" data-stage="opened" onclick="dsFilter('opened')">Opened</button>
+          <button type="button" class="cc-chip" data-stage="indicators" onclick="dsFilter('indicators')">Indicators</button>
+          <button type="button" class="cc-chip" data-stage="kronos" onclick="dsFilter('kronos')">Kronos</button>
+          <button type="button" class="cc-chip" data-stage="risk" onclick="dsFilter('risk')">Risk</button>
+          <button type="button" class="cc-chip" data-stage="manual" onclick="dsFilter('manual')">Manual</button>
+          <button type="button" class="cc-chip" data-stage="error" onclick="dsFilter('error')">Errors</button>
+        </div>
+
         <div class="table-container">
           <table>
             <thead>
@@ -557,6 +586,70 @@
     </div>
 
     <!-- TAB 4: KRONOS MODEL LAB -->
+    <!-- PERFORMANCE -->
+    <div id="tab-performance" class="tab-panel">
+      <div class="pf-top">
+        <div>
+          <h2 class="pf-title">Performance</h2>
+          <div class="cc-muted">Closed trades from the agent's records <span id="pf-ccy"></span></div>
+        </div>
+        <div class="rm-seg" role="group" aria-label="Period">
+          <button type="button" data-days="7" onclick="pfSetDays(7)">7D</button>
+          <button type="button" data-days="30" class="active" onclick="pfSetDays(30)">30D</button>
+          <button type="button" data-days="90" onclick="pfSetDays(90)">90D</button>
+          <button type="button" data-days="365" onclick="pfSetDays(365)">1Y</button>
+          <button type="button" data-days="all" onclick="pfSetDays('all')">All</button>
+        </div>
+      </div>
+
+      <section class="cc-kpis" aria-label="Summary">
+        <div class="cc-tile"><div class="cc-tile-head"><span>Net P&amp;L</span><span class="cc-muted" id="pf-best"></span></div><div class="cc-big" id="pf-net">—</div><div class="cc-muted" id="pf-net-sub"></div></div>
+        <div class="cc-tile"><div class="cc-tile-head"><span>Win rate</span><span class="cc-muted" id="pf-streak"></span></div><div class="cc-big" id="pf-win">—</div><div class="cc-muted" id="pf-win-sub"></div></div>
+        <div class="cc-tile"><div class="cc-tile-head"><span>Profit factor</span></div><div class="cc-big" id="pf-pf">—</div><div class="cc-muted" id="pf-pf-sub">gross wins ÷ gross losses</div></div>
+        <div class="cc-tile"><div class="cc-tile-head"><span>Expectancy</span></div><div class="cc-big" id="pf-exp">—</div><div class="cc-muted" id="pf-exp-sub"></div></div>
+        <div class="cc-tile"><div class="cc-tile-head"><span>Max drawdown</span></div><div class="cc-big cc-neg" id="pf-dd">—</div><div class="cc-muted" id="pf-dd-sub">deepest fall from a peak</div></div>
+        <div class="cc-tile"><div class="cc-tile-head"><span>Trades</span></div><div class="cc-big" id="pf-n">—</div><div class="cc-muted" id="pf-hold"></div></div>
+      </section>
+
+      <section class="cc-card" aria-label="Equity curve">
+        <div class="cc-card-head"><h2>Equity curve</h2><span class="cc-muted">cumulative closed P&amp;L · red = drawdown from the last peak</span></div>
+        <div class="pf-chart" id="pf-equity"></div>
+      </section>
+
+      <div class="cc-row">
+        <section class="cc-card cc-grow" aria-label="Daily P&L calendar">
+          <div class="cc-card-head"><h2>Daily P&amp;L</h2><span class="cc-muted" id="pf-cal-note"></span></div>
+          <div id="pf-calendar" class="pf-cal"></div>
+        </section>
+        <section class="cc-card cc-grow" aria-label="Results in R">
+          <div class="cc-card-head"><h2>Results in R</h2><span class="cc-muted">P&amp;L ÷ planned risk at the stop</span></div>
+          <div id="pf-rhist" class="pf-chart pf-chart-sm"></div>
+        </section>
+      </div>
+
+      <div class="cc-row">
+        <section class="cc-card cc-grow" aria-label="By pattern"><div class="cc-card-head"><h2>By pattern</h2></div><div id="pf-by-pattern"></div></section>
+        <section class="cc-card cc-grow" aria-label="By symbol"><div class="cc-card-head"><h2>By symbol</h2></div><div id="pf-by-symbol"></div></section>
+      </div>
+      <div class="cc-row">
+        <section class="cc-card cc-grow" aria-label="By exit"><div class="cc-card-head"><h2>How trades ended</h2></div><div id="pf-by-reason"></div></section>
+        <section class="cc-card cc-grow" aria-label="Kronos confidence vs results">
+          <div class="cc-card-head"><h2>Does Kronos confidence pay?</h2><span class="cc-muted">win rate by confidence at entry</span></div>
+          <div id="pf-conf"></div>
+        </section>
+      </div>
+
+      <section class="cc-card" aria-label="Closed trades">
+        <div class="cc-card-head"><h2>Closed trades</h2><span class="cc-muted">newest first · up to 100</span></div>
+        <div class="table-container">
+          <table>
+            <thead><tr><th>Closed</th><th>Symbol</th><th>Pattern</th><th>Side</th><th>Entry → exit</th><th>Held</th><th>Exit</th><th>R</th><th>P&amp;L</th></tr></thead>
+            <tbody id="pf-trades"><tr><td colspan="9" class="cc-empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
     <div id="tab-kronos-lab" class="tab-panel">
       <div class="panel-card">
         <div class="panel-header">
@@ -1414,6 +1507,8 @@
       const panel = document.getElementById(`tab-${tabId}`);
       if (panel) panel.classList.add("active");
       if (tabId === "risk-model") rmOpen();
+      if (tabId === "performance") loadPerformance();
+      if (tabId === "decisions") loadDecisionStats();
 
       if (tabId === "terminal" && chartInstance) {
         setTimeout(() => {
@@ -1870,7 +1965,7 @@
     // Load Decisions Table
     async function loadDecisions() {
       try {
-        const res = await fetch("/api/decisions?limit=50");
+        const res = await fetch("/api/decisions?limit=200");
         const data = await res.json();
         allDecisions = data.decisions || [];
         renderDecisionsTable();
@@ -1900,11 +1995,12 @@
       const search = (document.getElementById("decision-search").value || "").toLowerCase();
 
       const filtered = allDecisions.filter(d => {
+        if (dsStage !== "all" && d.stage !== dsStage) return false;
         return !search || d.epic.toLowerCase().includes(search) || (d.pattern && d.pattern.toLowerCase().includes(search));
       });
 
       if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:var(--text-muted); padding:20px;">No decisions logged yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:var(--text-muted); padding:20px;">${allDecisions.length ? "No decisions match this filter." : "No decisions logged yet."}</td></tr>`;
         return;
       }
 
@@ -3114,6 +3210,300 @@
     function pcOpenChart(sym) {
       switchTab("terminal");
       selectSymbol(sym);
+    }
+
+    // ================= Performance tab =================
+    let pfDays = 30, pfData = null, pfSeq = 0;
+
+    function pfSetDays(d) {
+      pfDays = d;
+      document.querySelectorAll("#tab-performance [data-days]").forEach(b => b.classList.toggle("active", String(b.dataset.days) === String(d)));
+      loadPerformance();
+    }
+
+    async function loadPerformance() {
+      const seq = ++pfSeq;
+      try {
+        const res = await fetch(`/api/performance?days=${pfDays}`, { cache: "no-store" });
+        const d = await res.json();
+        if (seq !== pfSeq) return;
+        if (!res.ok || d.error) throw new Error(d.error || res.statusText);
+        pfData = d;
+        renderPerformance();
+      } catch (err) {
+        document.getElementById("pf-trades").innerHTML = `<tr><td colspan="9" class="cc-empty">Could not load performance: ${esc(err.message)}</td></tr>`;
+      }
+    }
+
+    function pfHold(sec) {
+      if (!sec || sec < 0) return "—";
+      const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.round(sec % 3600 / 60);
+      return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+    }
+
+    function renderPerformance() {
+      const d = pfData, s = d.summary;
+      document.getElementById("pf-ccy").textContent = `· ${CCY}`;
+      const set = (id, v, fmt, sign) => { const el = document.getElementById(id); ccTween(el, v, fmt, false); if (sign) ccSetSign(el, v || 0); };
+      set("pf-net", s.trades ? s.net : null, v => ccBig(v), true);
+      document.getElementById("pf-net-sub").textContent = s.trades ? `avg win ${ccBig(s.avg_win || 0)} · avg loss ${ccBig(s.avg_loss || 0)}` : "No closed trades in this period";
+      document.getElementById("pf-best").textContent = s.best !== null ? `best ${ccBig(s.best)}` : "";
+      set("pf-win", s.win_rate, v => `${v.toFixed(0)}%`);
+      document.getElementById("pf-win-sub").textContent = s.trades ? `${s.wins} wins · ${s.losses} losses` : "";
+      document.getElementById("pf-streak").textContent = s.trades ? `streaks ${s.win_streak}W / ${s.loss_streak}L` : "";
+      set("pf-pf", s.profit_factor, v => v.toFixed(2));
+      document.getElementById("pf-pf-sub").textContent = s.payoff ? `gross wins ÷ gross losses · payoff ${s.payoff}` : "gross wins ÷ gross losses";
+      set("pf-exp", s.expectancy, v => ccBig(v), true);
+      document.getElementById("pf-exp-sub").textContent = s.avg_r !== null ? `per trade · avg ${s.avg_r >= 0 ? "+" : ""}${s.avg_r}R over ${s.r_trades} trades` : "per trade";
+      set("pf-dd", s.trades ? s.max_drawdown : null, v => ccBig(v));
+      document.getElementById("pf-dd-sub").textContent = s.max_drawdown_pct !== null ? `${s.max_drawdown_pct}% of the peak` : "deepest fall from a peak";
+      set("pf-n", s.trades, v => Math.round(v).toString());
+      document.getElementById("pf-hold").textContent = s.avg_hold_sec ? `avg held ${pfHold(s.avg_hold_sec)}` : "";
+
+      pfEquity(d.equity, d.drawdown);
+      pfCalendar(d.daily);
+      pfRHist(d.r_hist);
+      pfBars("pf-by-pattern", d.by_pattern);
+      pfBars("pf-by-symbol", d.by_symbol);
+      pfBars("pf-by-reason", d.by_reason);
+      pfConfidence(d.confidence);
+      pfTrades(d.trades);
+    }
+
+    function pfSvgBox(id, h) {
+      const box = document.getElementById(id);
+      const w = Math.max(320, box.clientWidth || 800);
+      return { box, w, h };
+    }
+
+    function pfEquity(eq, dd) {
+      const { box, w, h } = pfSvgBox("pf-equity", 280);
+      if (!eq.length) { box.innerHTML = `<div class="cc-empty pf-empty">No closed trades in this period yet.</div>`; return; }
+      const pts = [{ ts: eq[0].ts - 1, cum: 0, dd: 0 }, ...eq.map((e, i) => ({ ...e, dd: dd[i].dd }))];
+      const padL = 64, padR = 14, padT = 14, padB = 26, ddH = 60;
+      const lo = Math.min(0, ...pts.map(p => p.cum)), hi = Math.max(0, ...pts.map(p => p.cum));
+      const span = hi - lo || 1, ddLo = Math.min(...pts.map(p => p.dd), -1e-9);
+      const t0 = pts[0].ts, t1 = pts[pts.length - 1].ts, tspan = t1 - t0 || 1;
+      const X = t => padL + (t - t0) / tspan * (w - padL - padR);
+      const top = h - padB - ddH - 10;
+      const Y = v => padT + (hi - v) / span * (top - padT);
+      const YD = v => top + 10 + (v / ddLo) * ddH;
+      const line = pts.map((p, i) => `${i ? "L" : "M"}${X(p.ts).toFixed(1)} ${Y(p.cum).toFixed(1)}`).join(" ");
+      const area = `${line} L${X(t1).toFixed(1)} ${Y(Math.max(lo, 0) === 0 ? 0 : lo).toFixed(1)} L${X(t0).toFixed(1)} ${Y(0).toFixed(1)} Z`;
+      const ddPath = pts.map((p, i) => `${i ? "L" : "M"}${X(p.ts).toFixed(1)} ${YD(p.dd).toFixed(1)}`).join(" ") + ` L${X(t1).toFixed(1)} ${YD(0).toFixed(1)} L${X(t0).toFixed(1)} ${YD(0).toFixed(1)} Z`;
+      const ticks = [lo, (lo + hi) / 2, hi].map(v => `<text x="${padL - 8}" y="${Y(v) + 4}" text-anchor="end" class="pf-axis">${ccBig(v, false).replace(/^/, v < 0 ? "−" : "")}</text><line x1="${padL}" x2="${w - padR}" y1="${Y(v)}" y2="${Y(v)}" class="pf-grid"></line>`).join("");
+      const fmtD = t => new Date(t * 1000).toLocaleDateString([], { month: "short", day: "numeric" });
+      const good = pts[pts.length - 1].cum >= 0;
+      box.innerHTML = `
+        <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Equity curve, ending at ${ccBig(pts[pts.length - 1].cum)}">
+          <defs><linearGradient id="pf-eq-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${good ? "#10b981" : "#f43f5e"}" stop-opacity=".35"/><stop offset="1" stop-color="${good ? "#10b981" : "#f43f5e"}" stop-opacity="0"/></linearGradient></defs>
+          ${ticks}
+          <line x1="${padL}" x2="${w - padR}" y1="${Y(0)}" y2="${Y(0)}" class="pf-zero"></line>
+          <path d="${area}" fill="url(#pf-eq-g)" class="pf-fade"></path>
+          <path d="${line}" class="pf-line ${good ? "up" : "down"}" pathLength="1"></path>
+          <path d="${ddPath}" class="pf-dd pf-fade"></path>
+          <text x="${padL - 8}" y="${top + 24}" text-anchor="end" class="pf-axis">DD</text>
+          <text x="${padL}" y="${h - 6}" class="pf-axis">${fmtD(t0)}</text>
+          <text x="${w - padR}" y="${h - 6}" text-anchor="end" class="pf-axis">${fmtD(t1)}</text>
+          <line id="pf-cross" x1="0" x2="0" y1="${padT}" y2="${h - padB}" class="pf-cross" style="display:none"></line>
+          <circle id="pf-dot" r="5" class="pf-dotc" style="display:none"></circle>
+          <rect x="${padL}" y="0" width="${w - padL - padR}" height="${h}" fill="transparent" id="pf-hit"></rect>
+        </svg><div class="pf-tip" id="pf-tip"></div>`;
+      const hit = box.querySelector("#pf-hit"), tip = box.querySelector("#pf-tip"), cross = box.querySelector("#pf-cross"), dot = box.querySelector("#pf-dot");
+      hit.addEventListener("mousemove", ev => {
+        const r = hit.getBoundingClientRect(), x = ev.clientX - r.left + padL;
+        let best = pts[0];
+        for (const p of pts) if (Math.abs(X(p.ts) - x) < Math.abs(X(best.ts) - x)) best = p;
+        const bx = X(best.ts), by = Y(best.cum);
+        cross.setAttribute("x1", bx); cross.setAttribute("x2", bx); cross.style.display = "";
+        dot.setAttribute("cx", bx); dot.setAttribute("cy", by); dot.style.display = "";
+        const tr = eq.find(e => e.ts === best.ts);
+        tip.innerHTML = `<b>${ccBig(best.cum)}</b><br>${new Date(best.ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` +
+          (tr ? `` : "") + (best.dd < 0 ? `<br><span class="cc-neg">${ccBig(best.dd)} from peak</span>` : "");
+        tip.style.display = "block";
+        tip.style.left = `${Math.min(bx + 12, w - 170)}px`; tip.style.top = `${Math.max(4, by - 50)}px`;
+      });
+      hit.addEventListener("mouseleave", () => { tip.style.display = "none"; cross.style.display = "none"; dot.style.display = "none"; });
+    }
+
+    function pfCalendar(daily) {
+      const box = document.getElementById("pf-calendar");
+      const days = pfDays === "all" ? 365 : Math.max(35, Math.min(365, Number(pfDays)));
+      const map = Object.fromEntries(daily.map(x => [x.date, x]));
+      const maxAbs = Math.max(1, ...daily.map(x => Math.abs(x.pnl)));
+      const end = new Date(); end.setHours(12, 0, 0, 0);
+      const start = new Date(end); start.setDate(end.getDate() - days + 1);
+      start.setDate(start.getDate() - ((start.getDay() + 6) % 7));        // back to Monday
+      const cells = [];
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const v = map[key];
+        let bg = "#151f38", label = `${key}: no trades`;
+        if (v) {
+          const k = 0.25 + 0.75 * Math.min(1, Math.abs(v.pnl) / maxAbs);
+          bg = v.pnl >= 0 ? `rgba(16,185,129,${k.toFixed(2)})` : `rgba(244,63,94,${k.toFixed(2)})`;
+          label = `${key}: ${ccMoney(v.pnl)} over ${v.trades} trade${v.trades > 1 ? "s" : ""}`;
+        }
+        cells.push(`<span class="pf-cell" style="background:${bg}" title="${label}" aria-label="${label}"></span>`);
+      }
+      const wd = ["Mon", "", "Wed", "", "Fri", "", "Sun"].map(x => `<span>${x}</span>`).join("");
+      const weeks = Math.ceil(cells.length / 7);
+      const cell = Math.max(12, Math.min(30, Math.floor((box.clientWidth - 40) / weeks) - 4));
+      box.style.setProperty("--pf-cell", `${cell}px`);
+      box.innerHTML = `<div class="pf-cal-wd">${wd}</div><div class="pf-cal-grid">${cells.join("")}</div>`;
+      const pos = daily.filter(x => x.pnl > 0).length, neg = daily.filter(x => x.pnl < 0).length;
+      document.getElementById("pf-cal-note").textContent = daily.length ? `${pos} green day${pos === 1 ? "" : "s"} · ${neg} red` : "";
+    }
+
+    function pfRHist(rh) {
+      const { box, w, h } = pfSvgBox("pf-rhist", 200);
+      const counts = rh.counts, edges = rh.edges, total = counts.reduce((a, b) => a + b, 0);
+      if (!total) { box.innerHTML = `<div class="cc-empty pf-empty">R needs trades whose planned stop was recorded.</div>`; return; }
+      const labels = ["< " + edges[0], ...edges.slice(0, -1).map((e, i) => `${e}…${edges[i + 1]}`), "≥ " + edges[edges.length - 1]];
+      const n = counts.length, padB = 34, padT = 14, bw = (w - 20) / n, max = Math.max(...counts);
+      const zeroBin = edges.indexOf(0);       // bins after this edge are >= 0R
+      const bars = counts.map((c, i) => {
+        const bh = c / max * (h - padB - padT), x = 10 + i * bw, y = h - padB - bh;
+        return `<g><rect x="${(x + 2).toFixed(1)}" y="${y.toFixed(1)}" width="${(bw - 4).toFixed(1)}" height="${bh.toFixed(1)}" rx="3" class="pf-bar ${i <= zeroBin ? "neg" : "pos"}" style="animation-delay:${i * 30}ms"><title>${labels[i]}R: ${c} trade${c === 1 ? "" : "s"}</title></rect>
+          ${c ? `<text x="${(x + bw / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" class="pf-axis">${c}</text>` : ""}</g>`;
+      }).join("") + edges.map((e, j) => j % 2 ? "" :
+        `<line x1="${(10 + (j + 1) * bw).toFixed(1)}" x2="${(10 + (j + 1) * bw).toFixed(1)}" y1="${h - padB}" y2="${h - padB + 4}" class="pf-zero"></line>
+         <text x="${(10 + (j + 1) * bw).toFixed(1)}" y="${h - padB + 15}" text-anchor="middle" class="pf-axis">${e > 0 ? "+" : ""}${e}</text>`).join("");
+      box.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Distribution of trade results in R">${bars}
+        <text x="${w / 2}" y="${h - 4}" text-anchor="middle" class="pf-axis">R per trade (red = loss)</text></svg>`;
+    }
+
+    function pfBars(id, rows) {
+      const box = document.getElementById(id);
+      if (!rows.length) { box.innerHTML = `<div class="cc-empty">No trades in this period.</div>`; return; }
+      const max = Math.max(1, ...rows.map(r => Math.abs(r.net)));
+      box.innerHTML = `<div class="pf-bars">` + rows.slice(0, 12).map((r, i) => `
+        <div class="pf-bar-row">
+          <div class="pf-bar-name" title="${esc(r.name)}">${esc(r.name.replace(/_/g, " "))}</div>
+          <div class="pf-bar-track"><div class="pf-bar-mid"></div>
+            <div class="pf-bar-fill ${r.net >= 0 ? "pos" : "neg"}" style="${r.net >= 0 ? "left:50%" : `right:50%`}; width:${(Math.abs(r.net) / max * 50).toFixed(1)}%; animation-delay:${i * 40}ms"></div></div>
+          <div class="pf-bar-net ${r.net >= 0 ? "cc-pos" : "cc-neg"}">${ccBig(r.net)}</div>
+          <div class="pf-bar-meta">${r.trades} · ${r.win_rate.toFixed(0)}% win${r.avg_r !== null ? ` · ${r.avg_r >= 0 ? "+" : ""}${r.avg_r}R` : ""}</div>
+        </div>`).join("") + `</div>`;
+    }
+
+    function pfConfidence(rows) {
+      const box = document.getElementById("pf-conf");
+      if (!rows.length) { box.innerHTML = `<div class="cc-empty">No Kronos-confirmed trades closed in this period.</div>`; return; }
+      const total = rows.reduce((a, r) => a + r.trades, 0);
+      box.innerHTML = `<div class="pf-bars">` + rows.map((r, i) => `
+        <div class="pf-bar-row">
+          <div class="pf-bar-name">${esc(r.bucket)}</div>
+          <div class="pf-bar-track"><div class="pf-bar-fill conf" style="left:0; width:${r.win_rate}%; animation-delay:${i * 50}ms"></div><div class="pf-bar-half"></div></div>
+          <div class="pf-bar-net">${r.win_rate.toFixed(0)}%</div>
+          <div class="pf-bar-meta">${r.trades} trade${r.trades === 1 ? "" : "s"} · ${ccBig(r.net)}</div>
+        </div>`).join("") + `</div>` +
+        `<div class="rm-note${total < 30 ? " warn" : ""}">${total < 30 ? `Only ${total} trades so far - treat this as a hint, not proof.` : "If win rate rises with confidence, Kronos's confidence is adding information."} The line marks 50%.</div>`;
+    }
+
+    function pfTrades(trades) {
+      const tb = document.getElementById("pf-trades");
+      if (!trades.length) { tb.innerHTML = `<tr><td colspan="9" class="cc-empty">No closed trades in this period.</td></tr>`; return; }
+      const f = v => v === null || v === undefined ? "—" : Number(v).toFixed(Math.abs(v) < 1 ? 4 : 2);
+      tb.innerHTML = trades.map(t => `<tr>
+        <td class="mono" style="font-size:11px">${new Date(t.ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+        <td><strong class="mono">${esc(t.symbol)}</strong></td>
+        <td>${esc(t.manual ? "manual" : String(t.pattern).replace(/_/g, " "))}</td>
+        <td>${t.direction === "SELL" ? "Short" : t.direction === "BUY" ? "Long" : "—"}</td>
+        <td class="mono">${f(t.entry)} → ${f(t.exit)}</td>
+        <td class="mono">${pfHold(t.hold_sec)}</td>
+        <td>${esc(String(t.reason).replace(/_/g, " "))}</td>
+        <td class="mono ${t.r > 0 ? "cc-pos" : t.r < 0 ? "cc-neg" : ""}">${t.r === null ? "—" : (t.r >= 0 ? "+" : "") + t.r.toFixed(2) + "R"}</td>
+        <td class="mono ${t.pnl > 0 ? "cc-pos" : t.pnl < 0 ? "cc-neg" : ""}">${ccMoney(t.pnl)}</td></tr>`).join("");
+    }
+
+    window.addEventListener("resize", () => {
+      clearTimeout(window._pfResize);
+      window._pfResize = setTimeout(() => {
+        if (pfData && document.getElementById("tab-performance").classList.contains("active")) { pfEquity(pfData.equity, pfData.drawdown); pfRHist(pfData.r_hist); }
+        if (dsData && document.getElementById("tab-decisions").classList.contains("active")) { dsDaily(dsData.daily); dsConf(dsData.confidence_hist); }
+      }, 200);
+    });
+
+    // ================= Decisions analytics =================
+    let dsDays = 7, dsData = null, dsStage = "all", dsSeq = 0;
+    const DS_COLORS = { opened: "#10b981", indicators: "#a855f7", kronos: "#38bdf8", risk: "#f59e0b", error: "#f43f5e" };
+    const DS_LABEL = { opened: "Opened", indicators: "Indicators", kronos: "Kronos", risk: "Risk", error: "Error" };
+
+    function dsSetDays(d) {
+      dsDays = d;
+      document.querySelectorAll("#tab-decisions [data-ddays]").forEach(b => b.classList.toggle("active", String(b.dataset.ddays) === String(d)));
+      loadDecisionStats();
+    }
+    function dsFilter(stage) {
+      dsStage = stage;
+      document.querySelectorAll("#ds-filters .cc-chip").forEach(b => b.classList.toggle("active", b.dataset.stage === stage));
+      renderDecisionsTable();
+    }
+
+    async function loadDecisionStats() {
+      const seq = ++dsSeq;
+      try {
+        const res = await fetch(`/api/decision_stats?days=${dsDays}`, { cache: "no-store" });
+        const d = await res.json();
+        if (seq !== dsSeq || !res.ok || d.error) return;
+        dsData = d;
+        document.getElementById("ds-signals").textContent = `${d.signals} signal${d.signals === 1 ? "" : "s"} in this period`;
+        dsFunnel(d.funnel);
+        dsDaily(d.daily);
+        dsConf(d.confidence_hist);
+        const label = { indicators: "Indicators", kronos: "Kronos", risk: "Risk" };
+        document.getElementById("ds-reasons").innerHTML = d.top_reasons.length ? d.top_reasons.map(r =>
+          `<div class="ds-reason"><span class="ds-dot" style="background:${DS_COLORS[r.stage]}"></span><span class="ds-reason-text" title="${esc(r.reason)}">${label[r.stage]} · ${esc(r.reason)}</span><b>${r.count}</b></div>`).join("")
+          : `<div class="cc-empty">No rejections in this period.</div>`;
+      } catch (err) { console.warn("decision stats", err); }
+    }
+
+    function dsFunnel(f) {
+      const top = Math.max(1, f[0].count);
+      const colors = ["#a855f7", "#06b6d4", "#38bdf8", "#f59e0b", "#10b981"];
+      document.getElementById("ds-funnel").innerHTML = f.map((x, i) => `
+        <div class="ds-fun-row">
+          <div class="ds-fun-name">${x.name}</div>
+          <div class="ds-fun-track"><div class="ds-fun-bar" style="width:${(x.count / top * 100).toFixed(1)}%; background:${colors[i]}; animation-delay:${i * 70}ms"></div></div>
+          <div class="ds-fun-num">${x.count}${i ? `<span>${f[i - 1].count ? Math.round(x.count / f[i - 1].count * 100) : 0}%</span>` : ""}</div>
+        </div>`).join("");
+    }
+
+    function dsDaily(daily) {
+      const { box, w, h } = pfSvgBox("ds-daily", 150);
+      const stages = ["opened", "risk", "kronos", "indicators", "error"];
+      document.getElementById("ds-legend").innerHTML = stages.slice(0, 4).map(s => `<span><i style="background:${DS_COLORS[s]}"></i>${DS_LABEL[s]}</span>`).join("");
+      if (!daily.length) { box.innerHTML = `<div class="cc-empty pf-empty">No signals in this period.</div>`; return; }
+      const days = daily.slice(-30), padB = 20, padT = 6, bw = (w - 10) / days.length;
+      const max = Math.max(1, ...days.map(d => stages.reduce((a, s) => a + (d[s] || 0), 0)));
+      const bars = days.map((d, i) => {
+        let y = h - padB, out = "";
+        stages.forEach(s => {
+          const v = d[s] || 0; if (!v) return;
+          const bh = v / max * (h - padB - padT); y -= bh;
+          out += `<rect x="${(5 + i * bw + 1).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, bw - 2).toFixed(1)}" height="${bh.toFixed(1)}" fill="${DS_COLORS[s]}" class="pf-bar-grow" style="animation-delay:${i * 15}ms"><title>${d.date} · ${DS_LABEL[s]}: ${v}</title></rect>`;
+        });
+        return out;
+      }).join("");
+      const lbl = d => d.slice(5);
+      box.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Signals per day by outcome">${bars}
+        <text x="5" y="${h - 4}" class="pf-axis">${lbl(days[0].date)}</text><text x="${w - 5}" y="${h - 4}" text-anchor="end" class="pf-axis">${lbl(days[days.length - 1].date)}</text></svg>`;
+    }
+
+    function dsConf(hist) {
+      const { box, w, h } = pfSvgBox("ds-conf", 150);
+      const c = hist.confirmed, r = hist.rejected, total = c.reduce((a, b) => a + b, 0) + r.reduce((a, b) => a + b, 0);
+      if (!total) { box.innerHTML = `<div class="cc-empty pf-empty">No signals reached Kronos in this period.</div>`; return; }
+      const padB = 20, padT = 6, bw = (w - 10) / 10, max = Math.max(1, ...c.map((v, i) => v + r[i]));
+      const bars = c.map((v, i) => {
+        const hr = r[i] / max * (h - padB - padT), hc = v / max * (h - padB - padT), x = 5 + i * bw;
+        return `<rect x="${(x + 2).toFixed(1)}" y="${(h - padB - hr).toFixed(1)}" width="${(bw - 4).toFixed(1)}" height="${hr.toFixed(1)}" fill="#475569" class="pf-bar-grow"><title>${i * 10}–${i * 10 + 10}%: ${r[i]} not confirmed</title></rect>
+          <rect x="${(x + 2).toFixed(1)}" y="${(h - padB - hr - hc).toFixed(1)}" width="${(bw - 4).toFixed(1)}" height="${hc.toFixed(1)}" fill="#38bdf8" class="pf-bar-grow"><title>${i * 10}–${i * 10 + 10}%: ${v} confirmed</title></rect>
+          ${i % 2 === 0 ? `<text x="${(x + bw / 2).toFixed(1)}" y="${h - 5}" text-anchor="middle" class="pf-axis">${i * 10}%</text>` : ""}`;
+      }).join("");
+      box.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Kronos confidence histogram">${bars}</svg>
+        <div class="ds-legend"><span><i style="background:#38bdf8"></i>confirmed</span><span><i style="background:#475569"></i>not confirmed</span></div>`;
     }
 
     // ================= Command Center + live stream =================

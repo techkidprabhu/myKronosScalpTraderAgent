@@ -26,6 +26,7 @@ from dashboard import auth
 # Ensure Kronos vendor repo is importable
 from src.kronos_agent import KronosAgent, _ensure_kronos_importable
 from src import market_calendar as cal
+from dashboard import analytics
 from src.orchestrator import (ACTIVE_SYMBOLS_KEY, BROKER_HEALTH_KEY, PHASE_KEY, UNMANAGED_KEY,
                               bars_to_df)
 from src.patterns import scan
@@ -736,6 +737,7 @@ def get_decisions():
                 except Exception:
                     pass
             item["decision_price"] = _decision_price(cur, item)
+            item["stage"] = "manual" if item.get("pattern") == "manual" else analytics.decision_stage(item)
             results.append(item)
         conn.close()
         _attach_current_prices(results)
@@ -1368,18 +1370,7 @@ CLOSE_STAGES = {"entry_cancelled": "Unfilled entry cancelled", "flat_by_cancel_e
 
 
 def _decision_stage(row: dict) -> str:
-    """Which gate a decision stopped at (or 'opened'), from what the agent logged."""
-    action = row["action"]
-    if action == "opened":
-        return "opened"
-    if action == "error":
-        return "error"
-    details = row.get("details") or ""
-    if row["kronos_confirmed"] is None and '"indicators"' in details:
-        return "indicators"
-    if row["risk_allowed"] == 0:
-        return "risk"
-    return "kronos"
+    return analytics.decision_stage(row)
 
 
 def _overview_data() -> dict:
@@ -1579,6 +1570,55 @@ def _json_or_empty(text) -> dict:
         return v if isinstance(v, dict) else {}
     except ValueError:
         return {}
+
+
+def _since_days() -> float:
+    """?days=N -> epoch seconds N days ago (0 / all / missing-but-invalid = everything)."""
+    raw = (request.args.get("days") or "30").strip().lower()
+    if raw in ("0", "all"):
+        return 0.0
+    try:
+        days = max(1, min(3650, int(raw)))
+    except ValueError:
+        raise BadRequest("days must be a whole number or 'all'")
+    return time.time() - days * 86400
+
+
+def _market_tz() -> str:
+    try:
+        return str(market_timezone(_spec_market(current_spec())))
+    except Exception:
+        return "UTC"
+
+
+@app.route("/api/performance", methods=["GET"])
+def get_performance():
+    """Closed-trade analytics for the Performance tab (equity, drawdown,
+    calendar, breakdowns, R distribution, Kronos confidence vs results)."""
+    since = _since_days()
+    try:
+        conn = get_db()
+        data = analytics.performance(conn, since, _market_tz())
+        conn.close()
+    except sqlite3.Error as exc:
+        return jsonify({"error": f"audit database unavailable: {exc}"}), 500
+    data["since"] = since
+    data["currency"] = load_config().get("currency")
+    return jsonify(data)
+
+
+@app.route("/api/decision_stats", methods=["GET"])
+def get_decision_stats():
+    """Signal funnel and rejection analytics for the Decisions tab."""
+    since = _since_days()
+    try:
+        conn = get_db()
+        data = analytics.decision_stats(conn, since, _market_tz())
+        conn.close()
+    except sqlite3.Error as exc:
+        return jsonify({"error": f"audit database unavailable: {exc}"}), 500
+    data["since"] = since
+    return jsonify(data)
 
 
 @app.route("/api/overview", methods=["GET"])
