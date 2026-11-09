@@ -224,10 +224,13 @@
       </section>
 
       <section class="cc-kpis" aria-label="Key figures">
-        <div class="cc-tile">
+        <div class="cc-tile cc-tile-click" id="cc-today-tile" role="button" tabindex="0" aria-expanded="false"
+             aria-controls="cc-today-detail" title="Show what makes up today's P&amp;L"
+             onclick="toggleTodayDetail()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleTodayDetail();}">
           <div class="cc-tile-head"><span>Today's P&amp;L <span class="cc-ccy"></span></span><span id="cc-today-sub" class="cc-muted"></span></div>
           <div class="cc-big" id="cc-today">—</div>
-          <div class="cc-muted" id="cc-today-split">realized — · open —</div>
+          <div class="cc-muted" id="cc-today-split">closed — · open today —</div>
+          <div class="cc-muted cc-tap-hint">Tap for details</div>
         </div>
         <div class="cc-tile">
           <div class="cc-tile-head"><span>30-day P&amp;L <span class="cc-ccy"></span></span><span id="cc-30d-n" class="cc-muted"></span></div>
@@ -265,6 +268,14 @@
           <div class="cc-split" id="cc-split"><div></div><div></div></div>
           <div class="cc-muted" id="cc-cash"></div>
         </div>
+      </section>
+
+      <section class="cc-card" id="cc-today-detail" aria-label="Today's P&L breakdown" hidden>
+        <div class="cc-card-head">
+          <h2>Today's P&amp;L breakdown</h2>
+          <button class="cc-link" type="button" onclick="toggleTodayDetail(false)">Close ✕</button>
+        </div>
+        <div id="cc-today-body"></div>
       </section>
 
       <section class="cc-card" aria-label="Agent pipeline today">
@@ -3749,6 +3760,53 @@
       Math.abs(v) >= 10000 ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const ccSetSign = (el, v) => { el.classList.toggle("cc-pos", v > 0); el.classList.toggle("cc-neg", v < 0); };
 
+    const TODAY_BASIS = {
+      entry_today: "opened today · since entry",
+      broker: "today's move (broker)",
+      prev_close: "since yesterday's close",
+      entry: "since entry · no previous close available",
+    };
+
+    function toggleTodayDetail(show) {
+      const box = document.getElementById("cc-today-detail");
+      const open = show === undefined ? box.hidden : show;
+      box.hidden = !open;
+      document.getElementById("cc-today-tile").setAttribute("aria-expanded", String(open));
+      if (open) renderTodayDetail();
+    }
+
+    function renderTodayDetail() {
+      const box = document.getElementById("cc-today-detail");
+      if (!box || box.hidden || !LIVE.overview) return;
+      const r = LIVE.overview.results || {};
+      const pos = ((LIVE.positions && LIVE.positions.positions) || []).filter(p => p.unrealized_pnl !== null && p.unrealized_pnl !== undefined);
+      const closed = r.closed_today_list || [];
+      const cls = v => v > 0 ? "cc-pos" : v < 0 ? "cc-neg" : "";
+      const row = (sym, note, v) =>
+        `<tr><td class="mono">${esc(sym)}</td><td class="cc-muted">${esc(note || "")}</td><td class="mono ${cls(v)}" style="text-align:right">${ccMoney(v)}</td></tr>`;
+      const sumC = closed.reduce((a, t) => a + (t.pnl || 0), 0);
+      const sumO = pos.reduce((a, p) => a + (Number(p.today_pnl ?? p.unrealized_pnl) || 0), 0);
+      const t = ts => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      document.getElementById("cc-today-body").innerHTML = `
+        <div class="cc-today-cols">
+          <div>
+            <h3 class="cc-sub-h">Closed today (${closed.length})</h3>
+            ${closed.length ? `<table class="cc-mini-table"><tbody>
+              ${closed.map(c => row(c.symbol, `${t(c.ts)}${c.reason ? " · " + c.reason : ""}`, c.pnl)).join("")}
+              <tr class="cc-total"><td>Total</td><td></td><td class="mono ${cls(sumC)}" style="text-align:right">${ccMoney(sumC)}</td></tr>
+            </tbody></table>` : `<div class="cc-empty">No trades closed today.</div>`}
+          </div>
+          <div>
+            <h3 class="cc-sub-h">Open positions, today's part (${pos.length})</h3>
+            ${pos.length ? `<table class="cc-mini-table"><tbody>
+              ${pos.map(p => row(p.symbol, `${TODAY_BASIS[p.today_basis] || "since entry"} · total ${ccMoney(Number(p.unrealized_pnl) || 0)}`, Number(p.today_pnl ?? p.unrealized_pnl) || 0)).join("")}
+              <tr class="cc-total"><td>Total</td><td></td><td class="mono ${cls(sumO)}" style="text-align:right">${ccMoney(sumO)}</td></tr>
+            </tbody></table>` : `<div class="cc-empty">No open positions.</div>`}
+          </div>
+        </div>
+        <div class="cc-muted" style="margin-top:10px">"Today" starts at midnight exchange time. Closed trades leave the Positions screen but stay in today's total.</div>`;
+    }
+
     function renderCommandCenter() {
       const o = LIVE.overview;
       if (!o) return;
@@ -3756,13 +3814,19 @@
       const r = o.results || {}, risk = o.risk || {}, pos = (LIVE.positions && LIVE.positions.positions) || [];
       document.querySelectorAll(".cc-ccy").forEach(e => { e.textContent = `· ${CCY}`; });
 
-      // today's P&L = closed today + open positions marked to market
-      const open = pos.reduce((a, p) => a + (Number(p.unrealized_pnl) || 0), 0);
+      // today's P&L = trades closed today + today's move on open positions
+      // (not their whole gain since entry - a position bought last week
+      // shouldn't add last week's profit to today)
+      const todayOf = p => Number(p.today_pnl ?? p.unrealized_pnl) || 0;
+      const open = pos.reduce((a, p) => a + todayOf(p), 0);
+      const sinceEntry = pos.filter(p => p.today_basis === "entry").length;
       const today = (r.realized_today || 0) + open;
       const tEl = document.getElementById("cc-today");
       ccTween(tEl, today, v => ccBig(v)); ccSetSign(tEl, today);
       document.getElementById("cc-today-split").textContent =
-        `closed ${ccMoney(r.realized_today || 0)} · open ${ccMoney(open)}`;
+        `closed ${ccMoney(r.realized_today || 0)} · open today ${ccMoney(open)}` +
+        (sinceEntry ? ` (${sinceEntry} since entry)` : "");
+      renderTodayDetail();
       document.getElementById("cc-today-sub").textContent = `${r.closed_today || 0} closed today`;
 
       const pEl = document.getElementById("cc-30d");

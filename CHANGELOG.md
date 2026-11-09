@@ -15,6 +15,23 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Fixed
+- **Today's P&L counted earlier days' gains.** The Command Center tile added
+  each open position's whole profit or loss since entry, so a position bought
+  on an earlier day pushed its old gains into "today". Open positions now
+  count only today's part: everything since entry if opened today, otherwise
+  the broker's own "today's P&L" (moomoo) moved to the live price, or the
+  change since the previous close (Tiger, Zerodha, Angel). Where none of those
+  is available the tile says how many positions are still counted since entry.
+
+### Added
+- **Today's P&L breakdown.** Tap the Today's P&L tile to list the trades closed
+  today (time, exit reason, P&L) and each open position's share of today,
+  with totals. Explains why the tile can differ from the Positions screen,
+  which shows open positions only.
+- Broker quote snapshots now include the previous close where the broker
+  provides it, and moomoo positions carry today's P&L.
+
 ### Added
 - **Light theme, command palette and phone layout** (dashboard redesign phase 4).
   - The sun/moon button in the header switches between dark and light themes.

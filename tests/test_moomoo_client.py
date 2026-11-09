@@ -421,7 +421,7 @@ def test_positions_tolerate_na_strings():
 
     assert pos["US.AAPL"] == {"symbol": "US.AAPL", "name": "Apple", "quantity": 10,
                               "average_cost": 180.0, "market_price": 185.0,
-                              "unrealized_pnl": 50.0, "currency": "USD"}
+                              "unrealized_pnl": 50.0, "today_pnl": None, "currency": "USD"}
     assert pos["US.MSFT"]["quantity"] == 0 and pos["US.MSFT"]["unrealized_pnl"] is None
     assert client.get_position_quantity("AAPL") == 10
 

@@ -179,8 +179,8 @@ class TigerClient(BrokerClient):
         rows = []
         for _, r in (briefs if briefs is not None else pd.DataFrame()).iterrows():
             rows.append({"code": self._canonical(r["symbol"]), "last_price": _num(r.get("latest_price")),
-                         "volume": _num(r.get("volume"))})
-        return pd.DataFrame(rows, columns=["code", "last_price", "volume"])
+                         "volume": _num(r.get("volume")), "prev_close_price": _num(r.get("pre_close"))})
+        return pd.DataFrame(rows, columns=["code", "last_price", "volume", "prev_close_price"])
 
     def list_market_symbols(self) -> list[str]:
         return [self._canonical(s) for s in self.quote_client.get_symbols(market=self._tiger_market())]

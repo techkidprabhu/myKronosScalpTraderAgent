@@ -798,6 +798,7 @@ def _broker_snapshot(client):
 
 
 _quote_cache: dict = {}    # broker name -> {base symbol: (fetched_at, price)}
+_prev_close_cache: dict = {}  # broker name -> {base symbol: previous session close}
 QUOTE_CACHE_SECONDS = 3
 
 
@@ -822,16 +823,20 @@ def _live_prices(client, symbols: list[str]) -> dict:
         return prices
     try:
         df = client.get_snapshots(stale)
-        fetched = {}
+        fetched, prev = {}, {}
         for _, r in df.iterrows():
             price = r.get("last_price")
             if price is not None and price == price and float(price) > 0:
                 fetched[base_symbol(str(r["code"]))] = float(price)
+            pc = r.get("prev_close_price")
+            if pc is not None and pc == pc and float(pc) > 0:
+                prev[base_symbol(str(r["code"]))] = float(pc)
     except Exception:
         logger.warning("Live quote snapshot failed - showing last known prices", exc_info=True)
         return prices
     with _broker_cache_lock:
         cache.update({k: (time.time(), v) for k, v in fetched.items()})
+        _prev_close_cache.setdefault(current_spec().name, {}).update(prev)
     prices.update(fetched)
     return prices
 
@@ -846,6 +851,44 @@ def _apply_live_price(pos: dict, prices: dict) -> dict:
     if pos.get("avg_cost") is not None and pos.get("state") != "pending_entry":
         sign = 1 if pos["side"] == "LONG" else -1
         pos["unrealized_pnl"] = round(sign * (price - float(pos["avg_cost"])) * float(pos["quantity"]), 4)
+    return pos
+
+
+def _market_day_start() -> float:
+    """Midnight today in the current broker's market time zone (epoch s)."""
+    tz = market_timezone(_spec_market(current_spec()))
+    return datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
+
+def _apply_today_pnl(pos: dict, prev_closes: dict, day_start: float) -> dict:
+    """Today's share of a position's P&L, so the Command Center's
+    "Today's P&L" doesn't count gains made on earlier days.
+
+    - opened today (agent's record): all of it since entry
+    - the broker reports today's P&L (moomoo): that, moved to the live price
+    - the previous close is known: change since the previous close
+    - otherwise: since entry, and labelled as such
+    """
+    broker_today = pos.pop("_broker_today", None)
+    broker_price = pos.pop("_broker_price", None)
+    unreal = pos.get("unrealized_pnl")
+    pos["today_pnl"], pos["today_basis"] = None, None
+    if unreal is None or pos.get("state") == "pending_entry":
+        return pos
+    sign = 1 if pos["side"] == "LONG" else -1
+    qty = float(pos.get("quantity") or 0)
+    price = pos.get("current_price")
+    opened = pos.get("opened_ts")
+    prev = prev_closes.get(base_symbol(pos["symbol"]))
+    if opened and float(opened) >= day_start:
+        pos["today_pnl"], pos["today_basis"] = unreal, "entry_today"
+    elif broker_today is not None:
+        adj = sign * (float(price) - float(broker_price)) * qty if price and broker_price else 0.0
+        pos["today_pnl"], pos["today_basis"] = round(broker_today + adj, 4), "broker"
+    elif prev and price:
+        pos["today_pnl"], pos["today_basis"] = round(sign * (float(price) - prev) * qty, 4), "prev_close"
+    else:
+        pos["today_pnl"], pos["today_basis"] = unreal, "entry"
     return pos
 
 
@@ -921,6 +964,8 @@ def get_positions():
                 "avg_cost": p["average_cost"],
                 "current_price": p["market_price"],
                 "unrealized_pnl": p["unrealized_pnl"],
+                "_broker_today": p.get("today_pnl"),
+                "_broker_price": p["market_price"],
                 "currency": p["currency"],
                 "state": "managed" if agent and agent["status"] == "open" else "unmanaged",
                 **_agent_fields(agent),
@@ -953,6 +998,10 @@ def get_positions():
     if client is not None and positions:
         prices = _live_prices(client, [p["symbol"] for p in positions])
         positions = [_apply_live_price(p, prices) for p in positions]
+    with _broker_cache_lock:
+        prev_closes = dict(_prev_close_cache.get(current_spec().name, {}))
+    day_start = _market_day_start()
+    positions = [_apply_today_pnl(p, prev_closes, day_start) for p in positions]
 
     return jsonify({
         "positions": positions,
@@ -1451,7 +1500,7 @@ def _overview_data() -> dict:
                              "text": f"Manual {d['action']} {d['symbol']}: {d['status']}"
                                      f"{' - ' + d['result'] if d['result'] else ''}"})
         trades = [dict(r) for r in conn.execute(
-            "SELECT ts, epic, pnl FROM trade_results WHERE ts >= ? ORDER BY ts", (now - 30 * 86400,))]
+            "SELECT ts, epic, pnl, details FROM trade_results WHERE ts >= ? ORDER BY ts", (now - 30 * 86400,))]
         row = conn.execute("SELECT value FROM kv WHERE key = 'risk_state'").fetchone()
         state = json.loads(row[0]) if row else {}
         active = [dict(r) for r in conn.execute(
@@ -1476,8 +1525,20 @@ def _overview_data() -> dict:
         run += t["pnl"] or 0.0
         curve.append(round(run, 2))
     today = [t["pnl"] or 0.0 for t in trades if t["ts"] >= day_start]
+    today_list = []
+    for t in trades:
+        if t["ts"] < day_start:
+            continue
+        try:
+            det = json.loads(t["details"]) if t.get("details") else {}
+        except (TypeError, ValueError):
+            det = {}
+        reason = det.get("reason") if isinstance(det, dict) else None
+        today_list.append({"ts": t["ts"], "symbol": t["epic"], "pnl": round(t["pnl"] or 0.0, 2),
+                           "reason": str(reason).replace("_", " ") if reason else None})
     out["results"] = {
         "realized_today": round(sum(today), 2), "closed_today": len(today),
+        "closed_today_list": today_list[::-1],
         "pnl_30d": round(sum(pnls), 2), "trades_30d": len(pnls), "wins_30d": len(wins), "losses_30d": len(losses),
         "win_rate_30d": round(len(wins) / len(pnls) * 100, 1) if pnls else None,
         "avg_win": round(sum(wins) / len(wins), 2) if wins else None,
