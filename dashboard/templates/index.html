@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kronos Swing Agent — Trading Terminal</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <script>
+    // Apply the saved theme before anything paints (no dark/light flash).
+    try { if (localStorage.getItem("theme") === "light") document.documentElement.dataset.theme = "light"; } catch (e) {}
+  </script>
   <script src="/static/js/lightweight-charts.js"></script>
 </head>
 <body>
@@ -27,7 +31,7 @@
 
       <div id="badge-broker" class="badge info">
         <span id="broker-label">BROKER: MOOMOO</span>
-        <span id="broker-acc" style="color:#fff; opacity:0.8;"></span>
+        <span id="broker-acc" style="color:var(--text-strong); opacity:0.8;"></span>
         <span id="broker-funds" class="mono" style="color:var(--accent-green); opacity:0.9;"></span>
       </div>
 
@@ -48,6 +52,14 @@
       <button class="btn btn-primary" onclick="triggerScanNow()" id="btn-scan-now">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
         Scan Bar Now
+      </button>
+      <button class="btn btn-icon" type="button" onclick="openPalette()" id="btn-palette" aria-label="Command palette (Ctrl+K)" title="Search tabs, symbols and actions (Ctrl+K)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <kbd class="kbd">Ctrl K</kbd>
+      </button>
+      <button class="btn btn-icon" type="button" onclick="toggleTheme()" id="btn-theme" aria-label="Switch to light theme" title="Light / dark theme">
+        <svg id="theme-icon-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg id="theme-icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="display:none"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
       </button>
       <button class="btn" onclick="toggleAutoRefresh()" id="btn-auto-refresh">
         Auto: <span id="auto-refresh-state" style="color:var(--accent-green); margin-left:4px;">ON (5s)</span>
@@ -685,7 +697,7 @@
 
         <div id="sim-results-card" style="display:none; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:16px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <div style="font-weight:700; font-size:15px; color:#fff;" id="sim-summary-title">Forecast Result</div>
+            <div style="font-weight:700; font-size:15px; color:var(--text-strong);" id="sim-summary-title">Forecast Result</div>
             <div id="sim-outcome-pill" class="badge success">CONFIRMED</div>
           </div>
 
@@ -793,8 +805,8 @@
 
           <div class="strat-section-title" style="color:var(--accent-blue);">File Locations</div>
           <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
-            Config: <span style="color:#fff;">config/config.yaml</span> ➔ <span style="color:var(--accent-blue);">screener:</span><br>
-            Code: <span style="color:#fff;">src/screener.py</span> (class <span style="color:var(--accent-cyan);">Screener</span>)
+            Config: <span style="color:var(--text-strong);">config/config.yaml</span> ➔ <span style="color:var(--accent-blue);">screener:</span><br>
+            Code: <span style="color:var(--text-strong);">src/screener.py</span> (class <span style="color:var(--accent-cyan);">Screener</span>)
           </div>
 
           <div class="strat-upgrade-box">
@@ -856,8 +868,8 @@
 
           <div class="strat-section-title" style="color:var(--accent-green);">File Locations</div>
           <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
-            Config: <span style="color:#fff;">config/config.yaml</span> ➔ <span style="color:var(--accent-green);">timeframe, lookback_bars</span><br>
-            Code: <span style="color:#fff;">src/patterns.py</span> (function <span style="color:var(--accent-cyan);">scan()</span>)
+            Config: <span style="color:var(--text-strong);">config/config.yaml</span> ➔ <span style="color:var(--accent-green);">timeframe, lookback_bars</span><br>
+            Code: <span style="color:var(--text-strong);">src/patterns.py</span> (function <span style="color:var(--accent-cyan);">scan()</span>)
           </div>
 
           <div class="strat-upgrade-box">
@@ -923,8 +935,8 @@
 
           <div class="strat-section-title" style="color:var(--accent-purple);">File Locations</div>
           <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
-            Config: <span style="color:#fff;">config/config.yaml</span> ➔ <span style="color:var(--accent-purple);">kronos:, kronos_confidence_threshold</span><br>
-            Code: <span style="color:#fff;">src/kronos_agent.py</span> (class <span style="color:var(--accent-cyan);">KronosAgent</span>)
+            Config: <span style="color:var(--text-strong);">config/config.yaml</span> ➔ <span style="color:var(--accent-purple);">kronos:, kronos_confidence_threshold</span><br>
+            Code: <span style="color:var(--text-strong);">src/kronos_agent.py</span> (class <span style="color:var(--accent-cyan);">KronosAgent</span>)
           </div>
 
           <div class="strat-upgrade-box">
@@ -987,8 +999,8 @@
 
           <div class="strat-section-title" style="color:var(--accent-cyan);">File Locations</div>
           <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
-            Config: <span style="color:#fff;">config/config.yaml</span> ➔ <span style="color:var(--accent-cyan);">order_type, symbols</span><br>
-            Code: <span style="color:#fff;">src/moomoo_client.py</span> & <span style="color:#fff;">src/orchestrator.py</span>
+            Config: <span style="color:var(--text-strong);">config/config.yaml</span> ➔ <span style="color:var(--accent-cyan);">order_type, symbols</span><br>
+            Code: <span style="color:var(--text-strong);">src/moomoo_client.py</span> & <span style="color:var(--text-strong);">src/orchestrator.py</span>
           </div>
 
           <div class="strat-upgrade-box">
@@ -1054,8 +1066,8 @@
 
           <div class="strat-section-title" style="color:var(--accent-red);">File Locations</div>
           <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
-            Config: <span style="color:#fff;">config/config.yaml</span> ➔ <span style="color:var(--accent-red);">risk:</span><br>
-            Code: <span style="color:#fff;">src/risk.py</span> (class <span style="color:var(--accent-cyan);">RiskManager</span>)
+            Config: <span style="color:var(--text-strong);">config/config.yaml</span> ➔ <span style="color:var(--accent-red);">risk:</span><br>
+            Code: <span style="color:var(--text-strong);">src/risk.py</span> (class <span style="color:var(--accent-cyan);">RiskManager</span>)
           </div>
 
           <div class="strat-upgrade-box">
@@ -1121,8 +1133,8 @@
 
           <div class="strat-section-title" style="color:var(--accent-amber);">File Locations</div>
           <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
-            Config: <span style="color:#fff;">config/config.yaml</span> ➔ <span style="color:var(--accent-amber);">trailing_stop:</span><br>
-            Code: <span style="color:#fff;">src/trailing_stop.py</span> & <span style="color:#fff;">src/orchestrator.py</span>
+            Config: <span style="color:var(--text-strong);">config/config.yaml</span> ➔ <span style="color:var(--accent-amber);">trailing_stop:</span><br>
+            Code: <span style="color:var(--text-strong);">src/trailing_stop.py</span> & <span style="color:var(--text-strong);">src/orchestrator.py</span>
           </div>
 
           <div class="strat-upgrade-box">
@@ -1278,7 +1290,21 @@
 
   </main>
 
-  <div id="toast">Notification message</div>
+  <div id="toast" role="status" aria-live="polite">Notification message</div>
+
+  <!-- Command palette (Ctrl+K) -->
+  <div id="cp-overlay" class="cp-overlay" style="display:none" onclick="if (event.target === this) closePalette()">
+    <div class="cp-box" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div class="cp-input-row">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="cp-input" type="text" autocomplete="off" spellcheck="false" placeholder="Go to a tab, open a symbol, or run an action…"
+               aria-controls="cp-list" aria-activedescendant="" oninput="cpRender()" onkeydown="cpKey(event)">
+        <kbd class="kbd">Esc</kbd>
+      </div>
+      <ul id="cp-list" class="cp-list" role="listbox"></ul>
+      <div class="cp-foot"><span><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd> move</span><span><kbd class="kbd">Enter</kbd> open</span><span><kbd class="kbd">1</kbd>–<kbd class="kbd">9</kbd> switch tabs anywhere</span><span><kbd class="kbd">/</kbd> or <kbd class="kbd">Ctrl K</kbd> open this</span></div>
+    </div>
+  </div>
 
   <!-- Dashboard JavaScript Application -->
   <script>
@@ -1343,24 +1369,24 @@
         width: containerWidth,
         height: containerHeight,
         layout: {
-          background: { type: 'solid', color: '#090d16' },
-          textColor: '#94a3b8',
+          background: { type: 'solid', color: chartTheme().bg },
+          textColor: chartTheme().text,
           fontFamily: "'JetBrains Mono', -apple-system, sans-serif",
         },
         grid: {
-          vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
-          horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+          vertLines: { color: chartTheme().grid },
+          horzLines: { color: chartTheme().grid },
         },
         crosshair: {
           mode: LightweightCharts.CrosshairMode.Normal,
         },
         timeScale: {
-          borderColor: '#1f2937',
+          borderColor: chartTheme().border,
           timeVisible: true,
           secondsVisible: false,
         },
         rightPriceScale: {
-          borderColor: '#1f2937',
+          borderColor: chartTheme().border,
         },
       });
 
@@ -1501,7 +1527,7 @@
       document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
       document.querySelectorAll(".tab-panel").forEach(panel => panel.classList.remove("active"));
 
-      const targetBtn = Array.from(document.querySelectorAll(".tab-btn")).find(b => b.textContent.toLowerCase().includes(tabId.replace('-', ' ')));
+      const targetBtn = Array.from(document.querySelectorAll(".tab-btn")).find(b => (b.getAttribute("onclick") || "").includes(`'${tabId}'`));
       if (targetBtn) targetBtn.classList.add("active");
 
       const panel = document.getElementById(`tab-${tabId}`);
@@ -3506,6 +3532,147 @@
         <div class="ds-legend"><span><i style="background:#38bdf8"></i>confirmed</span><span><i style="background:#475569"></i>not confirmed</span></div>`;
     }
 
+    // ================= Theme =================
+    function chartTheme() {
+      const light = document.documentElement.dataset.theme === "light";
+      return light ? { bg: "#ffffff", text: "#475569", grid: "rgba(15, 23, 42, 0.06)", border: "#dce3ee" }
+                   : { bg: "#090d16", text: "#94a3b8", grid: "rgba(255, 255, 255, 0.05)", border: "#1f2937" };
+    }
+    function applyTheme(theme) {
+      const light = theme === "light";
+      if (light) document.documentElement.dataset.theme = "light"; else delete document.documentElement.dataset.theme;
+      try { localStorage.setItem("theme", light ? "light" : "dark"); } catch (e) {}
+      document.getElementById("theme-icon-sun").style.display = light ? "none" : "";
+      document.getElementById("theme-icon-moon").style.display = light ? "" : "none";
+      const btn = document.getElementById("btn-theme");
+      btn.setAttribute("aria-label", light ? "Switch to dark theme" : "Switch to light theme");
+      if (chartInstance) {
+        const t = chartTheme();
+        chartInstance.applyOptions({ layout: { background: { type: "solid", color: t.bg }, textColor: t.text },
+          grid: { vertLines: { color: t.grid }, horzLines: { color: t.grid } },
+          timeScale: { borderColor: t.border }, rightPriceScale: { borderColor: t.border } });
+      }
+      if (typeof pfData !== "undefined" && pfData && document.getElementById("tab-performance").classList.contains("active")) renderPerformance();
+    }
+    function toggleTheme() { applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light"); }
+
+    // ================= Command palette + shortcuts =================
+    const CP_TABS = [
+      ["command-center", "Command Center", "Today at a glance"], ["terminal", "Live Terminal", "Chart, Kronos forecast"],
+      ["decisions", "Decisions & Audit Log", "Every signal and why"], ["positions", "Positions & Trailing Stop", "Live cards, close"],
+      ["performance", "Performance", "Equity, drawdown, by pattern"], ["kronos-lab", "Kronos Model Lab", "Run a forecast"],
+      ["strategies", "Strategies & Tactics", "How the agent trades"], ["risk-model", "Risk Model", "Stops, limits, day-trader rules"],
+      ["settings", "Config & Risk", "All settings"],
+    ];
+    let cpItems = [], cpSel = 0;
+
+    function cpCommands() {
+      const cmds = CP_TABS.map(([id, name, sub], i) => ({ group: "Go to", label: name, sub, key: String(i + 1), run: () => switchTab(id) }));
+      const held = ((LIVE.positions && LIVE.positions.positions) || []).map(p => p.symbol);
+      const syms = [...new Set([...held, ...Object.keys(symbolDetails || {}), activeSymbol].filter(Boolean))];
+      syms.forEach(sym => cmds.push({ group: "Symbols", label: sym, sub: held.includes(sym) ? "position open · open chart" : "open chart",
+        run: () => { switchTab("terminal"); selectSymbol(sym); } }));
+      cmds.push(
+        { group: "Actions", label: "Scan bar now", sub: "Run the agent's pipeline on the latest bar", run: () => triggerScanNow() },
+        { group: "Actions", label: `Turn auto-refresh ${autoRefresh ? "off" : "on"}`, run: () => toggleAutoRefresh() },
+        { group: "Actions", label: `Switch to ${document.documentElement.dataset.theme === "light" ? "dark" : "light"} theme`, run: () => toggleTheme() },
+        { group: "Actions", label: "Positions as cards", run: () => { switchTab("positions"); setPositionsView("cards"); } },
+        { group: "Actions", label: "Positions as a table", run: () => { switchTab("positions"); setPositionsView("table"); } },
+        { group: "Actions", label: "Risk Model on the live market", run: () => { switchTab("risk-model"); setTimeout(() => rmSetGraphMode("live"), 300); } },
+        { group: "Actions", label: "Performance: last 30 days", run: () => { switchTab("performance"); pfSetDays(30); } },
+        { group: "Actions", label: "Performance: all time", run: () => { switchTab("performance"); pfSetDays("all"); } },
+        { group: "Actions", label: "Decisions: rejected by Kronos", run: () => { switchTab("decisions"); dsFilter("kronos"); } },
+        { group: "Actions", label: "Decisions: rejected by risk rules", run: () => { switchTab("decisions"); dsFilter("risk"); } },
+        { group: "Actions", label: "Decisions: orders opened", run: () => { switchTab("decisions"); dsFilter("opened"); } },
+        { group: "Actions", label: "Reload the dashboard", run: () => location.reload() },
+      );
+      return cmds;
+    }
+
+    // Subsequence match, scored: earlier, contiguous and word-start hits rank higher.
+    function cpScore(q, text) {
+      if (!q) return 1;
+      text = text.toLowerCase();
+      let ti = 0, score = 0, run = 0;
+      for (const ch of q) {
+        const at = text.indexOf(ch, ti);
+        if (at < 0) return 0;
+        run = at === ti ? run + 1 : 0;
+        score += 1 + run * 2 + (at === 0 || " ·:-&".includes(text[at - 1]) ? 3 : 0) - Math.min(at - ti, 5) * 0.2;
+        ti = at + 1;
+      }
+      return score;
+    }
+
+    let cpReturnFocus = null;
+    function openPalette() {
+      cpReturnFocus = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+      const o = document.getElementById("cp-overlay");
+      o.style.display = "flex";
+      const inp = document.getElementById("cp-input");
+      inp.value = ""; cpSel = 0; cpRender();
+      setTimeout(() => inp.focus(), 0);
+    }
+    function closePalette() {
+      document.getElementById("cp-overlay").style.display = "none";
+      document.getElementById("cp-input").blur();
+      if (cpReturnFocus && document.contains(cpReturnFocus)) { try { cpReturnFocus.focus(); } catch (e) {} }
+      cpReturnFocus = null;
+    }
+
+    function cpRender() {
+      const q = document.getElementById("cp-input").value.trim().toLowerCase();
+      cpItems = cpCommands().map(c => ({ ...c, s: Math.max(cpScore(q, c.label), cpScore(q, c.sub || "") * 0.6) }))
+        .filter(c => c.s > 0).sort((a, b) => q ? b.s - a.s : 0).slice(0, 14);
+      cpSel = Math.min(cpSel, Math.max(0, cpItems.length - 1));
+      const list = document.getElementById("cp-list");
+      let last = "";
+      list.innerHTML = cpItems.length ? cpItems.map((c, i) => {
+        const head = !q && c.group !== last ? `<li class="cp-group" role="presentation">${esc(c.group)}</li>` : "";
+        last = c.group;
+        return `${head}<li id="cp-opt-${i}" role="option" aria-selected="${i === cpSel}" class="cp-item${i === cpSel ? " sel" : ""}"
+            onmouseenter="cpSel=${i}; cpMark()" onclick="cpRun(${i})">
+          <span class="cp-label">${esc(c.label)}</span>${c.sub ? `<span class="cp-sub">${esc(c.sub)}</span>` : ""}
+          ${c.key ? `<kbd class="kbd">${c.key}</kbd>` : `<span class="cp-group-tag">${esc(c.group)}</span>`}</li>`;
+      }).join("") : `<li class="cp-empty">Nothing matches "${esc(q)}"</li>`;
+      cpMark();
+    }
+    function cpMark() {
+      document.querySelectorAll("#cp-list .cp-item").forEach(el => {
+        const on = el.id === `cp-opt-${cpSel}`;
+        el.classList.toggle("sel", on); el.setAttribute("aria-selected", on);
+        if (on) el.scrollIntoView({ block: "nearest" });
+      });
+      document.getElementById("cp-input").setAttribute("aria-activedescendant", cpItems.length ? `cp-opt-${cpSel}` : "");
+    }
+    function cpKey(e) {
+      if (e.key === "ArrowDown") { e.preventDefault(); cpSel = (cpSel + 1) % Math.max(1, cpItems.length); cpMark(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); cpSel = (cpSel - 1 + cpItems.length) % Math.max(1, cpItems.length); cpMark(); }
+      else if (e.key === "Enter") { e.preventDefault(); cpRun(cpSel); }
+      else if (e.key === "Escape") { e.preventDefault(); closePalette(); }
+    }
+    function cpRun(i) {
+      const c = cpItems[i];
+      if (!c) return;
+      closePalette();
+      try { c.run(); } catch (err) { showToast(`Couldn't run "${c.label}": ${err.message}`); }
+    }
+
+    document.addEventListener("keydown", e => {
+      const typing = e.target.closest && e.target.closest("input, textarea, select, [contenteditable='true']");
+      if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        document.getElementById("cp-overlay").style.display === "flex" ? closePalette() : openPalette();
+        return;
+      }
+      if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (document.querySelector(".manual-modal[style*='flex']")) return;      // a confirm dialog is open
+      if (e.key === "/") { e.preventDefault(); openPalette(); return; }
+      if (/^[1-9]$/.test(e.key) && CP_TABS[Number(e.key) - 1] && document.getElementById("cp-overlay").style.display !== "flex") {
+        switchTab(CP_TABS[Number(e.key) - 1][0]);
+      }
+    });
+
     // ================= Command Center + live stream =================
     // One server-sent-event connection (/api/stream) pushes the overview and
     // positions the moment they change. If it drops, the page falls back to
@@ -4583,6 +4750,7 @@
       pollOverview();
       startLiveStream();
       setPositionsView(positionsView);
+      applyTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
       loadConfigData();
       initBrokerSwitch();
       loadBrokers();

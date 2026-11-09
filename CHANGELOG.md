@@ -16,6 +16,30 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Light theme, command palette and phone layout** (dashboard redesign phase 4).
+  - The sun/moon button in the header switches between dark and light themes.
+    The choice is saved in the browser and applied before the page paints, so
+    there is no flash. The candlestick chart follows the theme.
+  - All colours in the stylesheet are now theme variables (68 hard-coded hex
+    colours replaced), so every panel, select, toast and badge reads well in
+    both themes.
+  - **Ctrl+K / Cmd+K** (or `/`) opens a command palette with fuzzy search over
+    tabs, symbols you hold or watch, and actions (scan now, auto-refresh,
+    theme, positions view, performance range, decision filters, reload).
+    Arrow keys move, Enter runs, Esc closes and returns focus.
+  - Keys **1–9** jump straight to a tab. Shortcuts are ignored while typing in
+    a field, holding a modifier, or with an order dialog open.
+  - Phones (up to 640px wide): sticky, swipeable tab bar with 44px touch
+    targets; KPI tiles in two columns (one under 400px); panels, settings and
+    strategy cards stack; nothing scrolls sideways on any tab.
+  - Card shadows, smoother transitions and visible keyboard focus outlines.
+  - The toast is announced to screen readers.
+
+### Fixed
+- The active tab is now highlighted correctly when switching to Kronos Model
+  Lab or Config & Risk from code (palette, shortcuts).
+
+### Added
 - **Performance tab** (dashboard redesign phase 3), for 7 days / 30 / 90 /
   1 year / all: net P&L, win rate and streaks, profit factor and payoff,
   expectancy per trade and average R, max drawdown, trades and average
