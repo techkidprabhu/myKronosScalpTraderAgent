@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from dotenv import load_dotenv
-from flask import Flask, has_request_context, jsonify, render_template, request
+from flask import Flask, Response, has_request_context, jsonify, render_template, request, stream_with_context
 
 # Add root directory to sys.path so 'src' can be imported
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -1355,6 +1355,223 @@ def get_risk_state():
         "reference_price": reference,
         "symbol": symbol,
     })
+
+
+# ---------------------------------------------------------------------------
+# Command Center: one summary of today, and a live stream of it
+# ---------------------------------------------------------------------------
+
+CLOSE_STAGES = {"entry_cancelled": "Unfilled entry cancelled", "flat_by_cancel_entry": "Entry cancelled (flat by close)",
+                "position_closed_externally": "Position closed outside the agent"}
+
+
+def _decision_stage(row: dict) -> str:
+    """Which gate a decision stopped at (or 'opened'), from what the agent logged."""
+    action = row["action"]
+    if action == "opened":
+        return "opened"
+    if action == "error":
+        return "error"
+    details = row.get("details") or ""
+    if row["kronos_confirmed"] is None and '"indicators"' in details:
+        return "indicators"
+    if row["risk_allowed"] == 0:
+        return "risk"
+    return "kronos"
+
+
+def _overview_data() -> dict:
+    """Today at a glance for the Command Center, from the agent's own
+    records (audit DB) plus the cached account summary. Cheap: no broker
+    calls beyond the cached account figures."""
+    cfg = load_config()
+    risk_cfg = cfg.get("risk", {}) or {}
+    spec = current_spec()
+    market = _spec_market(spec)
+    tz = market_timezone(market)
+    now = time.time()
+    day_start = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    out = {"generated_at": now, "market": market}
+
+    # session clock
+    try:
+        code = cal.exchange_for_market(market)
+        mins = cal.session_minutes(code)
+        out["session"] = {
+            "exchange": code, "tz": cal.EXCHANGES[code].tz, "open": mins is not None,
+            "minutes_since_open": round(mins[0], 1) if mins else None,
+            "minutes_to_close": round(mins[1], 1) if mins else None,
+            "length": round(mins[0] + mins[1], 1) if mins else None,
+            "next_open": cal.next_open(code).isoformat() if mins is None else None,
+            "no_entries_first": risk_cfg.get("no_entries_first_minutes"),
+            "no_entries_last": risk_cfg.get("no_entries_last_minutes"),
+            "flat_by": risk_cfg.get("flat_by_minutes_before_close"),
+        }
+    except Exception:
+        logger.warning("Session clock unavailable", exc_info=True)
+        out["session"] = None
+
+    pipeline = {"scanned": 0, "patterns": 0, "indicators": 0, "kronos": 0, "risk": 0, "opened": 0, "errors": 0}
+    reasons, activity, trades = {}, [], []
+    state, active, manual = {}, [], []
+    try:
+        conn = get_db()
+        pipeline["scanned"] = conn.execute(
+            "SELECT COUNT(*) FROM snapshots WHERE stage = 'scanning' AND ts >= ?", (day_start,)).fetchone()[0]
+        for r in conn.execute("SELECT * FROM decisions WHERE ts >= ? ORDER BY id", (day_start,)):
+            d = dict(r)
+            if d["pattern"] == "manual":
+                continue
+            pipeline["patterns"] += 1
+            stage = _decision_stage(d)
+            if stage == "opened":
+                pipeline["opened"] += 1
+            elif stage == "error":
+                pipeline["errors"] += 1
+            else:
+                pipeline[stage] += 1
+                key = (stage, (d["risk_reason"] or "").split(" (")[0][:80])
+                reasons[key] = reasons.get(key, 0) + 1
+        for r in conn.execute("SELECT * FROM decisions ORDER BY id DESC LIMIT 15"):
+            d = dict(r)
+            stage = _decision_stage(d)
+            activity.append({"ts": d["ts"], "symbol": d["epic"], "kind": "manual" if d["pattern"] == "manual" else stage,
+                             "text": _decision_text(d, stage)})
+        for r in conn.execute("SELECT * FROM trade_results ORDER BY id DESC LIMIT 15"):
+            d = dict(r)
+            reason = ""
+            try:
+                reason = (json.loads(d["details"] or "{}") or {}).get("reason", "")
+            except ValueError:
+                pass
+            pnl = d["pnl"] or 0.0
+            activity.append({"ts": d["ts"], "symbol": d["epic"], "kind": "win" if pnl >= 0 else "loss",
+                             "text": f"Closed {d['epic']}{' (' + reason.replace('_', ' ') + ')' if reason else ''}",
+                             "pnl": round(pnl, 2)})
+        for r in conn.execute("SELECT ts, symbol, stage FROM snapshots WHERE stage IN ({}) ORDER BY id DESC LIMIT 10"
+                              .format(",".join("?" * len(CLOSE_STAGES))), tuple(CLOSE_STAGES)):
+            activity.append({"ts": r["ts"], "symbol": r["symbol"], "kind": "cancel",
+                             "text": f"{CLOSE_STAGES[r['stage']]}: {r['symbol']}"})
+        for r in conn.execute("SELECT * FROM manual_orders ORDER BY id DESC LIMIT 5"):
+            d = dict(r)
+            activity.append({"ts": d["done_ts"] or d["ts"], "symbol": d["symbol"], "kind": "manual",
+                             "text": f"Manual {d['action']} {d['symbol']}: {d['status']}"
+                                     f"{' - ' + d['result'] if d['result'] else ''}"})
+        trades = [dict(r) for r in conn.execute(
+            "SELECT ts, epic, pnl FROM trade_results WHERE ts >= ? ORDER BY ts", (now - 30 * 86400,))]
+        row = conn.execute("SELECT value FROM kv WHERE key = 'risk_state'").fetchone()
+        state = json.loads(row[0]) if row else {}
+        active = [dict(r) for r in conn.execute(
+            "SELECT symbol, direction, status, quantity, entry_price, current_stop FROM positions "
+            "WHERE status IN ('pending_entry', 'open')")]
+        conn.close()
+    except (sqlite3.Error, ValueError):
+        logger.warning("Overview: audit DB unavailable", exc_info=True)
+
+    out["pipeline"] = pipeline
+    out["pipeline"]["watching"] = len(_kv(ACTIVE_SYMBOLS_KEY) or [])
+    out["top_reasons"] = [{"stage": k[0], "reason": k[1], "count": v}
+                          for k, v in sorted(reasons.items(), key=lambda kv: -kv[1])[:4]]
+    activity.sort(key=lambda a: a["ts"] or 0, reverse=True)
+    out["activity"] = activity[:20]
+
+    # results
+    pnls = [t["pnl"] or 0.0 for t in trades]
+    wins, losses = [p for p in pnls if p > 0], [p for p in pnls if p <= 0]
+    curve, run = [], 0.0
+    for t in trades:
+        run += t["pnl"] or 0.0
+        curve.append(round(run, 2))
+    today = [t["pnl"] or 0.0 for t in trades if t["ts"] >= day_start]
+    out["results"] = {
+        "realized_today": round(sum(today), 2), "closed_today": len(today),
+        "pnl_30d": round(sum(pnls), 2), "trades_30d": len(pnls), "wins_30d": len(wins), "losses_30d": len(losses),
+        "win_rate_30d": round(len(wins) / len(pnls) * 100, 1) if pnls else None,
+        "avg_win": round(sum(wins) / len(wins), 2) if wins else None,
+        "avg_loss": round(sum(losses) / len(losses), 2) if losses else None,
+        "profit_factor": round(sum(wins) / abs(sum(losses)), 2) if wins and losses and sum(losses) else None,
+        "curve_30d": curve[-60:],
+    }
+
+    stale = bool(state.get("trading_day") and state["trading_day"] != datetime.now(tz).date().isoformat())
+    out["risk"] = {
+        "trades_today": 0 if stale else int(state.get("trades_today") or 0),
+        "max_trades_per_day": risk_cfg.get("max_trades_per_day"),
+        "open_positions": len(active), "max_open_positions": risk_cfg.get("max_open_positions"),
+        "open_risk": round(open_risk_at_stops(active), 2),
+        "max_daily_loss": risk_cfg.get("max_daily_loss"),
+        "halted": False if stale else bool(state.get("trading_halted")),
+    }
+
+    account = None
+    try:
+        client = get_broker()
+        if client is not None:
+            account = _account_summary(client)
+    except Exception:
+        logger.warning("Overview: account summary unavailable", exc_info=True)
+    out["account"] = account
+    out["agent"] = {"phase": _kv(PHASE_KEY), "broker_health": _kv(BROKER_HEALTH_KEY)}
+    return out
+
+
+def _decision_text(d: dict, stage: str) -> str:
+    who = f"{d['epic']} {d['pattern'] or ''} {d['pattern_direction'] or ''}".strip()
+    if d["pattern"] == "manual":
+        return f"Manual {d['pattern_direction']} {d['epic']} submitted"
+    if stage == "opened":
+        conf = f" · Kronos {d['kronos_confidence'] * 100:.0f}%" if d["kronos_confidence"] is not None else ""
+        return f"Entered {who}{conf}"
+    if stage == "error":
+        return f"Order error on {who}"
+    label = {"indicators": "Indicators", "kronos": "Kronos", "risk": "Risk"}[stage]
+    return f"{label} rejected {who}{': ' + d['risk_reason'] if d['risk_reason'] else ''}"
+
+
+@app.route("/api/overview", methods=["GET"])
+def get_overview():
+    return jsonify(_overview_data())
+
+
+STREAM_INTERVAL_SECONDS = 2.0
+STREAM_LIFETIME_SECONDS = 300      # the browser reconnects on its own
+
+
+@app.route("/api/stream", methods=["GET"])
+def stream():
+    """Server-sent events: pushes `overview` and `positions` as soon as they
+    change (checked every couple of seconds), instead of the page polling.
+    Ends after a few minutes; EventSource reconnects by itself."""
+    once = request.args.get("once") == "1"           # tests / debugging
+
+    def payloads():
+        yield "overview", _overview_data()
+        try:
+            yield "positions", get_positions().get_json()
+        except Exception:
+            logger.warning("Stream: positions unavailable", exc_info=True)
+
+    @stream_with_context
+    def gen():
+        last, started, last_beat = {}, time.time(), time.time()
+        yield "retry: 3000\n\n"
+        while True:
+            for name, data in payloads():
+                body = json.dumps(data, default=str, separators=(",", ":"))
+                if last.get(name) != body:
+                    last[name] = body
+                    yield f"event: {name}\ndata: {body}\n\n"
+            if once:
+                return
+            if time.time() - last_beat > 15:
+                last_beat = time.time()
+                yield ": ping\n\n"
+            if time.time() - started > STREAM_LIFETIME_SECONDS:
+                return
+            time.sleep(STREAM_INTERVAL_SECONDS)
+
+    return Response(gen(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.route("/api/settings", methods=["GET", "POST"])

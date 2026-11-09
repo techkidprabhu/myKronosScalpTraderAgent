@@ -16,6 +16,26 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Command Center** (new home tab, dashboard redesign phase 1): today's
+  session bar with the entry window and flat-by time, animated KPI tiles
+  (today's P&L closed + open, 30-day P&L with sparkline, win rate ring and
+  profit factor, trades today vs limit, risk at the stops vs the daily cap,
+  account equity and cash split), the agent pipeline for today (watching ->
+  bars checked -> patterns -> indicators -> Kronos -> risk -> orders) with
+  rejection counts and top reasons, open-position cards showing where price
+  sits between stop and target in R, and a live activity feed with toasts
+  for entries, exits and errors. Respects reduced-motion settings.
+- **Live updates**: `GET /api/stream` (server-sent events) pushes the
+  overview and positions as soon as they change; the Positions tab uses it
+  too. Polling pauses while the stream is connected and resumes as a
+  fallback if it drops. `GET /api/overview` returns the same summary.
+
+### Fixed
+- Header, tab bar and sentiment bar no longer push the page sideways on
+  phone-width screens.
+- Flat-by-close check ignores a non-numeric setting instead of raising.
+
+### Added
 - **Day-trader risk rules** (from the Day Trader skill pack), all off by
   default: risk-based position sizing (max loss per trade, max % of
   account, cash buffer), min reward:risk, max trades per day, daily loss

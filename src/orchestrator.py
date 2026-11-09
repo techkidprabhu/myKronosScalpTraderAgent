@@ -1204,8 +1204,8 @@ class Orchestrator:
         """Day-trade mode: in the last N minutes of the session, close every
         position the agent manages and cancel unfilled entries, win or lose.
         Holdings the agent doesn't manage are left alone."""
-        minutes = self.risk_manager.config.flat_by_minutes_before_close
-        if not minutes:
+        minutes = getattr(self.risk_manager.config, "flat_by_minutes_before_close", None)
+        if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) or minutes <= 0:
             return
         try:
             mins = cal.session_minutes(cal.exchange_for_market(self.broker.market))
