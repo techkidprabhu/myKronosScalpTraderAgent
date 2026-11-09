@@ -16,6 +16,22 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Performance tab** (dashboard redesign phase 3), for 7 days / 30 / 90 /
+  1 year / all: net P&L, win rate and streaks, profit factor and payoff,
+  expectancy per trade and average R, max drawdown, trades and average
+  holding time; an equity curve with a drawdown band and hover readout; a
+  daily P&L calendar; the distribution of results in R (P&L / planned risk
+  at the stop); results by pattern, symbol and exit reason; win rate by
+  Kronos confidence at entry; and the last 100 closed trades with R.
+  `GET /api/performance?days=`.
+- **Decisions & Audit analytics**: signal funnel with pass rates
+  (signals -> indicators -> Kronos -> risk -> orders), outcome per day,
+  Kronos confidence histogram (confirmed vs not), top rejection reasons,
+  and filter chips (opened / indicators / Kronos / risk / manual / errors)
+  on the audit table, which now loads the last 200 decisions.
+  `GET /api/decision_stats?days=`; `/api/decisions` rows carry `stage`.
+
+### Added
 - **Live Terminal, phase 2**: the Kronos forecast is drawn as a shaded cone
   (predicted highs to lows) fanning out from the last closed candle, with
   the dashed path now joined to it. The agent's own trades are marked on
