@@ -426,6 +426,7 @@ class MoomooClient(BrokerClient):
             "average_cost": cost,
             "market_price": _positive(row.get("nominal_price")),
             "unrealized_pnl": pnl,
+            "today_pnl": _num(row.get("today_pl_val")),
             "currency": row.get("currency"),
         }
 

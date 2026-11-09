@@ -195,8 +195,9 @@ class ZerodhaClient(BrokerClient):
         for i in range(0, len(keys), 500):           # Kite quote() takes up to 500
             for key, q in (self.kite.quote(keys[i:i + 500]) or {}).items():
                 rows.append({"code": key.replace(":", "."), "last_price": _num(q.get("last_price")),
-                             "volume": _num(q.get("volume"))})
-        return pd.DataFrame(rows, columns=["code", "last_price", "volume"])
+                             "volume": _num(q.get("volume")),
+                             "prev_close_price": _num((q.get("ohlc") or {}).get("close"))})
+        return pd.DataFrame(rows, columns=["code", "last_price", "volume", "prev_close_price"])
 
     def list_market_symbols(self) -> list[str]:
         return [f"{self.market}.{i['tradingsymbol']}" for i in self.kite.instruments(self.market)

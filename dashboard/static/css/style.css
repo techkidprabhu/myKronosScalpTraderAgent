@@ -1563,3 +1563,16 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
   .chart-panel, .terminal-grid > *, #tab-terminal .panel { min-width: 0; max-width: 100%; }
   #tab-terminal { overflow-x: hidden; }
 }
+/* Today's P&L breakdown */
+.cc-tile-click { cursor: pointer; }
+.cc-tile-click:hover { border-color: var(--accent-blue); }
+.cc-tap-hint { font-size: 11px; margin-top: 4px; opacity: .75; }
+.cc-today-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 20px; }
+.cc-sub-h { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-secondary); margin: 0 0 8px; font-weight: 600; }
+.cc-mini-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cc-mini-table td { padding: 6px 4px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+.cc-mini-table .cc-total td { font-weight: 700; border-bottom: none; }
+.cc-today-cols > div { min-width: 0; }
+.cc-mini-table td:nth-child(2) { white-space: normal; overflow-wrap: anywhere; }
+.cc-mini-table td:last-child { white-space: nowrap; }
+@media (max-width: 640px) { .cc-mini-table td:first-child { word-break: break-all; } .cc-mini-table { font-size: 12px; } }

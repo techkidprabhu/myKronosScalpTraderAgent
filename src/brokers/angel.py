@@ -219,9 +219,10 @@ class AngelClient(BrokerClient):
                 data = _data(self.api.getMarketData("FULL", {ex: toks[i:i + 50]})) or {}
                 for q in data.get("fetched", []) or []:
                     rows.append({"code": tokens.get(str(q.get("symbolToken")), q.get("tradingSymbol")),
-                                 "last_price": _num(q.get("ltp")), "volume": _num(q.get("tradeVolume"))})
+                                 "last_price": _num(q.get("ltp")), "volume": _num(q.get("tradeVolume")),
+                                 "prev_close_price": _num(q.get("close"))})
                 time.sleep(0.35)
-        return pd.DataFrame(rows, columns=["code", "last_price", "volume"])
+        return pd.DataFrame(rows, columns=["code", "last_price", "volume", "prev_close_price"])
 
     def list_market_symbols(self) -> list[str]:
         self._load_scrip()
