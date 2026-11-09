@@ -478,7 +478,15 @@
         </div>
 
         <div id="positions-broker-banner" class="badge warning" style="display:none; margin-bottom:12px;"></div>
-        <div class="table-container">
+        <div class="pc-toolbar">
+          <div class="rm-seg" role="group" aria-label="Positions view">
+            <button type="button" id="pc-view-cards" class="active" onclick="setPositionsView('cards')">Cards</button>
+            <button type="button" id="pc-view-table" onclick="setPositionsView('table')">Table</button>
+          </div>
+          <span class="cc-muted" id="pc-summary"></span>
+        </div>
+        <div id="pc-grid" class="pc-grid"></div>
+        <div class="table-container" id="positions-table-wrap">
           <table>
             <thead>
               <tr>
@@ -1565,6 +1573,119 @@
       return chartTimeframe || currentConfig.timeframe || "";
     }
 
+    // ---- Kronos forecast cone (drawn on the chart canvas) ----
+    // A series primitive fills the band between the forecast's predicted
+    // highs and lows, starting from the last closed candle.
+    class KronosCone {
+      constructor() { this.pts = []; this._chart = null; this._series = null; this._req = null; }
+      attached(p) { this._chart = p.chart; this._series = p.series; this._req = p.requestUpdate; }
+      detached() { this._chart = this._series = this._req = null; }
+      updateAllViews() {}
+      setData(pts) { this.pts = pts || []; if (this._req) this._req(); }
+      paneViews() {
+        const self = this;
+        return [{
+          zOrder: () => "bottom",
+          renderer: () => ({
+            draw(target) {
+              if (!self._chart || !self._series || self.pts.length < 2) return;
+              const ts = self._chart.timeScale();
+              const up = [], lo = [];
+              for (const p of self.pts) {
+                const x = ts.timeToCoordinate(p.time), yh = self._series.priceToCoordinate(p.hi), yl = self._series.priceToCoordinate(p.lo);
+                if (x === null || yh === null || yl === null) continue;
+                up.push([x, yh]); lo.push([x, yl]);
+              }
+              if (up.length < 2) return;
+              target.useBitmapCoordinateSpace(({ context: ctx, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
+                const x0 = up[0][0] * hr, x1 = up[up.length - 1][0] * hr;
+                const g = ctx.createLinearGradient(x0, 0, x1, 0);
+                g.addColorStop(0, "rgba(192,132,252,0.10)");
+                g.addColorStop(1, "rgba(192,132,252,0.30)");
+                ctx.beginPath();
+                up.forEach(([x, y], i) => i ? ctx.lineTo(x * hr, y * vr) : ctx.moveTo(x * hr, y * vr));
+                for (let i = lo.length - 1; i >= 0; i--) ctx.lineTo(lo[i][0] * hr, lo[i][1] * vr);
+                ctx.closePath();
+                ctx.fillStyle = g;
+                ctx.fill();
+                ctx.lineWidth = Math.max(1, hr);
+                ctx.strokeStyle = "rgba(192,132,252,0.45)";
+                ctx.setLineDash([3 * hr, 4 * hr]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+              });
+            },
+          }),
+        }];
+      }
+    }
+    let kronosCone = null;
+    function setForecastCone(lastBar, forecastBars) {
+      if (!forecastSeries) return;
+      if (!kronosCone && typeof forecastSeries.attachPrimitive === "function") {
+        kronosCone = new KronosCone();
+        try { forecastSeries.attachPrimitive(kronosCone); } catch (e) { kronosCone = null; }
+      }
+      if (!kronosCone) return;
+      if (!lastBar || !forecastBars || !forecastBars.length) { kronosCone.setData([]); return; }
+      kronosCone.setData([{ time: lastBar.time, hi: lastBar.close, lo: lastBar.close },
+                         ...forecastBars.map(b => ({ time: b.time, hi: Math.max(b.high, b.close), lo: Math.min(b.low, b.close) }))]);
+    }
+
+    // ---- The agent's trades on the chart: entry / exit markers, live position lines ----
+    let chartBars = [], patternMarkers = [], tradeMarkers = [], tradeLines = [], tradeMarksSeq = 0;
+    function snapToBar(ts) {
+      // the candle the event happened in (bars are stamped with their open time)
+      let lo = 0, hi = chartBars.length - 1, hit = null;
+      if (!chartBars.length || ts < chartBars[0].time) return null;
+      while (lo <= hi) { const mid = (lo + hi) >> 1; if (chartBars[mid].time <= ts) { hit = chartBars[mid].time; lo = mid + 1; } else hi = mid - 1; }
+      return hit;
+    }
+    function applyMarkers() {
+      const all = [...patternMarkers, ...tradeMarkers].sort((a, b) => a.time - b.time);
+      if (markersPrimitive) markersPrimitive.setMarkers(all);
+      else if (candleSeries && typeof LightweightCharts.createSeriesMarkers === "function") markersPrimitive = LightweightCharts.createSeriesMarkers(candleSeries, all);
+      else if (candleSeries && typeof candleSeries.setMarkers === "function") candleSeries.setMarkers(all);
+    }
+    async function loadTradeMarks(symbol) {
+      if (!symbol || !candleSeries || !chartBars.length) return;
+      const seq = ++tradeMarksSeq;
+      try {
+        const res = await fetch(`/api/trade_marks?symbol=${encodeURIComponent(symbol)}&since=${chartBars[0].time}`, { cache: "no-store" });
+        const d = await res.json();
+        if (seq !== tradeMarksSeq || symbol !== activeSymbol || d.error) return;
+        const fmtP = v => (v === null || v === undefined) ? "" : ` @ ${Number(v).toFixed(Math.abs(v) < 1 ? 4 : 2)}`;
+        tradeMarkers = [];
+        (d.entries || []).forEach(e => {
+          const t = snapToBar(e.ts); if (t === null) return;
+          const buy = e.direction !== "SELL";
+          tradeMarkers.push({ time: t, position: buy ? "belowBar" : "aboveBar", shape: buy ? "arrowUp" : "arrowDown",
+            color: e.manual ? "#f59e0b" : "#22d3ee", size: 1.4,
+            text: `${e.manual ? "Manual " : ""}${buy ? "BUY" : "SELL"}${e.quantity ? " " + e.quantity : ""}${fmtP(e.price)}` });
+        });
+        (d.exits || []).forEach(x => {
+          const t = snapToBar(x.ts); if (t === null) return;
+          const pnl = Number(x.pnl) || 0;
+          tradeMarkers.push({ time: t, position: "aboveBar", shape: "circle", color: pnl >= 0 ? "#34d399" : "#fb7185", size: 1.2,
+            text: `Exit ${pnl >= 0 ? "+" : "−"}${Math.abs(pnl).toFixed(2)}${x.reason ? " · " + String(x.reason).replace(/_/g, " ") : ""}` });
+        });
+        applyMarkers();
+        tradeLines.forEach(l => { try { candleSeries.removePriceLine(l); } catch (e) {} });
+        tradeLines = [];
+        const p = d.position;
+        if (p && typeof candleSeries.createPriceLine === "function") {
+          const line = (price, color, style, title) => price === null || price === undefined ? null :
+            candleSeries.createPriceLine({ price: Number(price), color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title });
+          const L = LightweightCharts.LineStyle || { Solid: 0, Dashed: 2, Dotted: 1 };
+          tradeLines = [
+            line(p.entry_price, "#38bdf8", L.Solid, p.status === "pending_entry" ? "Entry (pending)" : `Entry ${p.direction === "SELL" ? "short" : "long"} ${p.quantity}`),
+            line(p.current_stop, p.trail_active ? "#f59e0b" : "#fb7185", L.Dashed, p.trail_active ? "Trailing stop" : "Stop"),
+            line(p.target, "#34d399", L.Dashed, "Target"),
+          ].filter(Boolean);
+        }
+      } catch (err) { console.warn("trade marks", err); }
+    }
+
     async function loadChartData(symbol, opts = {}) {
       const { forecast = true, fit = false } = opts;
       const seq = ++chartRequestSeq;
@@ -1586,7 +1707,14 @@
 
         document.getElementById("metric-symbol").textContent = symbol;
         if (data.last_close) {
-          document.getElementById("metric-price").textContent = `$${data.last_close.toFixed(2)}`;
+          const mp = document.getElementById("metric-price");
+          const prev = mp._v;
+          mp._v = data.last_close;
+          mp.textContent = `$${data.last_close.toFixed(2)}`;
+          if (prev !== undefined && prev !== data.last_close) {
+            mp.classList.remove("tick-up", "tick-down"); void mp.offsetWidth;
+            mp.classList.add(data.last_close > prev ? "tick-up" : "tick-down");
+          }
         }
 
         const candleData = data.bars.map(b => ({
@@ -1612,14 +1740,12 @@
         lastOverlays = data.overlays || null;
         applyOverlays(lastOverlays);
 
-        const patterns = data.patterns || [];
-        if (markersPrimitive) {
-          markersPrimitive.setMarkers(patterns);
-        } else if (candleSeries && typeof LightweightCharts.createSeriesMarkers === 'function') {
-          markersPrimitive = LightweightCharts.createSeriesMarkers(candleSeries, patterns);
-        } else if (candleSeries && typeof candleSeries.setMarkers === 'function') {
-          candleSeries.setMarkers(patterns);
-        }
+        const symbolChanged = chartBars.length && chartBars._symbol !== symbol;
+        chartBars = candleData; chartBars._symbol = symbol;
+        patternMarkers = data.patterns || [];
+        if (symbolChanged) { tradeMarkers = []; }
+        applyMarkers();
+        loadTradeMarks(symbol);
 
         if (fit && chartInstance) chartInstance.timeScale().fitContent();
 
@@ -1631,7 +1757,7 @@
 
         // Kronos is slow on CPU: run it on symbol/timeframe changes, not on every refresh
         if (forecast || newBar) {
-          if (forecast && forecastSeries) forecastSeries.setData([]);  // don't show a path from another timeframe
+          if (forecast && forecastSeries) { forecastSeries.setData([]); setForecastCone(null, null); }  // not another timeframe's path
           loadSymbolForecast(symbol, shownTf);
         }
 
@@ -1681,10 +1807,16 @@
         if (!res.ok || data.error || !data.forecast_bars || !data.forecast_bars.length) {
           setKronosBadge("warning", "Kronos: unavailable", data.error || "No forecast returned");
           if (forecastSeries) forecastSeries.setData([]);
+          setForecastCone(null, null);
           return;
         }
         if (forecastSeries) {
-          forecastSeries.setData(data.forecast_bars.map(b => ({ time: b.time, value: b.close })));
+          const last = chartBars.length ? chartBars[chartBars.length - 1] : null;
+          const anchorPt = last && last.time < data.forecast_bars[0].time && data.based_on_bar
+            ? chartBars.find(b => b.time === data.based_on_bar) || null : null;
+          const pts = data.forecast_bars.map(b => ({ time: b.time, value: b.close }));
+          forecastSeries.setData(anchorPt && anchorPt.time < pts[0].time ? [{ time: anchorPt.time, value: anchorPt.close }, ...pts] : pts);
+          setForecastCone(anchorPt, data.forecast_bars);
         }
         const lg = document.getElementById("legend-kronos-path");
         if (lg && data.horizon) lg.textContent = `Kronos Predicted Path (Horizon ${data.horizon})`;
@@ -1857,6 +1989,7 @@
 
         const tbody = document.getElementById("positions-table-body");
         lastPositions = positions;
+        renderPositionCards(positions);
         tbody.innerHTML = positions.length === 0
           ? `<tr><td colspan="12" style="text-align:center; color:var(--text-muted); padding:24px;">No positions held${data.broker_connected ? " at the broker" : ""}.</td></tr>`
           : positions.map((pos, i) => {
@@ -2877,6 +3010,112 @@
     }, 10000);
     window.addEventListener("resize", () => { if (RM.loaded) rmDraw(); });
 
+    // ================= Position cards (Positions tab) =================
+    let positionsView = (() => { try { return localStorage.getItem("positionsView") || "cards"; } catch (e) { return "cards"; } })();
+    const pcPrevStops = {};                       // symbol -> last stop seen, to spot trailing raises
+    const pcRaised = {};                          // symbol -> time the stop last moved our way
+
+    function setPositionsView(v) {
+      positionsView = v;
+      try { localStorage.setItem("positionsView", v); } catch (e) {}
+      document.getElementById("pc-view-cards").classList.toggle("active", v === "cards");
+      document.getElementById("pc-view-table").classList.toggle("active", v === "table");
+      document.getElementById("pc-grid").style.display = v === "cards" ? "" : "none";
+      document.getElementById("positions-table-wrap").style.display = v === "table" ? "" : "none";
+    }
+
+    function pcDuration(sec) {
+      if (!sec || sec < 0) return "";
+      const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+      return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+    }
+
+    function renderPositionCards(positions) {
+      const grid = document.getElementById("pc-grid");
+      if (!grid) return;
+      if (!positions.length) {
+        grid.innerHTML = `<div class="pc-empty">No open positions. Entries the agent or you make show up here live, with their stop, target and trailing stop.</div>`;
+        document.getElementById("pc-summary").textContent = "";
+        return;
+      }
+      const dp = v => (Math.abs(v) < 1 ? 4 : 2);
+      const fmt = v => v === null || v === undefined || isNaN(v) ? "—" : Number(v).toFixed(dp(Number(v)));
+      let total = 0;
+      grid.innerHTML = positions.map((p, i) => {
+        const long = p.side !== "SHORT", price = Number(p.current_price), entry = Number(p.avg_cost);
+        const stop = p.stop != null ? Number(p.stop) : null, tgt = p.target != null ? Number(p.target) : null;
+        const u = Number(p.unrealized_pnl) || 0; total += u;
+        // trailing stop moved our way since the last update?
+        const prev = pcPrevStops[p.symbol];
+        if (stop !== null && prev !== undefined && prev !== null && (long ? stop > prev : stop < prev)) {
+          pcRaised[p.symbol] = Date.now();
+          showToast(`${p.symbol}: stop ${long ? "raised" : "lowered"} ${fmt(prev)} → ${fmt(stop)}`);
+        }
+        if (stop !== null) pcPrevStops[p.symbol] = stop;
+        const raisedNow = pcRaised[p.symbol] && Date.now() - pcRaised[p.symbol] < 12000;
+
+        const risk = stop !== null && entry ? Math.abs(entry - stop) : null;
+        const initialRisk = p.initial_stop != null && entry ? Math.abs(entry - Number(p.initial_stop)) : risk;
+        const rNow = initialRisk && price ? (long ? price - entry : entry - price) / initialRisk : null;
+        const locked = stop !== null && entry ? (long ? stop - entry : entry - stop) * Number(p.quantity || 0) : null;
+        let track = "";
+        if (stop !== null && tgt !== null && price) {
+          const lo = Math.min(stop, tgt, price, entry), hi = Math.max(stop, tgt, price, entry), span = hi - lo || 1;
+          const at = v => `${((v - lo) / span * 100).toFixed(2)}%`;
+          track = `
+            <div class="pc-track" role="img" aria-label="Price ${fmt(price)} between stop ${fmt(stop)} and target ${fmt(tgt)}">
+              <div class="pc-zone loss" style="left:${at(Math.min(stop, entry))}; width:calc(${at(Math.max(stop, entry))} - ${at(Math.min(stop, entry))})"></div>
+              <div class="pc-zone gain" style="left:${at(Math.min(entry, tgt))}; width:calc(${at(Math.max(entry, tgt))} - ${at(Math.min(entry, tgt))})"></div>
+              <div class="pc-mark stop ${raisedNow ? "raised" : ""}" style="left:${at(stop)}"></div>
+              <div class="pc-mark entry" style="left:${at(entry)}"></div>
+              <div class="pc-mark target" style="left:${at(tgt)}"></div>
+              <div class="pc-price" style="left:${at(price)}"></div>
+            </div>
+            <div class="pc-track-lbl"><span class="neg">${p.trail_active ? "trailing stop" : "stop"} ${fmt(stop)}</span><span>entry ${fmt(entry)}</span><span class="pos">target ${fmt(tgt)}</span></div>`;
+        } else {
+          track = `<div class="pc-note">${p.state === "pending_entry" ? "Entry order working - stop and target are placed when it fills."
+                    : p.state === "unmanaged" ? "Not managed by the agent: no stop, target or trailing stop is moving for this holding."
+                    : "No stop or target on record."}</div>`;
+        }
+        const badge = (MANAGEMENT_BADGES[p.state] || esc(p.state || ""));
+        const held = p.opened_ts ? pcDuration(Date.now() / 1000 - p.opened_ts) : "";
+        return `
+          <article class="pc-card ${u > 0 ? "up" : u < 0 ? "down" : ""} ${raisedNow ? "stop-raised" : ""}" aria-label="${esc(p.symbol)} position">
+            <header class="pc-head">
+              <div><div class="pc-sym">${esc(p.symbol)}</div><div class="pc-sub">${esc(p.name || "")}</div></div>
+              <span class="pc-side ${long ? "long" : "short"}">${long ? "LONG" : "SHORT"}</span>
+              <div class="pc-head-right">${badge}</div>
+            </header>
+            <div class="pc-figs">
+              <div><span>Last</span><b class="pc-last">${fmt(price)}${p.price_source === "live" ? '<i class="live-dot" title="Live quote"></i>' : ""}</b></div>
+              <div><span>P&amp;L</span><b class="${u > 0 ? "cc-pos" : u < 0 ? "cc-neg" : ""}">${ccMoney(u)}</b></div>
+              <div><span>R</span><b class="${rNow > 0 ? "cc-pos" : rNow < 0 ? "cc-neg" : ""}">${rNow === null ? "—" : (rNow >= 0 ? "+" : "") + rNow.toFixed(2) + "R"}</b></div>
+              <div><span>Qty</span><b>${esc(p.quantity)} @ ${fmt(entry)}</b></div>
+            </div>
+            ${track}
+            <div class="pc-meta">
+              ${locked === null ? "" : Math.abs(locked) < 0.005 ? `<span class="pc-lock">Stop at break-even</span>`
+                : locked > 0 ? `<span class="pc-lock">Profit locked by stop: ${ccMoney(locked)}</span>`
+                : `<span>Loss if stopped: ${ccMoney(locked)}</span>`}
+              ${p.high_water != null ? `<span>Best ${fmt(p.high_water)}</span>` : ""}
+              ${held ? `<span>Held ${held}</span>` : ""}
+              ${raisedNow ? `<span class="pc-raised">Stop moved up just now</span>` : ""}
+            </div>
+            <footer class="pc-actions">
+              <button type="button" class="btn btn-sm" onclick="pcOpenChart('${esc(p.symbol)}')">Chart</button>
+              ${p.state === "missing_at_broker" ? "" : `<button type="button" class="btn btn-sm btn-sell" onclick="openManualConfirm('CLOSE', ${i})">${p.state === "pending_entry" ? "Cancel entry" : "Close"}</button>`}
+            </footer>
+          </article>`;
+      }).join("");
+      document.getElementById("pc-summary").textContent =
+        `${positions.length} position${positions.length > 1 ? "s" : ""} · open P&L ${ccMoney(total)}`;
+    }
+
+    function pcOpenChart(sym) {
+      switchTab("terminal");
+      selectSymbol(sym);
+    }
+
     // ================= Command Center + live stream =================
     // One server-sent-event connection (/api/stream) pushes the overview and
     // positions the moment they change. If it drops, the page falls back to
@@ -2902,6 +3141,8 @@
         LIVE.positions = data;
         renderPositions(data);
         renderCommandCenter();
+        // a moved stop or a fill shows on the chart without waiting for its refresh
+        if (activeSymbol && document.getElementById("tab-terminal").classList.contains("active")) loadTradeMarks(activeSymbol);
       });
     }
 
@@ -3951,6 +4192,7 @@
       loadPositions();
       pollOverview();
       startLiveStream();
+      setPositionsView(positionsView);
       loadConfigData();
       initBrokerSwitch();
       loadBrokers();
