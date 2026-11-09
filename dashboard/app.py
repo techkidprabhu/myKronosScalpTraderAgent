@@ -865,9 +865,11 @@ def _account_summary(client):
 
 def _agent_fields(row: dict | None) -> dict:
     if row is None:
-        return {"stop": None, "target": None, "high_water": None, "trail_active": None}
+        return {"stop": None, "target": None, "high_water": None, "trail_active": None,
+                "initial_stop": None, "opened_ts": None}
     return {"stop": row["current_stop"], "target": row["target"],
-            "high_water": row["high_water"], "trail_active": bool(row["trail_active"])}
+            "high_water": row["high_water"], "trail_active": bool(row["trail_active"]),
+            "initial_stop": row["initial_stop"], "opened_ts": row["opened_ts"]}
 
 
 @app.route("/api/positions", methods=["GET"])
@@ -1526,6 +1528,57 @@ def _decision_text(d: dict, stage: str) -> str:
         return f"Order error on {who}"
     label = {"indicators": "Indicators", "kronos": "Kronos", "risk": "Risk"}[stage]
     return f"{label} rejected {who}{': ' + d['risk_reason'] if d['risk_reason'] else ''}"
+
+
+@app.route("/api/trade_marks", methods=["GET"])
+def get_trade_marks():
+    """The agent's trades on one symbol for the chart: entries (agent and
+    manual), exits with P&L, and the live position's entry / stop / target.
+    `since` (epoch seconds) limits it to what the chart shows."""
+    symbol = request.args.get("symbol", "")
+    if not symbol:
+        return jsonify({"error": "symbol is required"}), 400
+    try:
+        since = float(request.args.get("since") or 0)
+    except ValueError:
+        since = 0.0
+    key = base_symbol(symbol)
+    entries, exits, position = [], [], None
+    try:
+        conn = get_db()
+        for r in conn.execute("SELECT * FROM decisions WHERE action = 'opened' AND ts >= ? ORDER BY ts", (since,)):
+            d = dict(r)
+            if base_symbol(d["epic"]) != key:
+                continue
+            det = _json_or_empty(d["details"])
+            entries.append({"ts": d["ts"], "direction": d["pattern_direction"], "manual": d["pattern"] == "manual",
+                            "pattern": d["pattern"], "price": det.get("entry"), "quantity": det.get("quantity"),
+                            "confidence": d["kronos_confidence"]})
+        for r in conn.execute("SELECT * FROM trade_results WHERE ts >= ? ORDER BY ts", (since,)):
+            d = dict(r)
+            if base_symbol(d["epic"]) != key:
+                continue
+            det = _json_or_empty(d["details"])
+            exits.append({"ts": d["ts"], "pnl": d["pnl"], "price": det.get("exit"),
+                          "reason": det.get("reason"), "quantity": det.get("quantity")})
+        for r in conn.execute("SELECT * FROM positions WHERE status IN ('pending_entry', 'open')"):
+            d = dict(r)
+            if base_symbol(d["symbol"]) == key:
+                position = {k: d[k] for k in ("direction", "quantity", "entry_price", "initial_stop", "current_stop",
+                                              "target", "high_water", "trail_active", "status", "opened_ts")}
+                position["trail_active"] = bool(position["trail_active"])
+        conn.close()
+    except sqlite3.Error:
+        logger.warning("Trade marks: audit DB unavailable", exc_info=True)
+    return jsonify({"symbol": symbol, "entries": entries, "exits": exits, "position": position})
+
+
+def _json_or_empty(text) -> dict:
+    try:
+        v = json.loads(text or "{}")
+        return v if isinstance(v, dict) else {}
+    except ValueError:
+        return {}
 
 
 @app.route("/api/overview", methods=["GET"])

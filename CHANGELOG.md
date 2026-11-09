@@ -16,6 +16,18 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Live Terminal, phase 2**: the Kronos forecast is drawn as a shaded cone
+  (predicted highs to lows) fanning out from the last closed candle, with
+  the dashed path now joined to it. The agent's own trades are marked on
+  the candles - entries (cyan; manual orders amber) and exits with P&L and
+  reason - and a held position gets entry, stop / trailing stop and target
+  lines that follow the live stream. The price flashes on each tick.
+  `GET /api/trade_marks?symbol=` serves the marks.
+- **Position cards** (Positions tab, with a Cards / Table switch): live
+  price, P&L, R from the original stop, a stop -> entry -> target track
+  with the price moving along it, profit locked by the stop, best price,
+  time held, and Chart / Close buttons. A trailing stop that moves our way
+  makes the card glow and pops a notification.
 - **Command Center** (new home tab, dashboard redesign phase 1): today's
   session bar with the entry window and flat-by time, animated KPI tiles
   (today's P&L closed + open, 30-day P&L with sparkline, win rate ring and
