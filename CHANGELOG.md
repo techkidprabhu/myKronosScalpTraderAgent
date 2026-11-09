@@ -16,6 +16,18 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Day-trader risk rules** (from the Day Trader skill pack), all off by
+  default: risk-based position sizing (max loss per trade, max % of
+  account, cash buffer), min reward:risk, max trades per day, daily loss
+  cap counting open risk at the stops, ATR-based stop and R-multiple
+  target (kept through the fill), min stop distance, entry window (first /
+  last N minutes, early closes handled), flat-by-close day-trade mode and a
+  blocked-symbols list. They act after Kronos approves a signal and never
+  block exits. New Settings section, Risk Model "Day-trader rules" card
+  with a session timeline, and config cross-checks.
+- `/api/risk_state` also returns `trades_today` and `open_risk`.
+
+### Added
 - **Risk Model - Live market graph**: switch the trade graph from the
   example path to real candles for any watched or held symbol, with the
   live quote updating every 3 s. For a symbol you hold it shows your actual

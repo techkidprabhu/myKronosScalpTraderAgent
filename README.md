@@ -369,6 +369,32 @@ The agent is meant to run continuously (e.g. as a systemd service).
     the agent's phase.
   - Banners flag OpenD problems and unmanaged positions.
 
+## Day-trader risk rules
+
+Optional rules adapted from the Day Trader skill pack (`trader-risk`,
+`trader-budget`, `trader-exit`). They are **all off** until you set them
+(in `config.yaml` under `risk:`, the Settings tab, or the Risk Model
+screen). They act only after patterns, the indicator gate and Kronos have
+approved a signal, and never block an exit.
+
+| rule | config | what it does |
+| --- | --- | --- |
+| Risk-based sizing | `max_loss_per_trade`, `max_position_pct`, `cash_buffer_pct` | quantity = max loss / stop distance, capped by max qty, % of account and cash after the buffer, rounded down to `lot_size`; a stop too wide for one lot skips the trade |
+| Reward:risk floor | `min_reward_risk` | skip trades whose target is closer than N x the stop |
+| Trades per day | `max_trades_per_day` | new entries per exchange day (manual orders count) |
+| Daily cap with open risk | `daily_loss_includes_open_risk` | closed P&L + every open stop + the new trade's max loss must stay inside `max_daily_loss` |
+| ATR stop, R target | `stop_atr_multiple`, `atr_period`, `target_r_multiple` | stop = K x ATR of the signal bars, target = R x stop; the distances are kept when the bracket is re-anchored to the fill |
+| Too-tight stops | `min_stop_pct` | refuse a stop closer than N% of the price |
+| Entry window | `no_entries_first_minutes`, `no_entries_last_minutes` | no new entries right after the open / before the close (early closes handled) |
+| Flat by close | `flat_by_minutes_before_close` | day-trade mode: close every agent position (and cancel unfilled entries) N min before the close; needs an intraday timeframe |
+| Blocked list | `blocked_symbols` | never enter these (with or without market prefix) |
+
+Every rejection is logged in the Decision & Audit Log with the reason, and
+each entry's snapshot records the quantity, what decided it and the max
+loss at the stop. Manual orders from the Positions tab still skip the
+entry gates on purpose, but are closed by flat-by-close like any agent
+position.
+
 ## Order lifecycle & safety rules
 
 1. **pending_entry**: a DAY entry is submitted. No exits rest yet.

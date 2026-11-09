@@ -154,6 +154,42 @@ risk:
   # 100; HK lot size varies per stock (check get_market_snapshot lot_size).
   lot_size: 1
 
+  # ---- Day-trader rules (from the Day Trader skill pack) ----------------
+  # All OFF while empty (null) / false. They act only after patterns, the
+  # indicator gate and Kronos have approved a signal - they never change
+  # what Kronos sees. Exits are never blocked. Editable on the dashboard's
+  # Risk Model screen. Suggested starting preset in the comments.
+  #
+  # Size each order from the loss at the stop instead of a fixed quantity:
+  # quantity = max_loss_per_trade / stop distance, capped by
+  # max_stake_per_point, max_position_pct and cash_buffer_pct, rounded
+  # down to lot_size. A stop too wide for even one lot skips the trade.
+  max_loss_per_trade: null          # e.g. 50 (account currency)
+  max_position_pct: null            # e.g. 75  (% of account value in one position)
+  cash_buffer_pct: null             # e.g. 10  (% of account value always left in cash)
+  # Skip trades whose target is closer than this many times the stop.
+  min_reward_risk: null             # e.g. 1.0
+  max_trades_per_day: null          # e.g. 3   (new entries per exchange day)
+  # true: the daily cap counts closed P&L + what every open position loses
+  # if its stop fills + the new trade's max loss (not just closed P&L).
+  daily_loss_includes_open_risk: false
+  # Stop = K x ATR of the signal bars (replaces the % / points stop), and
+  # target = R x the stop distance (replaces the % / points target).
+  stop_atr_multiple: null           # e.g. 1.5
+  atr_period: 14
+  target_r_multiple: null           # e.g. 2.0  (2R)
+  # Refuse stops tighter than this % of the price (spread and noise).
+  min_stop_pct: null                # e.g. 0.05
+  # Entry window: no new entries in the first / last N minutes of the
+  # regular session (holidays and 1 pm early closes handled).
+  no_entries_first_minutes: null    # e.g. 15  (09:45 ET on US)
+  no_entries_last_minutes: null     # e.g. 30  (15:30 ET on US)
+  # Day-trade mode: close every agent position N minutes before the close,
+  # win or lose - no overnight holds. Needs an intraday timeframe. Leave
+  # empty for swing trading.
+  flat_by_minutes_before_close: null  # e.g. 5  (15:55 ET on US)
+  blocked_symbols: []               # e.g. ["US.GME", "TSLA"]
+
 # Market calendar. With follow_market the agent scans only while the
 # exchange is open - NYSE/Nasdaq holidays and 1 pm early closes included -
 # warms up `warmup_minutes` before the open (OpenD check + fresh screener

@@ -1293,6 +1293,9 @@ def _get_path(cfg: dict, key: str):
     return cur, True
 
 
+from src.risk import open_risk_at_stops  # noqa: E402
+
+
 @app.route("/api/risk_state", methods=["GET"])
 def get_risk_state():
     """Today's live risk state for the Risk Model screen: the agent's
@@ -1307,7 +1310,8 @@ def get_risk_state():
         row = conn.execute("SELECT value FROM kv WHERE key = 'risk_state'").fetchone()
         state = json.loads(row[0]) if row else {}
         active = [dict(r) for r in conn.execute(
-            "SELECT symbol, direction, status FROM positions WHERE status IN ('pending_entry', 'open')")]
+            "SELECT symbol, direction, status, quantity, entry_price, current_stop FROM positions "
+            "WHERE status IN ('pending_entry', 'open')")]
         conn.close()
     except (sqlite3.Error, ValueError):
         pass
@@ -1344,6 +1348,8 @@ def get_risk_state():
         "halted": False if stale else bool(state.get("trading_halted")),
         "trading_day": today or state.get("trading_day"),
         "open_positions": len(active),
+        "open_risk": round(open_risk_at_stops(active), 2),
+        "trades_today": 0 if stale else int(state.get("trades_today") or 0),
         "positions": active,
         "cooldowns": cooldowns,
         "reference_price": reference,
