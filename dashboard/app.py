@@ -27,7 +27,7 @@ from dashboard import auth
 from src.kronos_agent import KronosAgent, _ensure_kronos_importable
 from src import market_calendar as cal
 from dashboard import analytics
-from src.orchestrator import (ACTIVE_SYMBOLS_KEY, BROKER_HEALTH_KEY, PHASE_KEY, UNMANAGED_KEY,
+from src.orchestrator import (SCREENER_REPORT_KEY, ACTIVE_SYMBOLS_KEY, BROKER_HEALTH_KEY, PHASE_KEY, UNMANAGED_KEY,
                               bars_to_df)
 from src.patterns import scan
 from src import indicator_gate
@@ -1266,6 +1266,32 @@ def _compute_sentiment(spec, cfg: dict, s: dict, client) -> dict:
     return {"enabled": True, "broker": spec.name, "source": spec.label, "market": market, "timeframe": tf,
             "overall": sentiment.overall(results), "benchmarks": results, "breadth": breadth,
             "updated": time.time(), "refresh_seconds": int(float(s["refresh_minutes"]) * 60)}
+
+
+def _clean_num(v):
+    """NaN / inf can't go into JSON - send them as null."""
+    if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+        return None
+    return v
+
+
+@app.route("/api/screener", methods=["GET"])
+def get_screener_report():
+    """What the agent's last screener run saw: each candidate's readings,
+    its score and whether it was picked. Read-only; empty until the agent
+    has run the screener."""
+    cfg = load_config()
+    scr = cfg.get("screener", {}) or {}
+    report = _kv(SCREENER_REPORT_KEY)
+    out = {"enabled": bool(scr.get("enabled")),
+           "mode": str((scr.get("score") or {}).get("mode") or "disabled"),
+           "report": None}
+    if isinstance(report, dict):
+        report["candidates"] = [{k: _clean_num(v) for k, v in c.items()}
+                                for c in report.get("candidates") or [] if isinstance(c, dict)]
+        report["benchmark_return_pct"] = _clean_num(report.get("benchmark_return_pct"))
+        out["report"] = report
+    return jsonify(out)
 
 
 @app.route("/api/sentiment", methods=["GET"])

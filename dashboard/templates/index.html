@@ -278,6 +278,26 @@
         <div id="cc-today-body"></div>
       </section>
 
+      <section class="cc-card" id="scr-card" aria-label="Screener ranking" hidden>
+        <div class="cc-card-head">
+          <h2>Stock ranking <span class="cc-muted" id="scr-mode"></span></h2>
+          <span class="cc-muted" id="scr-sub"></span>
+        </div>
+        <div class="scr-wrap"><table class="cc-mini-table scr-table">
+          <thead><tr>
+            <th>#</th><th>Symbol</th>
+            <th title="Weighted blend of the three readings, 0 to 100">Score</th>
+            <th title="Return over the lookback minus the benchmark's return">Rel. strength</th>
+            <th title="Recent volume vs the usual. 1.0 = normal">Rel. volume</th>
+            <th title="How tight the Bollinger bands are vs this symbol's own history. 100 = tightest">Squeeze</th>
+            <th title="Average true range as % of price">ATR %</th>
+            <th>Scanned</th>
+          </tr></thead>
+          <tbody id="scr-body"></tbody>
+        </table></div>
+        <div class="cc-muted" id="scr-note" style="margin-top:10px"></div>
+      </section>
+
       <section class="cc-card" aria-label="Agent pipeline today">
         <div class="cc-card-head">
           <h2>What the agent did today</h2>
@@ -3760,6 +3780,37 @@
       Math.abs(v) >= 10000 ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const ccSetSign = (el, v) => { el.classList.toggle("cc-pos", v > 0); el.classList.toggle("cc-neg", v < 0); };
 
+    async function loadScreenerReport() {
+      const card = document.getElementById("scr-card");
+      try {
+        const d = await (await fetch("/api/screener")).json();
+        const r = d.report;
+        if (!r || !r.candidates || !r.candidates.length || r.mode === "disabled") { card.hidden = true; return; }
+        const num = (v, dp = 1, suffix = "") => v === null || v === undefined ? "–" : Number(v).toFixed(dp) + suffix;
+        const signed = v => v === null || v === undefined ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(1) + "%";
+        const cls = v => v > 0 ? "cc-pos" : v < 0 ? "cc-neg" : "";
+        document.getElementById("scr-mode").textContent = r.mode === "rank" ? "· picking by score" : "· log only, still picking by ATR %";
+        document.getElementById("scr-sub").textContent =
+          `${r.candidates.length} passed the filters of ${r.universe} · ${r.timeframe} bars · updated ${new Date(r.updated * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+        document.getElementById("scr-body").innerHTML = r.candidates.map((c, i) => `
+          <tr class="${c.picked ? "scr-picked" : ""}">
+            <td class="cc-muted">${i + 1}</td>
+            <td class="mono">${esc(c.symbol)}</td>
+            <td><div class="scr-score"><span class="mono">${num(c.score, 0)}</span><span class="scr-bar"><i style="width:${Math.max(0, Math.min(100, c.score || 0))}%"></i></span></div></td>
+            <td class="mono ${cls(c.relative_strength)}">${signed(c.relative_strength)}</td>
+            <td class="mono">${num(c.relative_volume, 2, "×")}</td>
+            <td class="mono">${num(c.squeeze, 0)}</td>
+            <td class="mono">${num(c.atr_pct, 2, "%")}</td>
+            <td>${c.picked ? "Yes" : '<span class="cc-muted">No</span>'}</td>
+          </tr>`).join("");
+        document.getElementById("scr-note").textContent =
+          (r.benchmark ? `Relative strength is over ${r.rs_lookback} bars vs ${r.benchmark}` +
+            (r.benchmark_return_pct === null || r.benchmark_return_pct === undefined ? " (benchmark unavailable, plain return shown)" : ` (${signed(r.benchmark_return_pct)})`) + ". " : "") +
+          "The score only chooses which symbols are scanned. Patterns, indicators, Kronos and the risk rules decide trades as before.";
+        card.hidden = false;
+      } catch (e) { card.hidden = true; }
+    }
+
     const TODAY_BASIS = {
       entry_today: "opened today · since entry",
       broker: "today's move (broker)",
@@ -4819,6 +4870,8 @@
       initBrokerSwitch();
       loadBrokers();
       loadSentiment();
+      loadScreenerReport();
+      setInterval(() => { if (autoRefresh && !document.hidden) loadScreenerReport(); }, 120000);
       document.getElementById("sent-refresh").addEventListener("click", () => loadSentiment(true));
       setInterval(() => { if (autoRefresh && !document.hidden) loadSentiment(); }, 60000);
       loadSettings(false);

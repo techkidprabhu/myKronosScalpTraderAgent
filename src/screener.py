@@ -53,6 +53,88 @@ def compute_trend_strength(df: pd.DataFrame, fast: int = 20, slow: int = 50) -> 
     return float((ema_fast - ema_slow) / ema_slow * 100)
 
 
+SCORE_MODES = ("disabled", "log", "rank")
+SCORE_DEFAULTS = {
+    "mode": "disabled",          # disabled | log (compute + show, rank by ATR% as before) | rank
+    "benchmark": None,           # e.g. "US.SPY"; None = the market's first sentiment benchmark
+    "rs_lookback": 60,           # bars for the relative-strength return
+    "rvol_recent": 3,            # recent bars averaged for relative volume
+    "rvol_period": 20,           # ...against the average of this many bars before them
+    "squeeze_period": 20,        # Bollinger period for the squeeze reading
+    "weight_relative_strength": 50,
+    "weight_relative_volume": 25,
+    "weight_squeeze": 25,
+    "min_relative_strength": None,  # rank mode only: drop symbols lagging the benchmark by more than this %
+}
+
+
+def compute_return_pct(df: pd.DataFrame, lookback: int) -> float | None:
+    """% change of the close over the last `lookback` bars (fewer if the
+    history is shorter, but at least 5)."""
+    close = df["close"].dropna()
+    n = min(lookback, len(close) - 1)
+    if n < 5 or close.iloc[-1 - n] <= 0:
+        return None
+    return float((close.iloc[-1] / close.iloc[-1 - n] - 1) * 100)
+
+
+def compute_relative_volume(df: pd.DataFrame, recent: int = 3, period: int = 20) -> float | None:
+    """Average volume of the last `recent` bars over the average of the
+    `period` bars before them. 1.0 = normal, 2.0 = twice the usual."""
+    vol = df["volume"].dropna()
+    if len(vol) < recent + max(5, period // 2):
+        return None
+    base = vol.iloc[-(recent + period):-recent].mean()
+    if not base or base <= 0:
+        return None
+    return float(vol.iloc[-recent:].mean() / base)
+
+
+def compute_squeeze(df: pd.DataFrame, period: int = 20, history: int = 120) -> float | None:
+    """How tight the Bollinger bands are now compared with the symbol's own
+    recent history: 100 = tightest of the last `history` bars (coiled),
+    0 = widest. None with too little data."""
+    close = df["close"]
+    mid = close.rolling(period).mean()
+    width = (4 * close.rolling(period).std() / mid).dropna().tail(history)
+    if len(width) < 20:
+        return None
+    now = width.iloc[-1]
+    return float(round((width > now).sum() / (len(width) - 1) * 100, 1))
+
+
+def _pct_ranks(values: list[float | None]) -> list[float]:
+    """0..100 rank of each value among the non-missing ones (missing or a
+    lone value = 50, so it neither helps nor hurts)."""
+    known = sorted(v for v in values if v is not None)
+    if len(known) < 2:
+        return [50.0] * len(values)
+    out = []
+    for v in values:
+        if v is None:
+            out.append(50.0)
+            continue
+        below = sum(1 for k in known if k < v)
+        equal = sum(1 for k in known if k == v)
+        out.append((below + (equal - 1) / 2) / (len(known) - 1) * 100)
+    return out
+
+
+def score_candidates(candidates: list[dict], cfg: dict) -> None:
+    """Adds `score` (0..100) to each candidate in place: a weighted blend of
+    relative strength and relative volume (each ranked across the
+    candidates) and the squeeze reading."""
+    weights = [max(0.0, float(cfg.get(k) or 0)) for k in
+               ("weight_relative_strength", "weight_relative_volume", "weight_squeeze")]
+    total = sum(weights) or 1.0
+    rs = _pct_ranks([c.get("return_pct") for c in candidates])
+    rv = _pct_ranks([c.get("relative_volume") for c in candidates])
+    for c, a, b in zip(candidates, rs, rv):
+        sq = c.get("squeeze")
+        parts = (a, b, 50.0 if sq is None else sq)
+        c["score"] = round(sum(w * x for w, x in zip(weights, parts)) / total, 1)
+
+
 class Screener:
     SNAPSHOT_BATCH = 400  # get_market_snapshot accepts up to 400 codes
 
@@ -71,6 +153,30 @@ class Screener:
         self.top_n = cfg.get("top_n", 10)
         self.timeframe = config["timeframe"]
         self.lookback_bars = max(config["lookback_bars"], self.atr_period + 5)
+        self.score_cfg = {**SCORE_DEFAULTS, **(cfg.get("score") or {})}
+        mode = str(self.score_cfg.get("mode") or "disabled").lower()
+        self.score_mode = mode if mode in SCORE_MODES else "disabled"
+        self.sentiment_cfg = config.get("sentiment") or {}
+        # What the last run saw, for the dashboard: every candidate that
+        # passed the filters, with its readings, score and whether it was picked.
+        self.last_report: dict | None = None
+
+    def _benchmark_return(self) -> tuple[str | None, float | None]:
+        """Return of the benchmark over the same window, or (None, None) if
+        it can't be read - symbols are then compared on their own return."""
+        symbol = self.score_cfg.get("benchmark")
+        if not symbol:
+            from src.sentiment import benchmarks_for
+            defaults = benchmarks_for(self.broker.market, {"benchmarks": self.sentiment_cfg.get("benchmarks")})
+            symbol = defaults[0][0] if defaults else None
+        if not symbol:
+            return None, None
+        try:
+            df = bars_to_df(self.broker.get_historical_bars(symbol, self.timeframe, self.lookback_bars))
+            return symbol, compute_return_pct(df, int(self.score_cfg["rs_lookback"]))
+        except Exception as exc:
+            logger.warning("Screener benchmark %s unavailable (%s) - using plain returns", symbol, exc)
+            return symbol, None
 
     def _get_universe(self) -> list[str]:
         if self.candidate_symbols:
@@ -146,19 +252,48 @@ class Screener:
                 if not (self.min_atr_pct <= atr_pct <= self.max_atr_pct):
                     continue
 
-                candidates.append({
+                cand = {
                     "symbol": symbol,
                     "price": float(last_price),
                     "avg_volume": float(avg_volume),
                     "atr_pct": atr_pct,
                     "trend_strength": trend,
-                })
+                }
+                if self.score_mode != "disabled":
+                    sc = self.score_cfg
+                    cand["return_pct"] = compute_return_pct(df, int(sc["rs_lookback"]))
+                    cand["relative_volume"] = compute_relative_volume(
+                        df, int(sc["rvol_recent"]), int(sc["rvol_period"]))
+                    cand["squeeze"] = compute_squeeze(df, int(sc["squeeze_period"]))
+                candidates.append(cand)
             except Exception:
                 logger.exception("Screener failed to evaluate %s - skipping", symbol)
                 continue
 
         candidates.sort(key=lambda c: c["atr_pct"], reverse=True)
+        benchmark = bench_ret = None
+        if self.score_mode != "disabled" and candidates:
+            benchmark, bench_ret = self._benchmark_return()
+            for c in candidates:
+                r = c.get("return_pct")
+                c["relative_strength"] = None if r is None else round(r - (bench_ret or 0.0), 2)
+            score_candidates(candidates, self.score_cfg)
+            if self.score_mode == "rank":
+                floor = self.score_cfg.get("min_relative_strength")
+                if floor is not None and bench_ret is not None:
+                    candidates = [c for c in candidates
+                                  if c["relative_strength"] is None or c["relative_strength"] >= float(floor)]
+                candidates.sort(key=lambda c: c["score"], reverse=True)
         selected = candidates[: self.top_n]
+        picked = {c["symbol"] for c in selected}
+        self.last_report = {
+            "updated": time.time(), "mode": self.score_mode, "timeframe": self.timeframe,
+            "benchmark": benchmark, "benchmark_return_pct": bench_ret,
+            "rs_lookback": int(self.score_cfg["rs_lookback"]),
+            "ranked_by": "score" if self.score_mode == "rank" else "atr_pct",
+            "universe": len(universe), "top_n": self.top_n,
+            "candidates": [{**c, "picked": c["symbol"] in picked} for c in candidates[:50]],
+        }
         logger.info(
             "Screener selected %d/%d candidates: %s",
             len(selected), len(universe), [c["symbol"] for c in selected],

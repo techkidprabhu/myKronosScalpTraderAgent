@@ -134,6 +134,27 @@ screener:
   # How often to re-run the screener and refresh the active symbol list.
   refresh_interval_minutes: 360
 
+  # Stock score - ranks the candidates that pass the filters above on
+  # three things swing traders look for, measured on the agent's own
+  # timeframe bars:
+  #   relative strength  return over rs_lookback bars vs the benchmark
+  #   relative volume    last few bars' volume vs the usual
+  #   squeeze            how tight the Bollinger bands are vs the
+  #                      symbol's own recent history (coiled = high)
+  # It only decides WHICH symbols get scanned. Patterns, the indicator
+  # check, Kronos and the risk rules then work exactly as before.
+  score:
+    mode: disabled         # disabled | log (show on the dashboard, still rank by ATR%) | rank (pick top scores)
+    benchmark:             # e.g. "US.SPY"; empty = the market's main index ETF
+    rs_lookback: 60
+    rvol_recent: 3
+    rvol_period: 20
+    squeeze_period: 20
+    weight_relative_strength: 50
+    weight_relative_volume: 25
+    weight_squeeze: 25
+    min_relative_strength: # rank mode: drop symbols lagging the benchmark by more than this %, e.g. -5
+
 risk:
   # Max number of concurrent open positions across all symbols
   max_open_positions: 3
