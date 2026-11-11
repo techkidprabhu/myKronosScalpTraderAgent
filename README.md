@@ -125,6 +125,17 @@ the Tiger version. Only the broker integration (`moomoo_client.py`,
    ```
    Open the login link it prints (`http://localhost:5000/?token=...`).
 
+   **Or run both in the background with one script**, from any folder:
+
+   ```bash
+   ./start.sh            # agent + dashboard; prints the login link
+   ./start.sh status     # what is running
+   ./start.sh logs       # follow both logs (Ctrl+C stops watching, not the agent)
+   ./start.sh stop       # stop both
+   ```
+   It uses the virtualenv that is active, or `venv/` in this folder or the
+   one above. Logs go to `logs/agent.log` and `logs/dashboard.log`.
+
    - Header badges show agent state, moomoo market, PAPER/LIVE, masked
      account, total assets, and whether OpenD is online. The broker badge
      turns red when OpenD is down.
