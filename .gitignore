@@ -39,6 +39,7 @@ venv/
 *.egg-info/
 *.log
 logs/
+logs/
 *.patch
 .claude/
 .vscode/

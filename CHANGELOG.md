@@ -16,6 +16,12 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **`start.sh`** - one script to run the agent and the dashboard in the
+  background from any folder: `./start.sh` (both), `agent`, `dashboard`,
+  `stop`, `restart`, `status`, `logs`, `link`. Finds the active virtualenv or
+  `venv/` in the project or its parent folder, writes to `logs/agent.log` and
+  `logs/dashboard.log`, refuses to start a second copy, and prints the
+  dashboard login link. `DASHBOARD_HOST` / `DASHBOARD_PORT` set the address.
 - **Price data from another broker** (`brokers.<name>.data_source`). A broker
   can now read all its prices - candles for patterns and Kronos, the
   screener's snapshots, live prices for stops and the dashboard - from a
