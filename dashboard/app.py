@@ -255,8 +255,8 @@ def get_broker(name: str | None = None):
             if spec.market:
                 kwargs["market"] = spec.market
             try:
-                st["client"] = broker_registry.connect_with_timeout(
-                    spec.adapter, DASHBOARD_CONNECT_TIMEOUT + 2, **kwargs)
+                st["client"] = broker_registry.connect(
+                    spec.adapter, DASHBOARD_CONNECT_TIMEOUT + 2, data_source=spec.data_source, **kwargs)
                 st.update(checked_at=time.time(), error="")
             except Exception as exc:
                 st.update(failed_at=time.time(), error=str(exc))
@@ -1778,9 +1778,10 @@ def handle_settings():
         for spec in specs:
             entry = (raw.get("brokers") or {}).get(spec.name) or {}
             vals = {k: _get_path(spec.config, k)[0] for k in fields}
-            vals.update(enabled=spec.enabled, market=spec.market, label=(entry.get("label") or None))
+            vals.update(enabled=spec.enabled, market=spec.market, label=(entry.get("label") or None),
+                        data_source=(str(entry["data_source"]).lower() if entry.get("data_source") else None))
             values[spec.name] = vals
-            overrides[spec.name] = sorted(k for k in fields if k not in ("enabled", "market", "label")
+            overrides[spec.name] = sorted(k for k in fields if k not in ("enabled", "market", "label", "data_source")
                                           and _get_path(entry, k)[1])
             caps = broker_registry.capabilities().get(spec.adapter, {})
             broker_meta[spec.name] = {"adapter": spec.adapter, "label": spec.label,

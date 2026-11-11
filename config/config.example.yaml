@@ -300,6 +300,12 @@ brokers:
   zerodha:                   # Zerodha Kite Connect - KITE_* in .env, run kite_login.py daily (EXPERIMENTAL)
     enabled: false
     market: NSE
+    # Zerodha's free "Personal" API plan has NO market data (the paid
+    # Connect plan does). Uncomment to read every price - candles for
+    # patterns and Kronos, the screener, live prices for stops - from Angel
+    # One's free API instead. Orders, positions and funds stay with Zerodha.
+    # Needs the ANGEL_* login in .env; angel itself can stay `enabled: false`.
+    # data_source: angel
     default_quantity: 5      # shares - no paper account, start small
     risk:
       allow_short: false     # CNC delivery can't short

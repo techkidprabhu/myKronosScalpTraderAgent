@@ -24,6 +24,11 @@ SECTIONS = [
         ("market", "Market", "select", {"scope": "broker", "options": [], "nullable": True,
          "help": "Empty = the market set in .env for this broker"}),
         ("label", "Display name", "text", {"scope": "broker", "nullable": True}),
+        ("data_source", "Price data from", "select", {"scope": "broker", "nullable": True,
+         "options": ["moomoo", "tiger", "ig", "zerodha", "angel"], "blank": "(this broker)",
+         "help": "Read all candles and live prices from another broker's API - e.g. angel for "
+                 "Zerodha's free plan, which has no market data. Orders stay with this broker. "
+                 "Needs that broker's login in .env; restart to apply"}),
     ]},
     {"id": "schedule", "title": "Timeframe & schedule", "fields": [
         ("timeframe", "Candle timeframe", "select", {"options": TIMEFRAMES}),

@@ -183,6 +183,8 @@ class ZerodhaClient(BrokerClient):
         return to_frame(rows, resolution, num_points, f"{ex}.{ts}")
 
     def get_current_price(self, symbol: str) -> float:
+        if self.price_feed is not None:      # prices come from another broker (data_source)
+            return self.price_feed(symbol)
         key = self._normalize_symbol(symbol)
         price = _num(self.kite.ltp([key])[key]["last_price"])
         if not price:

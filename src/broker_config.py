@@ -23,6 +23,10 @@ Per-broker-only keys (not settings overrides):
     adapter        which adapter to use (default: the entry's own name)
     label          display name (default: the adapter's label)
     market         market the broker trades (default: the adapter's .env setting)
+    data_source    take ALL price data (candles, screener, live prices) from
+                   another broker's API - a name under brokers: or an adapter
+                   name, e.g. `data_source: angel` for Zerodha's free plan,
+                   which has no market data. Orders stay with this broker.
     db_path        audit database (default data/audit.db for moomoo,
                    data/audit_<name>.db for others) - one per broker, so
                    positions, cooldowns and the daily loss cap never mix
@@ -39,7 +43,7 @@ from pathlib import Path
 from src.brokers import REGISTRY
 
 ROOT = Path(__file__).resolve().parent.parent
-BROKER_ONLY_KEYS = {"enabled", "adapter", "label", "market", "db_path"}
+BROKER_ONLY_KEYS = {"enabled", "adapter", "label", "market", "db_path", "data_source"}
 DEFAULT_BROKERS = {"moomoo": {"enabled": True}}
 
 
@@ -61,12 +65,14 @@ class BrokerSpec:
     label: str
     market: str | None
     db_path: Path
+    data_source: str | None = None  # adapter that supplies price data (None = this broker)
     overrides: dict = field(default_factory=dict)
     config: dict = field(default_factory=dict)   # shared settings with overrides applied
 
     def to_dict(self) -> dict:
         return {"name": self.name, "adapter": self.adapter, "enabled": self.enabled, "label": self.label,
-                "market": self.market, "db_path": str(self.db_path), "overrides": sorted(self.overrides)}
+                "market": self.market, "db_path": str(self.db_path), "data_source": self.data_source,
+                "overrides": sorted(self.overrides)}
 
 
 def _default_db(name: str) -> Path:
@@ -87,6 +93,15 @@ def broker_specs(config: dict) -> list[BrokerSpec]:
             raise ValueError(f"brokers.{name}.adapter: unknown adapter {adapter!r} "
                              f"(known: {', '.join(REGISTRY)})")
         overrides = {k: v for k, v in raw.items() if k not in BROKER_ONLY_KEYS}
+        data_source = None
+        if raw.get("data_source"):
+            ds = str(raw["data_source"]).lower()
+            ds_entry = entries.get(ds) if isinstance(entries.get(ds), dict) else None
+            ds_adapter = str((ds_entry or {}).get("adapter", ds)).lower()
+            if ds_adapter not in REGISTRY:
+                raise ValueError(f"brokers.{name}.data_source: unknown broker {raw['data_source']!r} "
+                                 f"(known: {', '.join(REGISTRY)})")
+            data_source = ds_adapter if ds_adapter != adapter else None
         db = Path(raw["db_path"]) if raw.get("db_path") else _default_db(name)
         if not db.is_absolute():
             db = ROOT / db
@@ -100,7 +115,7 @@ def broker_specs(config: dict) -> list[BrokerSpec]:
             enabled=bool(raw.get("enabled", name == "moomoo")),
             label=str(raw.get("label") or default_label),
             market=(str(raw["market"]).upper() if raw.get("market") else None),
-            db_path=db, overrides=overrides,
+            db_path=db, data_source=data_source, overrides=overrides,
             config=deep_merge(shared, overrides),
         ))
     dbs = [s.db_path for s in specs]
