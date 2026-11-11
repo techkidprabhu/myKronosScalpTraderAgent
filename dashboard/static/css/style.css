@@ -1576,3 +1576,13 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .cc-mini-table td:nth-child(2) { white-space: normal; overflow-wrap: anywhere; }
 .cc-mini-table td:last-child { white-space: nowrap; }
 @media (max-width: 640px) { .cc-mini-table td:first-child { word-break: break-all; } .cc-mini-table { font-size: 12px; } }
+
+/* Screener ranking */
+.scr-wrap { overflow-x: auto; }
+.scr-table { min-width: 560px; }
+.scr-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); font-weight: 600; padding: 4px; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
+.scr-table td { white-space: nowrap !important; overflow-wrap: normal !important; word-break: normal !important; }
+.scr-picked td:nth-child(2) { font-weight: 700; color: var(--text-strong); }
+.scr-score { display: flex; align-items: center; gap: 8px; }
+.scr-bar { flex: 0 0 60px; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.scr-bar i { display: block; height: 100%; background: var(--accent-blue); border-radius: 3px; }

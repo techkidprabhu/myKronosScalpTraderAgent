@@ -44,6 +44,7 @@ from src.trailing_stop import TrailConfig, compute_update
 logger = logging.getLogger(__name__)
 
 ACTIVE_SYMBOLS_KEY = "active_symbols"
+SCREENER_REPORT_KEY = "screener_report"
 PHASE_KEY = "agent_phase"            # published for the dashboard
 BROKER_HEALTH_KEY = "broker_health"
 UNMANAGED_KEY = "unmanaged"
@@ -1156,6 +1157,12 @@ class Orchestrator:
             return
         self._set_workers(selected)
         self._last_screener_run = time.time()
+        report = getattr(self.screener, "last_report", None)
+        if isinstance(report, dict):
+            try:
+                self.audit_log.set_kv(SCREENER_REPORT_KEY, report)
+            except Exception:
+                logger.exception("Could not publish the screener report")
 
     # ------------------------------------------------------------------
     # Main loop

@@ -15,6 +15,24 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added
+- **Stock score for the screener** (switched off by default). Ranks the
+  candidates that pass the price, volume and ATR filters on three readings
+  taken from the agent's own timeframe bars:
+  - relative strength: return over `rs_lookback` bars against the market's
+    benchmark ETF (US.SPY, SG.ES3, NSE.NIFTYBEES, or one you set)
+  - relative volume: the last few bars' volume against the usual
+  - squeeze: how tight the Bollinger bands are against the symbol's own
+    recent history
+  `screener.score.mode` is `disabled`, `log` (show the score, keep picking by
+  ATR % as before) or `rank` (pick the top scores). Weights, benchmark and an
+  optional minimum relative strength are editable on Config & Risk.
+  The score only chooses which symbols are scanned; patterns, the indicator
+  check, Kronos and the risk rules are unchanged.
+- **Stock ranking card** on the Command Center, shown once the agent has run
+  the screener with the score in `log` or `rank` mode: each candidate's score,
+  readings and whether it is being scanned. New read-only `/api/screener`.
+
 ### Fixed
 - **Today's P&L counted earlier days' gains.** The Command Center tile added
   each open position's whole profit or loss since entry, so a position bought

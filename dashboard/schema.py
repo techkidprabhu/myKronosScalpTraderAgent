@@ -68,6 +68,16 @@ SECTIONS = [
         ("screener.top_n", "Symbols traded at once", "int", {"min": 1, "max": 50}),
         ("screener.refresh_interval_minutes", "Re-screen every (min)", "int", {"min": 5, "max": 1440}),
         ("default_quantity", "Order quantity (screener picks)", "int", {"min": 1}),
+        ("screener.score.mode", "Stock score", "select", {"options": ["disabled", "log", "rank"],
+            "help": "log = show the score but keep ranking by ATR %; rank = pick the top scores"}),
+        ("screener.score.benchmark", "Score benchmark", "text", {"nullable": True,
+            "help": "e.g. US.SPY - empty uses the market's main index ETF"}),
+        ("screener.score.rs_lookback", "Relative strength lookback (bars)", "int", {"min": 5, "max": 500}),
+        ("screener.score.weight_relative_strength", "Weight: relative strength", "float", {"min": 0, "max": 100}),
+        ("screener.score.weight_relative_volume", "Weight: relative volume", "float", {"min": 0, "max": 100}),
+        ("screener.score.weight_squeeze", "Weight: squeeze", "float", {"min": 0, "max": 100}),
+        ("screener.score.min_relative_strength", "Min relative strength % (rank mode)", "float",
+            {"min": -100, "max": 100, "nullable": True, "help": "Drop symbols lagging the benchmark by more than this"}),
     ]},
     {"id": "orders", "title": "Orders & exits", "fields": [
         ("order_type", "Entry order type", "select", {"options": ["LIMIT", "MARKET"]}),
@@ -213,6 +223,14 @@ def cross_check(cfg: dict) -> list[str]:
     if (scr.get("min_atr_pct") is not None and scr.get("max_atr_pct") is not None
             and scr["min_atr_pct"] >= scr["max_atr_pct"]):
         errs.append("Screener min ATR % must be below max ATR %")
+    sc = scr.get("score") or {}
+    if str(sc.get("mode") or "disabled") != "disabled":
+        if not scr.get("enabled"):
+            errs.append("Stock score needs the dynamic screener switched on")
+        if not any((sc.get(k) or 0) > 0 for k in
+                   ("weight_relative_strength", "weight_relative_volume", "weight_squeeze")) and any(
+                k in sc for k in ("weight_relative_strength", "weight_relative_volume", "weight_squeeze")):
+            errs.append("Stock score weights are all zero")
     lb, mb = cfg.get("lookback_bars"), ind.get("min_bars")
     if ind.get("enabled") and lb and mb and mb > lb:
         errs.append("Indicator min bars is larger than lookback bars - the filter would never run")
