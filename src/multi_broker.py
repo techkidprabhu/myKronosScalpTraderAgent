@@ -53,6 +53,7 @@ def build_orchestrator(spec: BrokerSpec, kronos, multi: bool) -> Orchestrator:
     reporter = TelegramReporter(prefix=f"[{esc(spec.label)}] " if multi else "")
     return Orchestrator(
         spec.config, broker_name=spec.name, adapter=spec.adapter, market=spec.market,
+        data_source=spec.data_source,
         label=spec.label, audit_log=AuditLog(str(spec.db_path)), kronos_agent=kronos, reporter=reporter,
     )
 

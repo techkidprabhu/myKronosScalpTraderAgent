@@ -4300,7 +4300,7 @@
           } else if (f.type === "select") {
             let opts = f.options || [];
             if (f.key === "market" && meta) opts = meta.markets || opts;
-            const blank = f.nullable ? `<option value="">(from .env)</option>` : "";
+            const blank = f.nullable ? `<option value="">${esc(f.blank || "(from .env)")}</option>` : "";
             input = `<select id="${id}">${blank}${opts.map(o => `<option value="${esc(o)}" ${o === value ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
           } else {
             const v = value === null || value === undefined ? "" : (Array.isArray(value) ? value.join(", ") : value);

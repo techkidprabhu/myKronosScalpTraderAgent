@@ -802,13 +802,14 @@ class SymbolWorker:
 class Orchestrator:
     def __init__(self, config: dict, broker=None, *, broker_name: str = "moomoo", adapter: str = "moomoo",
                  market: str | None = None, label: str | None = None, audit_log=None,
-                 kronos_agent=None, reporter=None):
+                 kronos_agent=None, reporter=None, data_source: str | None = None):
         """One trading loop for one broker. With several brokers configured,
         src/multi_broker.py builds one of these per broker - each with its
         own connection, audit DB, risk state and market calendar - and
         shares a single offline Kronos model between them."""
         self.config = config
         self.broker_name, self.adapter, self.market_override = broker_name, adapter, market
+        self.data_source = data_source   # adapter supplying price data, None = the broker itself
         self.broker_label = label or ("moomoo OpenD" if adapter == "moomoo" else adapter)
         sched = config.get("schedule", {}) or {}
         self.follow_market = bool(sched.get("follow_market", True)) and not config.get(
@@ -881,6 +882,10 @@ class Orchestrator:
         """Bounded connect to this orchestrator's broker."""
         adapter = getattr(self, "adapter", "moomoo")
         kwargs = {"market": self.market_override} if getattr(self, "market_override", None) else {}
+        data_source = getattr(self, "data_source", None)
+        if data_source and data_source != adapter:
+            from src.brokers import connect as connect_routed
+            return connect_routed(adapter, self.connect_timeout, data_source=data_source, **kwargs)
         if adapter == "moomoo":
             return connect_with_timeout(self.connect_timeout, **kwargs)
         return connect_broker(adapter, self.connect_timeout, **kwargs)

@@ -16,6 +16,16 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Price data from another broker** (`brokers.<name>.data_source`). A broker
+  can now read all its prices - candles for patterns and Kronos, the
+  screener's snapshots, live prices for stops and the dashboard - from a
+  different broker's API, while orders, positions, funds and exits stay with
+  the trading broker. Made for Zerodha's free "Personal" API plan, which has
+  no market data: set `data_source: angel` under `brokers.zerodha` to use
+  Angel One's free NSE data (needs the `ANGEL_*` login in `.env`; Angel does
+  not have to be enabled for trading). Also settable on Config & Risk as
+  "Price data from". Off unless set; both connections must be healthy, and
+  the broker status shows "prices from <source>".
 - **Stock score for the screener** (switched off by default). Ranks the
   candidates that pass the price, volume and ATR filters on three readings
   taken from the agent's own timeframe bars:

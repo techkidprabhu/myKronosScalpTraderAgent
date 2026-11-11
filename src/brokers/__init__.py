@@ -47,6 +47,25 @@ def capabilities() -> dict:
     return out
 
 
+def connect(adapter: str, timeout: float = 35.0, data_source: str | None = None, **kwargs):
+    """Connect the trading broker and, when `data_source` names a different
+    adapter, a second broker that supplies all price data (see
+    src/brokers/data_source.py). Both connects are bounded."""
+    trade = connect_with_timeout(adapter, timeout, **kwargs)
+    if not data_source or data_source == adapter:
+        return trade
+    from src.brokers.data_source import DataRoutedBroker
+    data_kwargs = dict(kwargs)
+    data_kwargs.setdefault("market", getattr(trade, "market", None))
+    try:
+        data = connect_with_timeout(data_source, timeout, **data_kwargs)
+    except BaseException as exc:
+        trade.close()
+        label = REGISTRY.get(data_source, (None, data_source))[1]
+        raise BrokerError(f"Price data source {data_source} ({label}) failed to connect: {exc}") from exc
+    return DataRoutedBroker(trade, data)
+
+
 def connect_with_timeout(adapter: str, timeout: float = 35.0, **kwargs) -> BrokerClient:
     """Build the adapter with a hard wall-clock limit, so a broker that
     accepts the connection but never answers can't freeze the agent. Runs the

@@ -79,6 +79,11 @@ class BrokerClient(ABC):
     market: str = "US"
     account: str = ""
     sandbox: bool = True
+    # Set when another broker supplies this one's prices (data_source): a
+    # callable(symbol) -> last price. Adapters that need a price while
+    # placing orders (Zerodha GTTs) must go through get_current_price so
+    # they honour it.
+    price_feed = None
 
     # ---- connection -------------------------------------------------
     def ping(self) -> tuple[bool, str]:
