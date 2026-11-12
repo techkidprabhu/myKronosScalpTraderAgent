@@ -1586,3 +1586,6 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .scr-score { display: flex; align-items: center; gap: 8px; }
 .scr-bar { flex: 0 0 60px; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
 .scr-bar i { display: block; height: 100%; background: var(--accent-blue); border-radius: 3px; }
+
+/* Settings: a shared money value used in more than one currency */
+.field-help.unit-warn { color: var(--warn-text); }
