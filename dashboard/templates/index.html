@@ -1587,6 +1587,43 @@
     const CURRENCIES = {US: "USD", HK: "HKD", SG: "SGD", CN: "CNH", NSE: "INR", BSE: "INR"};
     const MARKET_NAMES = {US: "US Equities", HK: "Hong Kong HKEX", SG: "Singapore SGX", CN: "China A-shares"};
     let MARKET = "US";
+
+    // ---- Dates and times: one unambiguous style everywhere ----
+    // The browser default ("11/12/2026, 4:59:19 AM") reads as month/day in a
+    // 12-hour clock, which is easy to misread. Everything uses day-month
+    // with a 24-hour clock in the device's time zone ("Thu 12 Nov, 04:59"),
+    // and trade records also show the exchange's own time.
+    const MARKET_TZ = { US: "America/New_York", SG: "Asia/Singapore", HK: "Asia/Hong_Kong", CN: "Asia/Shanghai",
+                        SH: "Asia/Shanghai", SZ: "Asia/Shanghai", NSE: "Asia/Kolkata", BSE: "Asia/Kolkata",
+                        JP: "Asia/Tokyo", AU: "Australia/Sydney", MY: "Asia/Kuala_Lumpur", UK: "Europe/London" };
+    const MARKET_CITY = { US: "NY", SG: "SG", HK: "HK", CN: "SH", SH: "SH", SZ: "SZ", NSE: "IST", BSE: "IST",
+                          JP: "Tokyo", AU: "Sydney", MY: "KL", UK: "London" };
+    const _toDate = ts => (ts instanceof Date ? ts : new Date((ts > 1e12 ? ts : ts * 1000)));
+    function fmtTime(ts, seconds = false, tz) {
+      const o = { hour: "2-digit", minute: "2-digit", hour12: false };
+      if (seconds) o.second = "2-digit";
+      if (tz) o.timeZone = tz;
+      return _toDate(ts).toLocaleTimeString("en-GB", o);
+    }
+    function fmtDateTime(ts, seconds = false) {
+      const d = _toDate(ts);
+      const day = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+      const thisYear = d.getFullYear() === new Date().getFullYear();
+      return `${day}${thisYear ? "" : " " + d.getFullYear()}, ${fmtTime(d, seconds)}`;
+    }
+    // Exchange time for a symbol such as "US.INTC" or "NSE.TCS", when it
+    // differs from the device's own clock ("NY 15:59 Wed").
+    function marketTimeNote(ts, symbol) {
+      const code = String(symbol || "").split(".")[0].toUpperCase() || MARKET;
+      const tz = MARKET_TZ[code] || MARKET_TZ[MARKET];
+      if (!tz) return "";
+      const d = _toDate(ts);
+      const here = fmtTime(d), there = fmtTime(d, false, tz);
+      const dayHere = d.toLocaleDateString("en-GB", { weekday: "short" });
+      const dayThere = d.toLocaleDateString("en-GB", { weekday: "short", timeZone: tz });
+      if (here === there && dayHere === dayThere) return "";
+      return `${MARKET_CITY[code] || code} ${there}${dayHere !== dayThere ? " " + dayThere : ""}`;
+    }
     let BROKER_LABEL = "the broker";   // the selected broker's display name
     let CCY = "USD";
     // Price prefix for the current broker's currency - never a bare "$" on
@@ -1653,7 +1690,7 @@
         srcEl.textContent = sourceLabels[data.symbols_source] || "";
         srcEl.title = data.symbols_source === "screener_candidates"
           ? "Agent hasn't published its screener picks yet - showing the candidate list"
-          : (data.symbols_updated ? `Updated ${new Date(data.symbols_updated * 1000).toLocaleString()}` : "");
+          : (data.symbols_updated ? `Updated ${fmtDateTime(data.symbols_updated)}` : "");
         populateSimSymbols(data.symbols || []);
 
         // Populate symbol buttons
@@ -1694,7 +1731,7 @@
       const val = (i, text) => { document.getElementById(`pipe-val-${i}`).textContent = text; };
       const mark = (i, cls) => { card(i).className = "step-card" + (cls ? " " + cls : ""); };
       const pct = v => v === null || v === undefined || isNaN(v) ? "—" : `${Math.round(Number(v) * 100)}%`;
-      const at = ts => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const at = ts => fmtTime(ts);
       const thr = Number(status && status.confidence_threshold) || 0.62;
 
       // 1. data feed: is the agent reading candles at all?
@@ -1912,7 +1949,7 @@
         const priceSub = document.getElementById("metric-price-sub");
         if (priceSub && shownTf) priceSub.textContent = `Timeframe: ${shownTf}`;
         const upd = document.getElementById("chart-updated");
-        if (upd) upd.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+        if (upd) upd.textContent = `Updated ${fmtTime(new Date(), true)}`;
 
         document.getElementById("metric-symbol").textContent = symbol;
         if (data.last_close) {
@@ -1988,7 +2025,7 @@
     }
 
     function hhmm(epochSec) {
-      return new Date(epochSec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return fmtTime(epochSec);
     }
 
     // Load Kronos Forecast for Symbol
@@ -2119,7 +2156,8 @@
       }
 
       tbody.innerHTML = filtered.map(d => {
-        const dateStr = new Date(d.ts * 1000).toLocaleString();
+        const mkt = marketTimeNote(d.ts, d.epic);
+        const dateStr = `${fmtDateTime(d.ts, true)}${mkt ? `<br><span class="cc-muted">${esc(mkt)}</span>` : ""}`;
         const actionBadge = d.action === "opened"
           ? `<span class="badge success">OPENED</span>`
           : (d.action === "rejected" ? `<span class="badge warning">REJECTED</span>` : `<span class="badge danger">ERROR</span>`);
@@ -2251,9 +2289,9 @@
                 <td>${o.managed ? MANAGEMENT_BADGES.managed : MANAGEMENT_BADGES.unmanaged}</td>
               </tr>`).join("");
         document.getElementById("orders-updated").textContent =
-          data.broker_connected ? `Updated ${new Date().toLocaleTimeString()}` : "";
+          data.broker_connected ? `Updated ${fmtTime(new Date(), true)}` : "";
         document.getElementById("positions-updated").textContent =
-          `Updated ${new Date((data.updated_at || Date.now() / 1000) * 1000).toLocaleTimeString()}`;
+          `Updated ${fmtTime(data.updated_at || Date.now() / 1000, true)}`;
         manualDefaultQty = data.default_quantity || manualDefaultQty;
         const qtyEl = document.getElementById("manual-qty");
         if (!qtyEl.value) qtyEl.placeholder = `Qty (${manualDefaultQty})`;
@@ -2342,7 +2380,7 @@
       box.style.display = "block";
       box.innerHTML = `<div class="manual-orders-title">Manual orders</div>` + rows.map(r => `
         <div class="manual-order-row">
-          <span class="mono">${new Date(r.ts * 1000).toLocaleTimeString()}</span>
+          <span class="mono">${fmtDateTime(r.ts, true)}</span>
           <span class="${MANUAL_STATUS[r.status] || 'badge'}">${esc(r.status.toUpperCase())}</span>
           <strong class="mono">${esc(r.action)} ${r.quantity ? esc(r.quantity) + " " : ""}${esc(r.symbol)}</strong>
           <span class="manual-order-result">${esc(r.result || (r.status === "queued" ? "waiting for the agent's next cycle…" : ""))}</span>
@@ -2743,9 +2781,9 @@
       parts.push(`<text x="${x0}" y="14" font-size="11">${head}</text>`);
       if (RM.dir === "SELL" && !RM.cur["risk.allow_short"] && !pos) parts.push(`<text x="${x0 + 6}" y="${yTop + 14}" font-size="11" fill="#f59e0b">Shorts are off - the agent rejects SELL signals.</text>`);
       const t0 = new Date(bars[0].time * 1000), tn = new Date(bars[n - 1].time * 1000);
-      const fmtT = d => d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      const fmtT = d => fmtDateTime(d);
       parts.push(`<text x="${x0}" y="${H - 6}" font-size="10" fill="#64748b">${fmtT(t0)}</text>`);
-      parts.push(`<text x="${xNow}" y="${H - 6}" font-size="10" fill="#64748b" text-anchor="end">${fmtT(tn)}${L.updated ? ` · quote ${L.updated.toLocaleTimeString()}` : ""}</text>`);
+      parts.push(`<text x="${xNow}" y="${H - 6}" font-size="10" fill="#64748b" text-anchor="end">${fmtT(tn)}${L.updated ? ` · quote ${fmtTime(L.updated, true)}` : ""}</text>`);
       if (L.err) parts.push(`<text x="${x0 + 6}" y="${yBot - 8}" font-size="11" fill="#f59e0b">${esc(L.err)}</text>`);
       parts.push(...handles);
       svg.innerHTML = parts.join("");
@@ -3433,7 +3471,7 @@
       const area = `${line} L${X(t1).toFixed(1)} ${Y(Math.max(lo, 0) === 0 ? 0 : lo).toFixed(1)} L${X(t0).toFixed(1)} ${Y(0).toFixed(1)} Z`;
       const ddPath = pts.map((p, i) => `${i ? "L" : "M"}${X(p.ts).toFixed(1)} ${YD(p.dd).toFixed(1)}`).join(" ") + ` L${X(t1).toFixed(1)} ${YD(0).toFixed(1)} L${X(t0).toFixed(1)} ${YD(0).toFixed(1)} Z`;
       const ticks = [lo, (lo + hi) / 2, hi].map(v => `<text x="${padL - 8}" y="${Y(v) + 4}" text-anchor="end" class="pf-axis">${ccBig(v, false).replace(/^/, v < 0 ? "−" : "")}</text><line x1="${padL}" x2="${w - padR}" y1="${Y(v)}" y2="${Y(v)}" class="pf-grid"></line>`).join("");
-      const fmtD = t => new Date(t * 1000).toLocaleDateString([], { month: "short", day: "numeric" });
+      const fmtD = t => new Date(t * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
       const good = pts[pts.length - 1].cum >= 0;
       box.innerHTML = `
         <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Equity curve, ending at ${ccBig(pts[pts.length - 1].cum)}">
@@ -3459,7 +3497,7 @@
         cross.setAttribute("x1", bx); cross.setAttribute("x2", bx); cross.style.display = "";
         dot.setAttribute("cx", bx); dot.setAttribute("cy", by); dot.style.display = "";
         const tr = eq.find(e => e.ts === best.ts);
-        tip.innerHTML = `<b>${ccBig(best.cum)}</b><br>${new Date(best.ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` +
+        tip.innerHTML = `<b>${ccBig(best.cum)}</b><br>${fmtDateTime(best.ts)}` +
           (tr ? `` : "") + (best.dd < 0 ? `<br><span class="cc-neg">${ccBig(best.dd)} from peak</span>` : "");
         tip.style.display = "block";
         tip.style.left = `${Math.min(bx + 12, w - 170)}px`; tip.style.top = `${Math.max(4, by - 50)}px`;
@@ -3547,7 +3585,7 @@
       if (!trades.length) { tb.innerHTML = `<tr><td colspan="9" class="cc-empty">No closed trades in this period.</td></tr>`; return; }
       const f = v => v === null || v === undefined ? "—" : Number(v).toFixed(Math.abs(v) < 1 ? 4 : 2);
       tb.innerHTML = trades.map(t => `<tr>
-        <td class="mono" style="font-size:11px">${new Date(t.ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+        <td class="mono" style="font-size:11px">${fmtDateTime(t.ts)}</td>
         <td><strong class="mono">${esc(t.symbol)}</strong></td>
         <td>${esc(t.manual ? "manual" : String(t.pattern).replace(/_/g, " "))}</td>
         <td>${t.direction === "SELL" ? "Short" : t.direction === "BUY" ? "Long" : "—"}</td>
@@ -3875,7 +3913,7 @@
         const cls = v => v > 0 ? "cc-pos" : v < 0 ? "cc-neg" : "";
         document.getElementById("scr-mode").textContent = r.mode === "rank" ? "· picking by score" : "· log only, still picking by ATR %";
         document.getElementById("scr-sub").textContent =
-          `${r.candidates.length} passed the filters of ${r.universe} · ${r.timeframe} bars · updated ${new Date(r.updated * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+          `${r.candidates.length} passed the filters of ${r.universe} · ${r.timeframe} bars · updated ${fmtTime(r.updated)}`;
         document.getElementById("scr-body").innerHTML = r.candidates.map((c, i) => `
           <tr class="${c.picked ? "scr-picked" : ""}">
             <td class="cc-muted">${i + 1}</td>
@@ -3924,7 +3962,7 @@
         `<tr><td class="mono">${esc(sym)}</td><td class="cc-muted">${esc(note || "")}</td><td class="mono ${cls(v)}" style="text-align:right">${ccMoney(v)}</td></tr>`;
       const sumC = closed.reduce((a, t) => a + (t.pnl || 0), 0);
       const sumO = pos.reduce((a, p) => a + (Number(p.today_pnl ?? p.unrealized_pnl) || 0), 0);
-      const t = ts => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const t = ts => fmtTime(ts);
       document.getElementById("cc-today-body").innerHTML = `
         <div class="cc-today-cols">
           <div>
@@ -4130,7 +4168,7 @@
         const pnl = a.pnl !== undefined ? ` <b class="${a.pnl >= 0 ? "cc-pos" : "cc-neg"}">${ccMoney(a.pnl)}</b>` : "";
         return `<li class="${isNew ? "new" : ""}"><span class="cc-ico ${esc(a.kind)}" aria-hidden="true">${CC_ICON[a.kind] || "•"}</span>
           <div><div class="cc-act-text">${esc(a.text)}${pnl}</div>
-          <div class="cc-act-meta">${when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${when.toLocaleDateString([], { month: "short", day: "numeric" })}</div></div></li>`;
+          <div class="cc-act-meta">${fmtDateTime(when)}</div></div></li>`;
       }).join("");
       LIVE.seen = new Set(items.map(key));
       if (!first) fresh.filter(a => ["opened", "win", "loss", "error"].includes(a.kind)).slice(0, 2)
@@ -4245,7 +4283,7 @@
           const deltaColor = delta >= 0 ? "var(--accent-green)" : "var(--accent-red)";
           return `
             <tr>
-              <td class="mono">T+${i + 1} (${new Date(bar.time * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})</td>
+              <td class="mono">T+${i + 1} (${fmtTime(bar.time)})</td>
               <td class="mono">${bar.open.toFixed(2)}</td>
               <td class="mono">${bar.high.toFixed(2)}</td>
               <td class="mono">${bar.low.toFixed(2)}</td>
@@ -4606,7 +4644,7 @@
               <span class="sb-num ${r > 0 ? "pos" : r < 0 ? "neg" : ""}">${r != null ? (r > 0 ? "+" : "") + r.toFixed(1) + "%" : ""}</span>
             </div>`;
         }).join("") + `<div class="sent-row-note">20-bar change · hover a row for details</div>`;
-        const when = d.updated ? new Date(d.updated * 1000).toLocaleTimeString() : "";
+        const when = d.updated ? fmtTime(d.updated, true) : "";
         document.getElementById("sent-updated").textContent =
           `From ${d.source || "broker"}${when ? " · " + when : ""}${d.cached ? " (cached)" : ""}`;
       } catch (err) {
@@ -4746,7 +4784,7 @@
         sub.textContent = marketData.phase.phase === "always" ? "Not following the market calendar"
                                                               : `${marketData.phase.exchange} session`;
       }
-      document.getElementById("current-clock").textContent = new Date().toLocaleTimeString() + " local";
+      document.getElementById("current-clock").textContent = fmtTime(new Date(), true) + " local";
     }
 
     async function loadMarkets() {

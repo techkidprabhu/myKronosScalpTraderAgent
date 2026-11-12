@@ -15,6 +15,15 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Changed
+- **Dates and times are unambiguous.** Every screen used the browser's
+  default style, which on many devices is US month/day with a 12-hour clock
+  ("11/12/2026, 4:59:19 AM" for 12 November). All dates and times now use
+  day-month and a 24-hour clock in the device's time zone, e.g.
+  "Thu 12 Nov, 04:59:19" (the year is shown only if it isn't the current
+  one). The Decisions & Audit Log also shows the exchange's own time under
+  each row when it differs, e.g. "NY 15:59 Wed" for a US stock.
+
 ### Fixed
 - **Decision Pipeline card on the Live Terminal.** It showed only the newest
   snapshot of any symbol, which is nearly always "scanning", and never
