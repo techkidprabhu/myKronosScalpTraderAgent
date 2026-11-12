@@ -419,8 +419,8 @@
             <div class="step-card active" id="pipe-step-1">
               <div class="step-badge">1</div>
               <div class="step-content">
-                <div class="step-title">moomoo OpenD Ingest</div>
-                <div class="step-desc">Pulls closed historical K-lines via OpenQuoteContext.</div>
+                <div class="step-title"><span class="broker-name">Broker</span> Ingest</div>
+                <div class="step-desc">Pulls closed historical candles from the broker's data feed.</div>
                 <div class="step-value" id="pipe-val-1">Active Polling</div>
               </div>
             </div>
@@ -459,7 +459,7 @@
             <div class="step-card" id="pipe-step-5">
               <div class="step-badge">5</div>
               <div class="step-content">
-                <div class="step-title">moomoo Execution & Trailing Stop</div>
+                <div class="step-title"><span class="broker-name">Broker</span> Execution & Trailing Stop</div>
                 <div class="step-desc">Independent Entry, Broker-side Stop & Limit legs.</div>
                 <div class="step-value" id="pipe-val-5">No open position</div>
               </div>
@@ -1581,6 +1581,7 @@
     const CURRENCIES = {US: "USD", HK: "HKD", SG: "SGD", CN: "CNH", NSE: "INR", BSE: "INR"};
     const MARKET_NAMES = {US: "US Equities", HK: "Hong Kong HKEX", SG: "Singapore SGX", CN: "China A-shares"};
     let MARKET = "US";
+    let BROKER_LABEL = "the broker";   // the selected broker's display name
     let CCY = "USD";
     // Price prefix for the current broker's currency - never a bare "$" on
     // an INR or SGD account.
@@ -1613,6 +1614,10 @@
         CCY = CURRENCIES[MARKET] || "USD";
         document.querySelectorAll(".ccy").forEach(el => el.textContent = CCY);
         const bLabel = broker.label || "moomoo OpenD";
+        BROKER_LABEL = bLabel;
+        document.querySelectorAll(".broker-name").forEach(el => { el.textContent = bLabel; });
+        const acct = document.getElementById("strat-val-broker-account");
+        if (acct) acct.textContent = bLabel;
         const bShort = (broker.adapter || "moomoo").toUpperCase();
         document.getElementById("broker-label").textContent =
           `BROKER: ${bShort} ${MARKET} · ${broker.sandbox ? "PAPER" : "LIVE"}`;
@@ -4708,9 +4713,10 @@
         ...(u.orders || []).map(o => `${esc(o.symbol)} order #${esc(o.id)} (${esc(o.action || "")})`),
       ];
       const ub = document.getElementById("alert-unmanaged");
+      const heldAt = (data.broker && data.broker.label) || BROKER_LABEL;
       if (items.length) {
         ub.innerHTML = `<strong>Not managed by the agent:</strong> ${items.join(" · ")}
-          <span class="alert-sub">moomoo holds these but the agent has no stop/target for them. Close them in moomoo, or protect them manually.</span>`;
+          <span class="alert-sub">${esc(heldAt)} holds these, but the agent did not open them, so it places no stop or target on them and never sells them. That is expected for your own long-term holdings. They are yours to manage in ${esc(heldAt)}.</span>`;
         ub.style.display = "";
       } else {
         ub.style.display = "none";

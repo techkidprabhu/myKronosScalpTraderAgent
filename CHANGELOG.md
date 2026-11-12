@@ -15,6 +15,12 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Fixed
+- The "Not managed by the agent" banner and two pipeline step titles said
+  "moomoo" whichever broker was selected. They now use the selected broker's
+  name, and the banner no longer suggests closing holdings: it explains that
+  the agent leaves positions it did not open alone.
+
 ### Added
 - **Support and resistance on the Live Terminal chart.** A new "S/R" toggle
   next to MAs / VWAP / RSI draws up to three support (green) and three
