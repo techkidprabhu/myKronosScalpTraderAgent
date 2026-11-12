@@ -16,6 +16,14 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Fixed
+- **Angel One: candle requests were throttled.** Angel allows about three
+  candle requests a second; over that it sends an empty reply, which made
+  the screener skip stocks ("Screener failed to evaluate NSE.LT"). Candle
+  requests are now spaced 0.4 s apart across all threads and retried up to
+  three times with a growing wait. Real errors (bad token, unknown symbol)
+  are not retried.
+
+### Fixed
 - **Today's P&L counted holdings the agent does not manage.** With a broker
   account that also holds long-term shares (e.g. Zerodha), the Command
   Center's Today's P&L and the Live Terminal's Daily P&L added those
