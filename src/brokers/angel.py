@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -74,6 +75,21 @@ def _data(resp) -> object:
             raise BrokerError(f"Angel: {resp.get('message') or resp}")
         return resp.get("data")
     return resp
+
+
+# Angel's candle API allows about 3 requests a second per account. Over that it
+# answers with an empty body (the SDK then fails to parse it) or an "access
+# rate" message, so candle requests are spaced out and retried.
+CANDLE_MIN_INTERVAL = 0.4      # seconds between candle requests
+CANDLE_RETRIES = 3             # extra attempts after a rate-limit style failure
+CANDLE_BACKOFF = 1.0           # first wait; doubles each retry
+
+
+def _rate_limited(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return (isinstance(exc, ValueError)                    # JSONDecodeError: empty / non-JSON reply
+            or "access rate" in text or "too many" in text or "rate limit" in text
+            or "couldn't parse the json" in text or "expecting value" in text)
 
 
 class AngelClient(BrokerClient):
@@ -115,6 +131,8 @@ class AngelClient(BrokerClient):
             if not resp or not resp.get("status"):
                 raise BrokerError(f"Angel login failed: {(resp or {}).get('message') or resp}")
         self.api = api
+        self._candle_lock = threading.Lock()
+        self._last_candle_at = 0.0
 
     # ---- symbols ----------------------------------------------------
     def _index_scrip(self, rows: list):
@@ -190,12 +208,34 @@ class AngelClient(BrokerClient):
         start = end - history_window(resolution, num_points)
 
         def fetch(a, b):
-            return _data(self.api.getCandleData({
+            return self._candles({
                 "exchange": ex, "symboltoken": token, "interval": interval,
                 "fromdate": a.strftime("%Y-%m-%d %H:%M"), "todate": b.strftime("%Y-%m-%d %H:%M"),
-            })) or []
-        rows = fetch_chunked(fetch, start, end, MAX_DAYS[interval])
+            })
+        rows = fetch_chunked(fetch, start, end, MAX_DAYS[interval], pause=0)   # _candles paces itself
         return to_frame([tuple(r[:6]) for r in rows], resolution, num_points, self._canonical(ex, ts))
+
+    def _candles(self, params: dict) -> list:
+        """One candle request, spaced from the previous one (all threads
+        share the account's limit) and retried when Angel throttles it."""
+        wait = CANDLE_BACKOFF
+        for attempt in range(CANDLE_RETRIES + 1):
+            with self._candle_lock:
+                gap = CANDLE_MIN_INTERVAL - (time.monotonic() - self._last_candle_at)
+                if gap > 0:
+                    time.sleep(gap)
+                try:
+                    return _data(self.api.getCandleData(params)) or []
+                except Exception as exc:  # noqa: BLE001
+                    if attempt == CANDLE_RETRIES or not _rate_limited(exc):
+                        raise
+                    logger.info("Angel throttled a candle request (%s) - retry %d/%d in %.0fs",
+                                str(exc)[:80], attempt + 1, CANDLE_RETRIES, wait)
+                finally:
+                    self._last_candle_at = time.monotonic()
+            time.sleep(wait)
+            wait *= 2
+        return []
 
     def get_current_price(self, symbol: str) -> float:
         ex, ts, token, _ = self._ids(symbol)

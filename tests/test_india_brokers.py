@@ -386,3 +386,64 @@ def test_angel_never_sends_market_orders(angel):
     sell = angel.api.placed[-1]
     assert sell["ordertype"] == "LIMIT" and sell["price"] == "1395.2"  # -0.5%, rounded down
     assert all(p["ordertype"] not in ("MARKET", "STOPLOSS_MARKET") for p in angel.api.placed)
+
+
+# ---------------------------------------------------------------- Angel candle rate limit
+
+def test_angel_retries_a_throttled_candle_request(angel, monkeypatch):
+    import json
+    import src.brokers.angel as mod
+    sleeps = []
+    monkeypatch.setattr(mod.time, "sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr(mod, "CANDLE_MIN_INTERVAL", 0)
+    real, fails = angel.api.getCandleData, {"n": 2}
+
+    def flaky(params):
+        if fails["n"]:
+            fails["n"] -= 1
+            raise json.JSONDecodeError("Expecting value", "", 0)      # what an empty throttled reply looks like
+        return real(params)
+
+    angel.api.getCandleData = flaky
+    df = angel.get_historical_bars("NSE.RELIANCE", "MIN_5", 3)
+    assert len(df) == 3 and fails["n"] == 0
+    assert sleeps[:2] == [1.0, 2.0]                                    # backed off, doubling
+
+
+def test_angel_gives_up_after_retries_and_does_not_retry_real_errors(angel, monkeypatch):
+    import json
+    import src.brokers.angel as mod
+    monkeypatch.setattr(mod.time, "sleep", lambda s: None)
+    monkeypatch.setattr(mod, "CANDLE_MIN_INTERVAL", 0)
+    calls = {"n": 0}
+
+    def always_throttled(params):
+        calls["n"] += 1
+        raise json.JSONDecodeError("Expecting value", "", 0)
+
+    angel.api.getCandleData = always_throttled
+    with pytest.raises(ValueError):
+        angel.get_historical_bars("NSE.RELIANCE", "MIN_5", 3)
+    assert calls["n"] == mod.CANDLE_RETRIES + 1
+
+    calls["n"] = 0
+
+    def refused(params):
+        calls["n"] += 1
+        return {"status": False, "message": "Invalid Token"}
+
+    angel.api.getCandleData = refused
+    with pytest.raises(BrokerError, match="Invalid Token"):
+        angel.get_historical_bars("NSE.RELIANCE", "MIN_5", 3)
+    assert calls["n"] == 1                                             # a real error is not retried
+
+
+def test_angel_spaces_out_candle_requests(angel, monkeypatch):
+    import src.brokers.angel as mod
+    clock = {"t": 100.0}
+    sleeps = []
+    monkeypatch.setattr(mod.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(mod.time, "sleep", lambda s: (sleeps.append(round(s, 2)), clock.__setitem__("t", clock["t"] + s)))
+    angel.get_historical_bars("NSE.RELIANCE", "MIN_5", 3)
+    angel.get_historical_bars("NSE.ITC", "MIN_5", 3)
+    assert mod.CANDLE_MIN_INTERVAL in sleeps                           # the second request waited
