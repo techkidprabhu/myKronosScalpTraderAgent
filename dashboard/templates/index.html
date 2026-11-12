@@ -4273,6 +4273,34 @@
       return String(v);
     }
 
+    // Money and price-distance fields carry no currency of their own: the
+    // same number means USD on a US broker and INR on an NSE one.
+    function _unitInfo(f, isShared) {
+      if (!f.unit) return { suffix: "", note: "" };
+      const brokers = settingsData.brokers || {};
+      const per = f.unit === "price" ? " per share" : "";
+      if (!isShared) {
+        const c = (brokers[settingsScope] || {}).currency;
+        return { suffix: c ? ` (${c}${per})` : "", note: "" };
+      }
+      const active = (settingsData.broker_order || Object.keys(brokers)).filter(n => brokers[n] && brokers[n].enabled);
+      const rows = active.map(n => {
+        const v = (settingsData.values[n] || {})[f.key];
+        const own = ((settingsData.overrides || {})[n] || []).includes(f.key);
+        return { label: brokers[n].label, ccy: brokers[n].currency || "", v, own };
+      });
+      const ccys = [...new Set(rows.map(r => r.ccy).filter(Boolean))];
+      const suffix = ccys.length === 1 ? ` (${ccys[0]}${per})` : ` (each broker's currency${per})`;
+      if (ccys.length < 2) return { suffix, note: "" };
+      const inherited = rows.filter(r => !r.own && r.v !== null && r.v !== undefined);
+      const mixed = new Set(inherited.map(r => r.ccy)).size > 1;
+      const note = `<div class="field-help${mixed ? " unit-warn" : ""}">` +
+        rows.map(r => `${esc(r.label)}: ${esc(_fmt(r.v))}${r.v === null || r.v === undefined ? "" : " " + esc(r.ccy)}${r.own ? " (own value)" : ""}`).join(" · ") +
+        (mixed ? `<br>The shared number is used as-is in each currency. Set a broker's own value under its "only" settings.` : "") +
+        `</div>`;
+      return { suffix, note };
+    }
+
     function renderSettings() {
       const form = document.getElementById("settings-form");
       if (!settingsData) { form.textContent = "Settings unavailable."; return; }
@@ -4282,7 +4310,8 @@
       help.innerHTML = isShared
         ? "Shared settings apply to every broker unless a broker overrides them."
         : `Overrides for <b>${esc(meta.label)}</b> (${esc(meta.adapter)}${meta.status && meta.status !== "ready" ? ", " + esc(meta.status) : ""}). ` +
-          "Fields marked <span class='ovr-tag'>override</span> differ from the shared value; ↺ goes back to shared.";
+          "Fields marked <span class='ovr-tag'>override</span> differ from the shared value; ↺ goes back to shared." +
+          (meta.currency ? ` Money and price fields here are in <b>${esc(meta.currency)}</b> (${esc(meta.market)} market).` : "");
       const html = [];
       for (const sec of settingsData.schema) {
         const fields = sec.fields.filter(f => isShared ? f.scope !== "broker" : f.scope !== "shared");
@@ -4310,14 +4339,16 @@
                       ${f.min !== undefined ? `min="${f.min}"` : ""} ${f.max !== undefined ? `max="${f.max}"` : ""}
                       placeholder="${f.nullable ? (f.type === "text" ? "default" : "empty = off") : ""}">`;
           }
+          const unit = _unitInfo(f, isShared);
           const tags = [];
           if (ovr) tags.push(`<span class="ovr-tag">override</span><button class="ovr-reset" data-key="${esc(f.key)}" title="Use the shared value (${esc(_fmt(shared))})">↺</button>`);
           else if (!isShared && f.scope === "any") tags.push(`<span class="inherit-tag" title="Shared value">shared</span>`);
           if (dirty) tags.push(`<span class="dirty-tag">changed</span>`);
           html.push(`<div class="settings-field${dirty ? " dirty" : ""}">
-              <label for="${id}">${esc(f.label)} ${tags.join("")}</label>
+              <label for="${id}">${esc(f.label)}${esc(unit.suffix)} ${tags.join("")}</label>
               ${input}
               ${f.help ? `<div class="field-help">${esc(f.help)}</div>` : ""}
+              ${unit.note}
             </div>`);
         }
         html.push(`</div></section>`);

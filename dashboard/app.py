@@ -216,6 +216,12 @@ def _db_path() -> Path:
     return Path(path)
 
 
+# Currency each market's prices and account are in - shown next to the money
+# fields on Config & Risk so a shared value is not mistaken for one currency.
+MARKET_CURRENCY = {"US": "USD", "SG": "SGD", "HK": "HKD", "CN": "CNH", "SH": "CNH", "SZ": "CNH",
+                   "NSE": "INR", "BSE": "INR", "JP": "JPY", "MY": "MYR", "AU": "AUD", "CA": "CAD", "UK": "GBP"}
+
+
 def _spec_market(spec) -> str:
     return (spec.market or os.environ.get(MARKET_ENV.get(spec.adapter, ""), "") or
             DEFAULT_MARKET.get(spec.adapter, "US")).upper()
@@ -1784,7 +1790,9 @@ def handle_settings():
             overrides[spec.name] = sorted(k for k in fields if k not in ("enabled", "market", "label", "data_source")
                                           and _get_path(entry, k)[1])
             caps = broker_registry.capabilities().get(spec.adapter, {})
-            broker_meta[spec.name] = {"adapter": spec.adapter, "label": spec.label,
+            market = _spec_market(spec)
+            broker_meta[spec.name] = {"adapter": spec.adapter, "label": spec.label, "enabled": spec.enabled,
+                                      "market": market, "currency": MARKET_CURRENCY.get(market),
                                       "markets": caps.get("markets", []), "status": caps.get("status")}
         return jsonify({"schema": settings_schema(markets), "values": values, "overrides": overrides,
                         "brokers": broker_meta, "broker_order": [s.name for s in specs],

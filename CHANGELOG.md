@@ -16,6 +16,16 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Currencies on Config & Risk.** Money and price-distance fields (max daily
+  loss, max loss per trade, stop / target distance, trailing distances,
+  screener price range) now show their currency: "(INR)" when a broker's own
+  settings are open, and under Shared settings a line with each running
+  broker's effective value and currency ("moomoo: 600 USD · Zerodha: 500
+  INR"). A shared number that is used as-is by brokers in different
+  currencies is highlighted. Display only - no setting or trading behaviour
+  changes.
+
+### Added
 - **`start.sh`** - one script to run the agent and the dashboard in the
   background from any folder: `./start.sh` (both), `agent`, `dashboard`,
   `stop`, `restart`, `status`, `logs`, `link`. Finds the active virtualenv or
