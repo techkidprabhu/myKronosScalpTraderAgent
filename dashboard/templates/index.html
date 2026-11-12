@@ -230,6 +230,7 @@
           <div class="cc-tile-head"><span>Today's P&amp;L <span class="cc-ccy"></span></span><span id="cc-today-sub" class="cc-muted"></span></div>
           <div class="cc-big" id="cc-today">—</div>
           <div class="cc-muted" id="cc-today-split">closed — · open today —</div>
+          <div class="cc-muted" id="cc-today-others" hidden></div>
           <div class="cc-muted cc-tap-hint">Tap for details</div>
         </div>
         <div class="cc-tile">
@@ -3836,7 +3837,10 @@
       const box = document.getElementById("cc-today-detail");
       if (!box || box.hidden || !LIVE.overview) return;
       const r = LIVE.overview.results || {};
-      const pos = ((LIVE.positions && LIVE.positions.positions) || []).filter(p => p.unrealized_pnl !== null && p.unrealized_pnl !== undefined);
+      const all = ((LIVE.positions && LIVE.positions.positions) || []).filter(p => p.unrealized_pnl !== null && p.unrealized_pnl !== undefined);
+      const pos = all.filter(p => p.state !== "unmanaged");
+      const others = all.filter(p => p.state === "unmanaged");
+      const sumX = others.reduce((a, p) => a + (Number(p.today_pnl ?? p.unrealized_pnl) || 0), 0);
       const closed = r.closed_today_list || [];
       const cls = v => v > 0 ? "cc-pos" : v < 0 ? "cc-neg" : "";
       const row = (sym, note, v) =>
@@ -3854,14 +3858,22 @@
             </tbody></table>` : `<div class="cc-empty">No trades closed today.</div>`}
           </div>
           <div>
-            <h3 class="cc-sub-h">Open positions, today's part (${pos.length})</h3>
+            <h3 class="cc-sub-h">Agent's open positions, today's part (${pos.length})</h3>
             ${pos.length ? `<table class="cc-mini-table"><tbody>
               ${pos.map(p => row(p.symbol, `${TODAY_BASIS[p.today_basis] || "since entry"} · total ${ccMoney(Number(p.unrealized_pnl) || 0)}`, Number(p.today_pnl ?? p.unrealized_pnl) || 0)).join("")}
               <tr class="cc-total"><td>Total</td><td></td><td class="mono ${cls(sumO)}" style="text-align:right">${ccMoney(sumO)}</td></tr>
-            </tbody></table>` : `<div class="cc-empty">No open positions.</div>`}
+            </tbody></table>` : `<div class="cc-empty">The agent has no open positions.</div>`}
           </div>
+          ${others.length ? `<div>
+            <h3 class="cc-sub-h">Your other holdings, not counted (${others.length})</h3>
+            <table class="cc-mini-table"><tbody>
+              ${others.map(p => row(p.symbol, `${TODAY_BASIS[p.today_basis] || "since entry"} · total ${ccMoney(Number(p.unrealized_pnl) || 0)}`, Number(p.today_pnl ?? p.unrealized_pnl) || 0)).join("")}
+              <tr class="cc-total"><td>Total</td><td></td><td class="mono ${cls(sumX)}" style="text-align:right">${ccMoney(sumX)}</td></tr>
+            </tbody></table>
+            <div class="cc-muted" style="margin-top:6px">Held at the broker but not opened by the agent. It places no stops or targets on these and never sells them.</div>
+          </div>` : ""}
         </div>
-        <div class="cc-muted" style="margin-top:10px">"Today" starts at midnight exchange time. Closed trades leave the Positions screen but stay in today's total.</div>`;
+        <div class="cc-muted" style="margin-top:10px">"Today" starts at midnight exchange time. Today's P&amp;L is the agent's closed trades plus today's move on its open positions. Closed trades leave the Positions screen but stay in today's total.</div>`;
     }
 
     function renderCommandCenter() {
@@ -3874,9 +3886,15 @@
       // today's P&L = trades closed today + today's move on open positions
       // (not their whole gain since entry - a position bought last week
       // shouldn't add last week's profit to today)
+      // Only the agent's own trades count. Holdings the agent doesn't manage
+      // (your long-term shares at the same broker) are shown on their own
+      // line, never added to the agent's result.
       const todayOf = p => Number(p.today_pnl ?? p.unrealized_pnl) || 0;
-      const open = pos.reduce((a, p) => a + todayOf(p), 0);
-      const sinceEntry = pos.filter(p => p.today_basis === "entry").length;
+      const mine = pos.filter(p => p.state !== "unmanaged");
+      const others = pos.filter(p => p.state === "unmanaged" && p.unrealized_pnl !== null && p.unrealized_pnl !== undefined);
+      const open = mine.reduce((a, p) => a + todayOf(p), 0);
+      const othersToday = others.reduce((a, p) => a + todayOf(p), 0);
+      const sinceEntry = mine.filter(p => p.today_basis === "entry").length;
       const today = (r.realized_today || 0) + open;
       // the Live Terminal's "Risk Limits / Daily P&L" tile used to be a fixed "$0.00"
       const riskPnl = document.getElementById("metric-risk-pnl");
@@ -3886,6 +3904,9 @@
       document.getElementById("cc-today-split").textContent =
         `closed ${ccMoney(r.realized_today || 0)} · open today ${ccMoney(open)}` +
         (sinceEntry ? ` (${sinceEntry} since entry)` : "");
+      const oEl = document.getElementById("cc-today-others");
+      oEl.hidden = !others.length;
+      if (others.length) oEl.textContent = `Agent trades only. Your ${others.length} other holding${others.length === 1 ? "" : "s"} today: ${ccMoney(othersToday)}`;
       renderTodayDetail();
       document.getElementById("cc-today-sub").textContent = `${r.closed_today || 0} closed today`;
 
