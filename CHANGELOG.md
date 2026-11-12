@@ -16,6 +16,14 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Fixed
+- **Today's P&L counted holdings the agent does not manage.** With a broker
+  account that also holds long-term shares (e.g. Zerodha), the Command
+  Center's Today's P&L and the Live Terminal's Daily P&L added those
+  holdings' daily move, showing a profit before the agent had traded. They
+  now count the agent's own trades only. Other holdings get their own line
+  on the tile and their own "not counted" list in the breakdown.
+
+### Fixed
 - **Dollar sign shown for non-USD brokers.** The Live Terminal's latest price,
   loss cap, pipeline price, order and position prices, and the strategy
   page's price range and loss cap all printed a hard-coded "$". They now use
