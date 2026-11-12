@@ -495,8 +495,23 @@ def _chart_overlays(full_df: pd.DataFrame, cfg: dict, timeframe: str, client, li
         lines.append({"id": "vwap", "label": "VWAP", "color": OVERLAY_COLORS["vwap"],
                       "group": "vwap", "data": _series_points(vw.iloc[tail], times)})
 
+    # Support / resistance from swing points over the loaded history. A level
+    # first touched before the visible window is drawn from the left edge.
+    levels = []
+    try:
+        from dashboard.levels import support_resistance
+        offset = len(full_df) - len(times)
+        for lv in support_resistance(full_df):
+            start = max(lv.pop("first_index") - offset, 0)
+            lv.pop("last_index", None)
+            lv.pop("score", None)
+            levels.append({**lv, "from": times[start], "to": times[-1]})
+    except Exception:
+        logger.exception("Support/resistance levels failed")
+
     rsi = ind_lib.rsi(full_df["close"], 14)
     return {
+        "levels": levels,
         "ma_kind": kind,
         "gate": {"enabled": ind_cfg.enabled, "mode": ind_cfg.mode,
                  "require_ma_trend": ind_cfg.require_ma_trend},

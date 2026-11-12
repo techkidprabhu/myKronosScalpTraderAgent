@@ -375,6 +375,7 @@
               <label><input type="checkbox" id="ov-ma"> MAs</label>
               <label><input type="checkbox" id="ov-vwap"> VWAP</label>
               <label><input type="checkbox" id="ov-rsi"> RSI</label>
+              <label title="Support and resistance: prices where the market has turned before. Redrawn from the latest candles on every refresh. Display only."><input type="checkbox" id="ov-sr"> S/R</label>
             </span>
             <span id="chart-tf-note" class="chart-tf-note"></span>
             <span id="chart-updated" class="chart-updated"></span>
@@ -1852,7 +1853,7 @@
       try {
         let url = `/api/bars?symbol=${encodeURIComponent(symbol)}&limit=${chartLimit}`;
         if (tf) url += `&timeframe=${encodeURIComponent(tf)}`;
-        if (!overlayPrefs.ma && !overlayPrefs.vwap && !overlayPrefs.rsi) url += "&overlays=0";
+        if (!overlayPrefs.ma && !overlayPrefs.vwap && !overlayPrefs.rsi && !overlayPrefs.sr) url += "&overlays=0";
         const res = await fetch(url);
         const data = await res.json();
         if (seq !== chartRequestSeq) return;  // user switched symbol/timeframe meanwhile
@@ -4755,13 +4756,36 @@
     }
 
     // ---- Indicator overlays (MAs / VWAP on the candles, RSI in its own pane) ----
-    let overlayPrefs = { ma: true, vwap: true, rsi: true };
+    let overlayPrefs = { ma: true, vwap: true, rsi: true, sr: true };
     try { Object.assign(overlayPrefs, JSON.parse(lsGet("chartOverlays", "{}")) || {}); } catch (e) {}
     const overlaySeries = {};   // line id -> series
     let rsiSeries = null;
     let rsiLines = [];
     let lastOverlays = null;
+    let srSeries = [];          // one short line series per support / resistance level
+    const SR_COLORS = { support: "#10b981", resistance: "#ef4444" };
+    const SR_LINE = { support: "rgba(16, 185, 129, 0.6)", resistance: "rgba(239, 68, 68, 0.6)" };
     const RSI_PANE_HEIGHT = 110;
+
+    // Each level is a horizontal line from its first touch to the latest bar,
+    // thicker and solid the more often price has turned there.
+    function applyLevels(levels) {
+      srSeries.forEach(removeSeriesSafe);
+      srSeries = [];
+      if (!overlayPrefs.sr || !chartInstance) return;
+      for (const lv of levels || []) {
+        if (lv.from == null || lv.to == null || lv.from >= lv.to) continue;
+        const s = addLine(lineSeriesOptions(SR_LINE[lv.kind] || "rgba(148, 163, 184, 0.6)", {
+          lineWidth: lv.strength >= 3 ? 2 : 1,
+          lineStyle: lv.strength >= 2 ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
+          lastValueVisible: true,
+          title: `${lv.kind === "support" ? "S" : "R"} ×${lv.touches}`,
+        }));
+        if (!s) continue;
+        s.setData([{ time: lv.from, value: lv.price }, { time: lv.to, value: lv.price }]);
+        srSeries.push(s);
+      }
+    }
 
     function lineSeriesOptions(color, extra = {}) {
       return Object.assign({
@@ -4834,6 +4858,7 @@
       } else if (rsiSeries) {
         removeSeriesSafe(rsiSeries); rsiSeries = null; rsiLines = [];
       }
+      applyLevels(ov && ov.levels);
       updateIndicatorLegend(ov);
     }
 
@@ -4855,6 +4880,15 @@
         if (v != null && ov.rsi.lower != null && v <= ov.rsi.lower) cls = "cold";
         parts.push(`<span class="${cls}"><i style="background:${ov.rsi.color}"></i>RSI ${ov.rsi.period} ${v != null ? v.toFixed(1) : "—"}</span>`);
       }
+      if (overlayPrefs.sr) {
+        const lv = ov.levels || [];
+        const near = kind => lv.filter(l => l.kind === kind)[0];   // nearest first on each side
+        const fmt = (l, tag) => `<span><i style="background:${SR_COLORS[l.kind]}"></i>${tag} ${ccySym()}${l.price.toFixed(2)} (${l.distance_pct > 0 ? "+" : ""}${l.distance_pct}%, ${l.touches} touch${l.touches === 1 ? "" : "es"})</span>`;
+        const r = near("resistance"), s = near("support");
+        if (r) parts.push(fmt(r, "Resistance"));
+        if (s) parts.push(fmt(s, "Support"));
+        if (!r && !s) parts.push(`<span class="gate-off">No clear support or resistance yet</span>`);
+      }
       const g = ov.gate || {};
       const fast = (ov.lines || []).find(l => l.id === "ma_fast"), slow = (ov.lines || []).find(l => l.id === "ma_slow");
       const fv = fast && last(fast.data), sv = slow && last(slow.data);
@@ -4868,12 +4902,12 @@
     }
 
     function initOverlayToggles() {
-      for (const key of ["ma", "vwap", "rsi"]) {
+      for (const key of ["ma", "vwap", "rsi", "sr"]) {
         const box = document.getElementById(`ov-${key}`);
         if (!box) continue;
         box.checked = !!overlayPrefs[key];
         box.addEventListener("change", () => {
-          const wasAllOff = !overlayPrefs.ma && !overlayPrefs.vwap && !overlayPrefs.rsi;
+          const wasAllOff = !overlayPrefs.ma && !overlayPrefs.vwap && !overlayPrefs.rsi && !overlayPrefs.sr;
           overlayPrefs[key] = box.checked;
           lsSet("chartOverlays", JSON.stringify(overlayPrefs));
           // Re-use the data we have; fetch only if overlays weren't requested last time.

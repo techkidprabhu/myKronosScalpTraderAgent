@@ -15,6 +15,17 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added
+- **Support and resistance on the Live Terminal chart.** A new "S/R" toggle
+  next to MAs / VWAP / RSI draws up to three support (green) and three
+  resistance (red) levels. Levels come from swing highs and lows that sit
+  within half an ATR of each other; each line runs from its first touch to
+  the latest bar, is labelled with its touch count ("R x4") and is thicker
+  when touched four or more times. They are recomputed from the latest
+  candles on every chart refresh, so a broken resistance turns into support
+  and stale levels drop out. The legend shows the nearest level on each side
+  with its distance. Display only: no trading decision uses them.
+
 ### Fixed
 - **Angel One: candle requests were throttled.** Angel allows about three
   candle requests a second; over that it sends an empty reply, which made

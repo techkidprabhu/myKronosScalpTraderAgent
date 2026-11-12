@@ -14,7 +14,10 @@ def _trade(a, deal, symbol, pattern, conf, entry, stop, qty, pnl, reason, opened
     a.log_decision(symbol, pattern, "BUY", 0.9, True, conf, True, "ok", "opened", deal_id=deal,
                    details={"entry": entry, "stop": stop, "quantity": qty})
     a.log_trade_result(symbol, deal, pnl, {"reason": reason, "entry": entry, "exit": entry + pnl / qty, "quantity": qty})
-    now = time.time()
+    # Anchor on 15:00 UTC (mid-morning in New York) rather than the current
+    # time, so a trade and its exit an hour apart never straddle the
+    # exchange's midnight whatever hour the tests run at.
+    now = time.time() // DAY * DAY + 15 * 3600
     a.conn.execute("UPDATE decisions SET ts = ? WHERE deal_id = ?", (now - opened_ago, deal))
     a.conn.execute("UPDATE trade_results SET ts = ? WHERE deal_id = ?", (now - closed_ago, deal))
     a.conn.commit()
