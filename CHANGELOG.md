@@ -15,6 +15,15 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Fixed
+- **Dollar sign shown for non-USD brokers.** The Live Terminal's latest price,
+  loss cap, pipeline price, order and position prices, and the strategy
+  page's price range and loss cap all printed a hard-coded "$". They now use
+  the current broker's currency symbol (₹ for NSE, S$ for SGX, HK$, ...).
+- The Live Terminal's "Risk Limits / Daily P&L" tile was a fixed "$0.00"; it
+  now shows today's P&L, and the pipeline's risk step shows the real daily
+  loss budget instead of a fixed "$300".
+
 ### Added
 - **Currencies on Config & Risk.** Money and price-distance fields (max daily
   loss, max loss per trade, stop / target distance, trailing distances,
