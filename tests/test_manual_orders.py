@@ -58,6 +58,11 @@ def test_manual_close_of_unmanaged_holding(tmp_path, market_open):  # noqa: F811
     broker = FakeBroker()
     broker.held = 7
     worker, audit, _ = make_worker(tmp_path, broker)
+    # protected by default: a holding the agent did not open is never sold
+    with pytest.raises(RuntimeError, match="protected"):
+        worker.manual_close()
+    assert broker.held == 7
+    worker.global_cfg["unmanaged_positions"] = {"allow_manual_close": True}
     assert "SELL 7" in worker.manual_close()
     assert broker.held == 0
 

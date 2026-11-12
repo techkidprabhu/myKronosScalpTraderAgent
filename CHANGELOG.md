@@ -15,6 +15,25 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added
+- **Positions screen: show All / Agent trades / My holdings.** A filter above
+  the cards and table, remembered per browser. A line under it states the
+  rules in force (intraday-only or swing; holdings protected or not).
+- **Intraday-only mode closes leftovers.** With
+  `risk.flat_by_minutes_before_close` set, a position still open from an
+  earlier day (agent was down at the close, or the exit failed) is closed as
+  soon as the market opens. A failed end-of-day close is reported on Telegram
+  once per symbol and retried every cycle.
+
+### Changed
+- **Holdings the agent did not open are protected by default.** The
+  dashboard no longer shows a Close button for them, and the agent refuses a
+  close request for one. Set `unmanaged_positions.allow_manual_close: true`
+  to get the old behaviour back. (The agent itself never sold them: it does
+  not trade a symbol already held, and an exit sells only its own quantity.)
+- The Open Positions tile counts the agent's trades only; own holdings are
+  mentioned beside it instead of being flagged as a warning.
+
 ### Fixed
 - The "Not managed by the agent" banner and two pipeline step titles said
   "moomoo" whichever broker was selected. They now use the selected broker's
