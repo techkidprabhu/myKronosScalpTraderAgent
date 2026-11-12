@@ -340,6 +340,7 @@ def get_status():
     agent_status = "idle"
     last_poll_ts = None
     recent_snapshots = []
+    pipeline = {"scan": None, "cycle": None}
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -350,6 +351,10 @@ def get_status():
             if time.time() - last_poll_ts < 300:
                 agent_status = "active"
             recent_snapshots = [dict(r) for r in rows]
+        try:
+            pipeline = _pipeline_latest(conn, request.args.get("symbol") or None)
+        except Exception:
+            logger.exception("Pipeline summary failed")
         conn.close()
     except Exception:
         pass
@@ -427,7 +432,62 @@ def get_status():
         "forecast_horizon": cfg.get("forecast_horizon", 6),
         "confidence_threshold": cfg.get("kronos_confidence_threshold", 0.62),
         "recent_snapshots": recent_snapshots,
+        "pipeline": pipeline,
+        "indicator_check": str((cfg.get("indicators") or {}).get("mode") or "off")
+                           if (cfg.get("indicators") or {}).get("enabled") else "off",
     })
+
+
+def _pipeline_latest(conn, symbol: str | None = None) -> dict:
+    """The most recent signal's trip through the pipeline, for the Live
+    Terminal's Decision Pipeline card.
+
+    Snapshots are logged per symbol as a scan moves along (scanning ->
+    pattern_detected -> indicator_check -> kronos_result -> risk_check ->
+    risk_plan -> entry_submitted). The card used to show only the single
+    newest snapshot of any symbol, which is almost always 'scanning', so the
+    later steps never lit up. This gathers every stage of the newest cycle
+    that found a pattern - for `symbol` if it has one today, else for any
+    symbol - plus the decision that ended it."""
+    out = {"scan": None, "cycle": None}
+    since = time.time() - 15 * 60
+    row = conn.execute("SELECT COUNT(*) AS n, COUNT(DISTINCT symbol) AS syms, MAX(ts) AS last "
+                       "FROM snapshots WHERE stage = 'scanning' AND ts >= ?", (since,)).fetchone()
+    if row and row["n"]:
+        out["scan"] = {"bars": row["n"], "symbols": row["syms"], "last": row["last"], "window_min": 15}
+
+    start = None
+    if symbol:
+        start = conn.execute("SELECT id, ts, symbol FROM snapshots WHERE stage = 'pattern_detected' AND symbol = ? "
+                             "AND ts >= ? ORDER BY id DESC LIMIT 1", (symbol, time.time() - 86400)).fetchone()
+    if start is None:
+        start = conn.execute("SELECT id, ts, symbol FROM snapshots WHERE stage = 'pattern_detected' "
+                             "ORDER BY id DESC LIMIT 1").fetchone()
+    if start is None:
+        return out
+    stages = {}
+    for r in conn.execute("SELECT id, ts, stage, price, details FROM snapshots WHERE symbol = ? AND id >= ? "
+                          "ORDER BY id LIMIT 20", (start["symbol"], start["id"])):
+        if r["stage"] == "scanning":
+            break                                   # the next bar's cycle has begun
+        try:
+            det = json.loads(r["details"]) if r["details"] else {}
+        except (TypeError, ValueError):
+            det = {}
+        stages[r["stage"]] = {"ts": r["ts"], "price": r["price"], **(det if isinstance(det, dict) else {})}
+    dec = conn.execute("SELECT action, risk_reason, kronos_confidence, details FROM decisions "
+                       "WHERE epic = ? AND ts >= ? ORDER BY id LIMIT 1",
+                       (start["symbol"], start["ts"] - 1)).fetchone()
+    decision = None
+    if dec is not None:
+        try:
+            ddet = json.loads(dec["details"]) if dec["details"] else {}
+        except (TypeError, ValueError):
+            ddet = {}
+        decision = {"action": dec["action"], "reason": dec["risk_reason"],
+                    "error": (ddet or {}).get("error") if isinstance(ddet, dict) else None}
+    out["cycle"] = {"symbol": start["symbol"], "ts": start["ts"], "stages": stages, "decision": decision}
+    return out
 
 
 @app.route("/api/symbols", methods=["GET"])

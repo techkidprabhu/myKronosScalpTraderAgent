@@ -1593,3 +1593,9 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 /* Positions: holdings the agent did not open */
 .pc-protected { font-size: 12px; color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 6px; padding: 3px 8px; white-space: nowrap; }
 .pc-toolbar { flex-wrap: wrap; gap: 10px; }
+
+/* Pipeline: a step the signal never reached */
+.step-card.skipped { opacity: .5; }
+.step-card.skipped .step-value { color: var(--text-secondary); }
+.step-card.rejected .step-value { color: var(--neg-text); }
+.step-card.passed .step-value { color: var(--pos-text); }
