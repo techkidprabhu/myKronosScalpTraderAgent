@@ -193,8 +193,8 @@
           <span>Risk Limits</span>
           <span class="mono">DAILY P&L</span>
         </div>
-        <div class="metric-value" id="metric-risk-pnl">$0.00</div>
-        <div class="metric-sub" id="metric-loss-cap">Loss Cap: -$300.00</div>
+        <div class="metric-value" id="metric-risk-pnl">0.00</div>
+        <div class="metric-sub" id="metric-loss-cap">Loss Cap: —</div>
       </div>
 
       <div class="metric-card">
@@ -448,8 +448,8 @@
               <div class="step-badge">4</div>
               <div class="step-content">
                 <div class="step-title">Risk Gatekeeper</div>
-                <div class="step-desc">Hard-coded: Max 3 positions, -$300 cap, cooldown.</div>
-                <div class="step-value" id="pipe-val-4">Budget: $300.00</div>
+                <div class="step-desc">Position limit, daily loss cap, per-symbol cooldown.</div>
+                <div class="step-value" id="pipe-val-4">Budget: —</div>
               </div>
             </div>
 
@@ -818,7 +818,7 @@
             </div>
             <div class="strat-meta-row">
               <span class="strat-meta-label">Price Filter Bounds:</span>
-              <span class="strat-meta-val" id="strat-val-screener-price">$0.50 – $50.00</span>
+              <span class="strat-meta-val" id="strat-val-screener-price">—</span>
             </div>
             <div class="strat-meta-row">
               <span class="strat-meta-label">ATR% Range Filter:</span>
@@ -1075,7 +1075,7 @@
           <div class="strat-meta-box">
             <div class="strat-meta-row">
               <span class="strat-meta-label">Max Daily Loss Limit:</span>
-              <span class="strat-meta-val" id="strat-val-risk-loss">-$300.00</span>
+              <span class="strat-meta-val" id="strat-val-risk-loss">—</span>
             </div>
             <div class="strat-meta-row">
               <span class="strat-meta-label">Max Concurrent Positions:</span>
@@ -1580,6 +1580,10 @@
     const MARKET_NAMES = {US: "US Equities", HK: "Hong Kong HKEX", SG: "Singapore SGX", CN: "China A-shares"};
     let MARKET = "US";
     let CCY = "USD";
+    // Price prefix for the current broker's currency - never a bare "$" on
+    // an INR or SGD account.
+    const CCY_SYMBOLS = {USD: "$", SGD: "S$", HKD: "HK$", INR: "₹", CNH: "¥", JPY: "¥", MYR: "RM ", AUD: "A$", CAD: "C$", GBP: "£"};
+    const ccySym = () => CCY_SYMBOLS[CCY] !== undefined ? CCY_SYMBOLS[CCY] : CCY + " ";
 
     // Fetch Status & Metrics
     async function loadStatus() {
@@ -1625,7 +1629,9 @@
         document.getElementById("metric-threshold").textContent = `${(data.confidence_threshold * 100).toFixed(1)}%`;
         const hz = document.getElementById("metric-horizon");
         if (hz && data.forecast_horizon) hz.textContent = `Horizon: ${data.forecast_horizon} Bars Ahead`;
-        document.getElementById("metric-loss-cap").textContent = `Loss Cap: -$${data.risk.max_daily_loss.toFixed(2)} ${CCY}`;
+        document.getElementById("metric-loss-cap").textContent = `Loss Cap: -${ccySym()}${data.risk.max_daily_loss.toFixed(2)} ${CCY}`;
+        const budget = document.getElementById("pipe-val-4");
+        if (budget) budget.textContent = `Budget: ${ccySym()}${data.risk.max_daily_loss.toFixed(2)} ${CCY}`;
 
         // Symbols the agent is actually trading (screener picks when enabled)
         symbolDetails = Object.fromEntries((data.symbol_details || []).map(d => [d.symbol, d]));
@@ -1689,7 +1695,7 @@
       const step5 = document.getElementById("pipe-step-5");
 
       step1.classList.add("passed");
-      document.getElementById("pipe-val-1").textContent = `Price: $${snap.price.toFixed(2)} ${CCY}`;
+      document.getElementById("pipe-val-1").textContent = `Price: ${ccySym()}${snap.price.toFixed(2)} ${CCY}`;
 
       if (snap.stage === "pattern_detected" || snap.stage === "kronos_result" || snap.stage === "position_open") {
         step2.classList.add("passed");
@@ -1862,7 +1868,7 @@
           const mp = document.getElementById("metric-price");
           const prev = mp._v;
           mp._v = data.last_close;
-          mp.textContent = `$${data.last_close.toFixed(2)}`;
+          mp.textContent = `${ccySym()}${data.last_close.toFixed(2)}`;
           if (prev !== undefined && prev !== data.last_close) {
             mp.classList.remove("tick-up", "tick-down"); void mp.offsetWidth;
             mp.classList.add(data.last_close > prev ? "tick-up" : "tick-down");
@@ -2089,7 +2095,7 @@
     }
 
     // Load positions + working orders (broker truth, merged with agent state)
-    const fmtPrice = v => (v === null || v === undefined) ? "—" : `$${Number(v).toFixed(Number(v) < 1 ? 3 : 2)}`;
+    const fmtPrice = v => (v === null || v === undefined) ? "—" : `${ccySym()}${Number(v).toFixed(Number(v) < 1 ? 3 : 2)}`;
     const MANAGEMENT_BADGES = {
       managed: '<span class="badge success">AGENT</span>',
       pending_entry: '<span class="badge">ENTRY PENDING</span>',
@@ -3872,6 +3878,9 @@
       const open = pos.reduce((a, p) => a + todayOf(p), 0);
       const sinceEntry = pos.filter(p => p.today_basis === "entry").length;
       const today = (r.realized_today || 0) + open;
+      // the Live Terminal's "Risk Limits / Daily P&L" tile used to be a fixed "$0.00"
+      const riskPnl = document.getElementById("metric-risk-pnl");
+      if (riskPnl) { riskPnl.textContent = ccMoney(today); riskPnl.style.color = today > 0 ? "var(--pos-text)" : today < 0 ? "var(--neg-text)" : ""; }
       const tEl = document.getElementById("cc-today");
       ccTween(tEl, today, v => ccBig(v)); ccSetSign(tEl, today);
       document.getElementById("cc-today-split").textContent =
@@ -4183,7 +4192,7 @@
       const scrMarket = document.getElementById("strat-val-screener-market");
       if (scrMarket) scrMarket.textContent = MARKET + " (" + (MARKET_NAMES[MARKET] || MARKET) + ")";
       const scrPrice = document.getElementById("strat-val-screener-price");
-      if (scrPrice) scrPrice.textContent = `$${scr.min_price !== undefined ? scr.min_price : 0.5} – $${scr.max_price !== undefined ? scr.max_price : 50.0}`;
+      if (scrPrice) scrPrice.textContent = `${ccySym()}${scr.min_price !== undefined ? scr.min_price : 0.5} – ${ccySym()}${scr.max_price !== undefined ? scr.max_price : 50.0}`;
       const scrAtr = document.getElementById("strat-val-screener-atr");
       if (scrAtr) scrAtr.textContent = `${scr.min_atr_pct || 0.5}% – ${scr.max_atr_pct || 8.0}%`;
       const scrCand = document.getElementById("strat-val-screener-candidates");
@@ -4226,7 +4235,7 @@
       // 5. Risk card
       const risk = cfg.risk || {};
       const rLoss = document.getElementById("strat-val-risk-loss");
-      if (rLoss) rLoss.textContent = `-$${(risk.max_daily_loss || 300).toFixed(2)} ${CCY}`;
+      if (rLoss) rLoss.textContent = `-${ccySym()}${(risk.max_daily_loss || 300).toFixed(2)} ${CCY}`;
       const rMaxPos = document.getElementById("strat-val-risk-maxpos");
       if (rMaxPos) rMaxPos.textContent = `${risk.max_open_positions || 3} positions max`;
       const rStop = document.getElementById("strat-val-risk-stop");
