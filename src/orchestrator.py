@@ -455,6 +455,12 @@ class SymbolWorker:
         held = int(self.broker.get_position_quantity(self.symbol))
         if held == 0:
             raise RuntimeError(f"nothing held in {self.symbol}")
+        # A holding the agent did not open (e.g. long-term shares in the same
+        # account) is never sold from here unless that has been switched on.
+        if not (self.global_cfg.get("unmanaged_positions") or {}).get("allow_manual_close", False):
+            raise RuntimeError(
+                f"{self.symbol} is a holding the agent did not open - it is protected and was not sold. "
+                "Close it in your broker's app (or set unmanaged_positions.allow_manual_close: true)")
         side = "SELL" if held > 0 else "BUY"
         order_id = self.broker.close_position(self.symbol, side, abs(held))
         self.audit_log.log_snapshot(self.symbol, price, "manual_close_unmanaged", {"quantity": held})
@@ -1224,10 +1230,23 @@ class Orchestrator:
         except Exception:
             logger.exception("Session clock unavailable - flat-by-close skipped")
             return
-        if mins is None or mins[1] > minutes:
-            return
+        if mins is None:
+            return                      # market closed: nothing can be sold now
+        in_window = mins[1] <= minutes
+        # A position opened on an earlier day should not exist in day-trade
+        # mode (the agent was down at yesterday's close, or the exit failed).
+        # Close it as soon as the market is open instead of holding it all day.
+        try:
+            tz = cal.ZoneInfo(cal.EXCHANGES[cal.exchange_for_market(self.broker.market)].tz)
+            day_start = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        except Exception:
+            day_start = None
         for pos in self.audit_log.get_active_positions():
+            overdue = bool(day_start and pos.get("opened_ts") and float(pos["opened_ts"]) < day_start)
+            if not (in_window or overdue):
+                continue
             worker = self._worker_for(pos["symbol"])
+            reason = "flat_by_close" if in_window else "flat_overnight_leftover"
             try:
                 if pos["status"] == "pending_entry":
                     if pos.get("entry_order_id"):
@@ -1235,11 +1254,24 @@ class Orchestrator:
                         self.audit_log.log_snapshot(pos["symbol"], None, "flat_by_cancel_entry", {})
                     continue
                 price = float(self.broker.get_current_price(pos["symbol"]))
-                logger.info("%s: flat by close (%.0f min left) - closing %s %g",
-                            pos["symbol"], mins[1], pos["direction"], pos["quantity"])
-                worker._software_exit(pos, "flat_by_close", price)
-            except Exception:
+                logger.info("%s: %s (%.0f min left) - closing %s %g",
+                            pos["symbol"], reason, mins[1], pos["direction"], pos["quantity"])
+                worker._software_exit(pos, reason, price)
+            except Exception as exc:
                 logger.exception("Flat-by-close failed for %s", pos["symbol"])
+                # Tell the user once per symbol per day: this is the one exit
+                # that has a deadline. It is retried every cycle until the close.
+                alerted = getattr(self, "_flat_alerted", None)
+                if alerted is None:
+                    alerted = self._flat_alerted = set()
+                key = (pos["symbol"], day_start)
+                if key not in alerted:
+                    alerted.add(key)
+                    try:
+                        self.reporter.report_error(
+                            f"closing {pos['symbol']} before the market close", f"{exc} - retrying; check it manually")
+                    except Exception:
+                        logger.debug("Could not send the flat-by-close alert", exc_info=True)
 
     def _worker_for(self, symbol: str) -> SymbolWorker:
         """Existing worker for this symbol (matched with or without the

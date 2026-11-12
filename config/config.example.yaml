@@ -241,6 +241,11 @@ unmanaged_positions:
   mode: alert
   check_interval_seconds: 300
   close_missing_positions: true
+  # Holdings the agent did not open (your long-term shares in the same
+  # account) are protected: the agent never sells them, never trades a
+  # symbol you already hold, and the dashboard's Close button is not shown
+  # for them. Set true only if you want to close them from the dashboard.
+  allow_manual_close: false
 
 polling_interval_seconds: 60
 

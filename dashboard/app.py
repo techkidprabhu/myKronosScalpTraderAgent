@@ -1035,6 +1035,8 @@ def get_positions():
         "unmanaged": _kv(UNMANAGED_KEY) or {"positions": [], "orders": []},
         "agent_tracked": len(rows),
         "max_open_positions": cfg.get("risk", {}).get("max_open_positions", 3),
+        "holdings_protected": not bool((cfg.get("unmanaged_positions") or {}).get("allow_manual_close", False)),
+        "flat_by_minutes_before_close": cfg.get("risk", {}).get("flat_by_minutes_before_close"),
         "trailing_enabled": bool(cfg.get("trailing_stop", {}).get("enabled")),
     })
 

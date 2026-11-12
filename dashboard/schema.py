@@ -126,7 +126,7 @@ SECTIONS = [
          "help": "Refuse stops tighter than this (spread and noise)"}),
         ("risk.no_entries_first_minutes", "No entries in first N min of session", "int", {"min": 0, "max": 240, "nullable": True}),
         ("risk.no_entries_last_minutes", "No entries in last N min of session", "int", {"min": 0, "max": 240, "nullable": True}),
-        ("risk.flat_by_minutes_before_close", "Close all agent positions N min before close", "int",
+        ("risk.flat_by_minutes_before_close", "Intraday only: close all agent positions N min before close", "int",
          {"min": 1, "max": 240, "nullable": True, "help": "Day-trade mode: no overnight holds. Empty = swing (hold)"}),
         ("risk.blocked_symbols", "Never trade these symbols", "list", {"nullable": True}),
     ]},
@@ -150,6 +150,8 @@ SECTIONS = [
         ("connection.reconnect_after_failures", "Reconnect after failed checks", "int", {"min": 1, "max": 20}),
         ("unmanaged_positions.mode", "Positions not opened by the agent", "select", {"options": ["alert", "off"]}),
         ("unmanaged_positions.close_missing_positions", "Close agent rows the broker no longer holds", "bool", {}),
+        ("unmanaged_positions.allow_manual_close", "Allow closing my own holdings from the dashboard", "bool", {
+            "help": "Off (default) = holdings the agent did not open are protected: no Close button, and a close request is refused"}),
     ]},
 ]
 

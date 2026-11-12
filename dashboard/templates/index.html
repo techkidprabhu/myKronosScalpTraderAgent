@@ -557,8 +557,14 @@
             <button type="button" id="pc-view-cards" class="active" onclick="setPositionsView('cards')">Cards</button>
             <button type="button" id="pc-view-table" onclick="setPositionsView('table')">Table</button>
           </div>
+          <div class="rm-seg" role="group" aria-label="Which positions to show">
+            <button type="button" id="pc-show-all" class="active" onclick="setPositionsShow('all')">All</button>
+            <button type="button" id="pc-show-agent" onclick="setPositionsShow('agent')">Agent trades</button>
+            <button type="button" id="pc-show-holdings" onclick="setPositionsShow('holdings')">My holdings</button>
+          </div>
           <span class="cc-muted" id="pc-summary"></span>
         </div>
+        <div class="cc-muted" id="pc-rules" style="margin:-4px 0 12px"></div>
         <div id="pc-grid" class="pc-grid"></div>
         <div class="table-container" id="positions-table-wrap">
           <table>
@@ -2131,7 +2137,14 @@
       try {
         const positions = data.positions || [];
         const orders = data.orders || [];
-        const held = positions.filter(p => p.state !== "pending_entry" && p.state !== "missing_at_broker");
+        holdingsProtected = data.holdings_protected !== false;
+        const held = positions.filter(p => p.state !== "pending_entry" && p.state !== "missing_at_broker" && p.state !== "unmanaged");
+        const rules = document.getElementById("pc-rules");
+        if (rules) {
+          const flat = data.flat_by_minutes_before_close;
+          rules.textContent = (flat ? `Intraday only: agent trades are closed ${flat} min before the market close. ` : "Swing mode: agent trades can be held overnight. ") +
+            (holdingsProtected ? "Your own holdings are protected: the agent never sells them." : "Your own holdings can be closed from this screen.");
+        }
         const unmanagedOrders = orders.filter(o => !o.managed).length;
         const unmanagedPos = positions.filter(p => p.state === "unmanaged").length;
 
@@ -2142,8 +2155,8 @@
           sub.textContent = "Broker offline - agent view only";
           sub.style.color = "var(--accent-amber)";
         } else if (unmanagedPos || unmanagedOrders) {
-          sub.textContent = `⚠ ${unmanagedPos} position(s), ${unmanagedOrders} order(s) not managed`;
-          sub.style.color = "var(--accent-red)";
+          sub.textContent = `agent trades · ${unmanagedPos} own holding(s), ${unmanagedOrders} other order(s) left alone`;
+          sub.style.color = "";
         } else {
           sub.textContent = `${orders.length} working order(s) • trailing ${data.trailing_enabled ? "on" : "off"}`;
           sub.style.color = "";
@@ -2159,6 +2172,7 @@
         tbody.innerHTML = positions.length === 0
           ? `<tr><td colspan="12" style="text-align:center; color:var(--text-muted); padding:24px;">No positions held${data.broker_connected ? " at the broker" : ""}.</td></tr>`
           : positions.map((pos, i) => {
+              if (!posVisible(pos)) return "";
               const pnl = pos.unrealized_pnl;
               const pnlCell = (pnl === null || pnl === undefined) ? "—"
                 : `<span style="font-weight:700; color:${pnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">${pnl >= 0 ? '+' : ''}${Number(pnl).toFixed(2)} ${esc(pos.currency || "")}</span>`;
@@ -2218,6 +2232,7 @@
 
     function manualRowButton(pos, i) {
       if (pos.state === "missing_at_broker") return "—";
+      if (pos.state === "unmanaged" && holdingsProtected) return '<span class="pc-protected" title="Not opened by the agent - it will not sell it">Protected</span>';
       const label = pos.state === "pending_entry" ? "Cancel" : "Close";
       return `<button class="btn btn-sm btn-sell" onclick="openManualConfirm('CLOSE', ${i})">${label}</button>`;
     }
@@ -3181,6 +3196,19 @@
     const pcPrevStops = {};                       // symbol -> last stop seen, to spot trailing raises
     const pcRaised = {};                          // symbol -> time the stop last moved our way
 
+    // Which rows to show: everything, only what the agent opened, or only
+    // holdings it did not open (your own long-term shares).
+    let positionsShow = (() => { try { return localStorage.getItem("positionsShow") || "all"; } catch (e) { return "all"; } })();
+    let holdingsProtected = true;
+    const posVisible = p => positionsShow === "all" || (positionsShow === "holdings") === (p.state === "unmanaged");
+
+    function setPositionsShow(v) {
+      positionsShow = v;
+      try { localStorage.setItem("positionsShow", v); } catch (e) {}
+      for (const k of ["all", "agent", "holdings"]) document.getElementById(`pc-show-${k}`).classList.toggle("active", k === v);
+      if (LIVE.positions) renderPositions(LIVE.positions);
+    }
+
     function setPositionsView(v) {
       positionsView = v;
       try { localStorage.setItem("positionsView", v); } catch (e) {}
@@ -3207,7 +3235,10 @@
       const dp = v => (Math.abs(v) < 1 ? 4 : 2);
       const fmt = v => v === null || v === undefined || isNaN(v) ? "—" : Number(v).toFixed(dp(Number(v)));
       let total = 0;
+      let shown = 0;
       grid.innerHTML = positions.map((p, i) => {
+        if (!posVisible(p)) return "";
+        shown++;
         const long = p.side !== "SHORT", price = Number(p.current_price), entry = Number(p.avg_cost);
         const stop = p.stop != null ? Number(p.stop) : null, tgt = p.target != null ? Number(p.target) : null;
         const u = Number(p.unrealized_pnl) || 0; total += u;
@@ -3269,12 +3300,14 @@
             </div>
             <footer class="pc-actions">
               <button type="button" class="btn btn-sm" onclick="pcOpenChart('${esc(p.symbol)}')">Chart</button>
-              ${p.state === "missing_at_broker" ? "" : `<button type="button" class="btn btn-sm btn-sell" onclick="openManualConfirm('CLOSE', ${i})">${p.state === "pending_entry" ? "Cancel entry" : "Close"}</button>`}
+              ${p.state === "missing_at_broker" ? "" : p.state === "unmanaged" && holdingsProtected ? `<span class="pc-protected" title="The agent did not open this holding. It will not sell it, and it can't be closed from here.">Protected holding</span>` : `<button type="button" class="btn btn-sm btn-sell" onclick="openManualConfirm('CLOSE', ${i})">${p.state === "pending_entry" ? "Cancel entry" : "Close"}</button>`}
             </footer>
           </article>`;
       }).join("");
+      const hidden = positions.length - shown;
+      if (!shown) grid.innerHTML = `<div class="pc-empty">${positionsShow === "agent" ? "The agent has no open trades." : "No holdings outside the agent's trades."} ${hidden} other position${hidden === 1 ? " is" : "s are"} hidden by the filter.</div>`;
       document.getElementById("pc-summary").textContent =
-        `${positions.length} position${positions.length > 1 ? "s" : ""} · open P&L ${ccMoney(total)}`;
+        `${shown} shown${hidden ? ` · ${hidden} hidden` : ""} · open P&L ${ccMoney(total)}`;
     }
 
     function pcOpenChart(sym) {

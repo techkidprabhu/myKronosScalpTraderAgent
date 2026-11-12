@@ -279,3 +279,41 @@ def test_risk_state_reports_trades_and_open_risk(tmp_path, monkeypatch):
     with dash.app.test_request_context("/api/risk_state"):
         d = dash.get_risk_state().get_json()
     assert d["trades_today"] == 2 and d["open_risk"] == 10.0
+
+
+def test_position_from_an_earlier_day_is_closed_at_the_open(tmp_path, market_open, monkeypatch):  # noqa: F811
+    """Intraday-only mode: a leftover overnight position is closed as soon as
+    the market is open, not held until the end-of-day window."""
+    broker = FakeBroker()
+    worker, audit, risk, _, _ = open_position(tmp_path, broker)
+    o = orch.Orchestrator.__new__(orch.Orchestrator)
+    o.risk_manager, o.broker, o.audit_log, o.workers = risk, broker, audit, {SYMBOL: worker}
+    risk.config.flat_by_minutes_before_close = 10
+    monkeypatch.setattr(cal, "session_minutes", lambda code, now=None: (5.0, 370.0))   # just opened
+    o.flat_by_close()
+    assert audit.get_active_position(SYMBOL) is not None            # opened today: kept
+    audit.conn.execute("UPDATE positions SET opened_ts = opened_ts - 2 * 86400")
+    audit.conn.commit()
+    monkeypatch.setattr(cal, "session_minutes", lambda code, now=None: None)            # market closed
+    o.flat_by_close()
+    assert audit.get_active_position(SYMBOL) is not None            # can't sell while closed
+    monkeypatch.setattr(cal, "session_minutes", lambda code, now=None: (5.0, 370.0))
+    o.flat_by_close()
+    assert audit.get_active_position(SYMBOL) is None and broker.held == 0
+    reason = audit.conn.execute("SELECT details FROM trade_results ORDER BY rowid DESC LIMIT 1").fetchone()[0]
+    assert "flat_overnight_leftover" in reason
+
+
+def test_agent_exit_never_sells_more_than_it_bought(tmp_path, market_open, monkeypatch):  # noqa: F811
+    """If the account holds extra shares of the same symbol, the agent's exit
+    sells only its own quantity."""
+    broker = FakeBroker()
+    worker, audit, risk, _, _ = open_position(tmp_path, broker)
+    own = int(audit.get_active_position(SYMBOL)["quantity"])
+    broker.held = own + 500                                          # the user's own shares on top
+    o = orch.Orchestrator.__new__(orch.Orchestrator)
+    o.risk_manager, o.broker, o.audit_log, o.workers = risk, broker, audit, {SYMBOL: worker}
+    risk.config.flat_by_minutes_before_close = 10
+    monkeypatch.setattr(cal, "session_minutes", lambda code, now=None: (420.0, 5.0))
+    o.flat_by_close()
+    assert broker.held == 500
