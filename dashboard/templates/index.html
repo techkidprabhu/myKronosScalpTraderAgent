@@ -4713,9 +4713,10 @@
         ...(u.orders || []).map(o => `${esc(o.symbol)} order #${esc(o.id)} (${esc(o.action || "")})`),
       ];
       const ub = document.getElementById("alert-unmanaged");
+      const heldAt = (data.broker && data.broker.label) || BROKER_LABEL;
       if (items.length) {
         ub.innerHTML = `<strong>Not managed by the agent:</strong> ${items.join(" · ")}
-          <span class="alert-sub">${esc(BROKER_LABEL)} holds these, but the agent did not open them, so it places no stop or target on them and never sells them. That is expected for your own long-term holdings. They are yours to manage in ${esc(BROKER_LABEL)}.</span>`;
+          <span class="alert-sub">${esc(heldAt)} holds these, but the agent did not open them, so it places no stop or target on them and never sells them. That is expected for your own long-term holdings. They are yours to manage in ${esc(heldAt)}.</span>`;
         ub.style.display = "";
       } else {
         ub.style.display = "none";
