@@ -15,6 +15,18 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Fixed
+- **Decision Pipeline card on the Live Terminal.** It showed only the newest
+  snapshot of any symbol, which is nearly always "scanning", and never
+  received the details, so the Kronos, risk and order steps almost never lit
+  up (and could show "Inside Bar (BUY)" or "NaN%" placeholders). It now shows
+  the newest signal's whole trip - the selected symbol's if it had one today -
+  with the symbol and time: pattern and indicator check, Kronos confidence
+  against your configured threshold, the risk decision with quantity and max
+  loss, and whether the order was placed or why it failed. Steps the signal
+  never reached are greyed out. Step 1 shows how many symbols were scanned in
+  the last 15 minutes.
+
 ### Added
 - **Positions screen: show All / Agent trades / My holdings.** A filter above
   the cards and table, remembered per browser. A line under it states the

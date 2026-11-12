@@ -416,12 +416,12 @@
 
           <div class="pipeline-flow">
             <!-- Stage 1 -->
-            <div class="step-card active" id="pipe-step-1">
+            <div class="step-card" id="pipe-step-1">
               <div class="step-badge">1</div>
               <div class="step-content">
                 <div class="step-title"><span class="broker-name">Broker</span> Ingest</div>
                 <div class="step-desc">Pulls closed historical candles from the broker's data feed.</div>
-                <div class="step-value" id="pipe-val-1">Active Polling</div>
+                <div class="step-value" id="pipe-val-1">—</div>
               </div>
             </div>
 
@@ -430,8 +430,8 @@
               <div class="step-badge">2</div>
               <div class="step-content">
                 <div class="step-title">Pattern Detector</div>
-                <div class="step-desc">Deterministic rules: Engulfing, Hammer, Inside Bar.</div>
-                <div class="step-value" id="pipe-val-2">Waiting for closed bar</div>
+                <div class="step-desc">Candle patterns on the last closed bar, then the indicator check.</div>
+                <div class="step-value" id="pipe-val-2">—</div>
               </div>
             </div>
 
@@ -440,8 +440,8 @@
               <div class="step-badge">3</div>
               <div class="step-content">
                 <div class="step-title">Kronos Subagent (Offline AI)</div>
-                <div class="step-desc">Autoregressive K-line transformer forecasting 6 bars.</div>
-                <div class="step-value" id="pipe-val-3">Threshold: 62% Conf</div>
+                <div class="step-desc">Offline forecast of the next bars must agree with the signal's direction.</div>
+                <div class="step-value" id="pipe-val-3">—</div>
               </div>
             </div>
 
@@ -461,7 +461,7 @@
               <div class="step-content">
                 <div class="step-title"><span class="broker-name">Broker</span> Execution & Trailing Stop</div>
                 <div class="step-desc">Independent Entry, Broker-side Stop & Limit legs.</div>
-                <div class="step-value" id="pipe-val-5">No open position</div>
+                <div class="step-value" id="pipe-val-5">—</div>
               </div>
             </div>
           </div>
@@ -1597,7 +1597,7 @@
     // Fetch Status & Metrics
     async function loadStatus() {
       try {
-        const res = await fetch("/api/status");
+        const res = await fetch("/api/status" + (activeSymbol ? `?symbol=${encodeURIComponent(activeSymbol)}` : ""));
         const data = await res.json();
 
         // Agent status badge
@@ -1643,8 +1643,6 @@
         const hz = document.getElementById("metric-horizon");
         if (hz && data.forecast_horizon) hz.textContent = `Horizon: ${data.forecast_horizon} Bars Ahead`;
         document.getElementById("metric-loss-cap").textContent = `Loss Cap: -${ccySym()}${data.risk.max_daily_loss.toFixed(2)} ${CCY}`;
-        const budget = document.getElementById("pipe-val-4");
-        if (budget) budget.textContent = `Budget: ${ccySym()}${data.risk.max_daily_loss.toFixed(2)} ${CCY}`;
 
         // Symbols the agent is actually trading (screener picks when enabled)
         symbolDetails = Object.fromEntries((data.symbol_details || []).map(d => [d.symbol, d]));
@@ -1682,60 +1680,100 @@
         }
 
         // Pipeline stage highlights
-        if (data.recent_snapshots && data.recent_snapshots.length > 0) {
-          const latestSnap = data.recent_snapshots.find(s => s.symbol === activeSymbol) || data.recent_snapshots[0];
-          updatePipelineView(latestSnap);
-        }
+        updatePipelineView(data.pipeline || {}, data);
       } catch (err) {
         console.error("Failed to load status:", err);
       }
     }
 
-    function updatePipelineView(snap) {
-      if (!snap) return;
-      document.getElementById("pipeline-cycle-time").textContent = `Last: ${new Date(snap.ts * 1000).toLocaleTimeString()}`;
+    // Fills the five pipeline cards from the newest signal's full trip:
+    // pattern -> indicator check -> Kronos -> risk -> order. A step that was
+    // never reached (an earlier step stopped the signal) is greyed out.
+    function updatePipelineView(p, status) {
+      const card = i => document.getElementById(`pipe-step-${i}`);
+      const val = (i, text) => { document.getElementById(`pipe-val-${i}`).textContent = text; };
+      const mark = (i, cls) => { card(i).className = "step-card" + (cls ? " " + cls : ""); };
+      const pct = v => v === null || v === undefined || isNaN(v) ? "—" : `${Math.round(Number(v) * 100)}%`;
+      const at = ts => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const thr = Number(status && status.confidence_threshold) || 0.62;
 
-      // Reset cards
-      for (let i = 1; i <= 5; i++) {
-        const card = document.getElementById(`pipe-step-${i}`);
-        if (card) card.className = "step-card";
+      // 1. data feed: is the agent reading candles at all?
+      const sc = p.scan;
+      if (sc) {
+        mark(1, "passed");
+        val(1, `${sc.symbols} symbol${sc.symbols === 1 ? "" : "s"} scanned in ${sc.window_min} min · last bar ${at(sc.last)}`);
+      } else {
+        mark(1, "active");
+        val(1, "No new bars in the last 15 min");
       }
 
-      const step1 = document.getElementById("pipe-step-1");
-      const step2 = document.getElementById("pipe-step-2");
-      const step3 = document.getElementById("pipe-step-3");
-      const step4 = document.getElementById("pipe-step-4");
-      const step5 = document.getElementById("pipe-step-5");
-
-      step1.classList.add("passed");
-      document.getElementById("pipe-val-1").textContent = `Price: ${ccySym()}${snap.price.toFixed(2)} ${CCY}`;
-
-      if (snap.stage === "pattern_detected" || snap.stage === "kronos_result" || snap.stage === "position_open") {
-        step2.classList.add("passed");
-        let details = snap.details || {};
-        if (typeof details === "string") {
-          try { details = JSON.parse(details); } catch(e){}
-        }
-        document.getElementById("pipe-val-2").textContent = details.pattern ? `${details.pattern} (${details.direction})` : "Inside Bar (BUY)";
-      } else {
-        step2.classList.add("active");
-        document.getElementById("pipe-val-2").textContent = "Scanning for candles...";
+      const c = p.cycle;
+      const head = document.getElementById("pipeline-cycle-time");
+      if (!c) {
+        head.textContent = "No signal yet";
+        for (const i of [2, 3, 4, 5]) mark(i, "");
+        val(2, "Waiting for a pattern on a closed bar"); val(3, `Confirms at ≥ ${pct(thr)}`);
+        val(4, "—"); val(5, "—");
+        return;
       }
+      head.textContent = `Last signal: ${c.symbol} · ${at(c.ts)}`;
+      const s = c.stages || {}, d = c.decision || {};
+      const skip = (i, text) => { mark(i, "skipped"); val(i, text); };
 
-      if (snap.stage === "kronos_result" || snap.stage === "position_open") {
-        let details = snap.details || {};
-        if (typeof details === "string") {
-          try { details = JSON.parse(details); } catch(e){}
-        }
-        if (details.confirmed) {
-          step3.classList.add("passed");
-          document.getElementById("pipe-val-3").textContent = `Confirmed (${(details.confidence * 100).toFixed(0)}% Conf)`;
-        } else {
-          step3.classList.add("rejected");
-          document.getElementById("pipe-val-3").textContent = `Rejected (${(details.confidence * 100).toFixed(0)}% Conf < 62%)`;
-        }
+      // 2. pattern (+ indicator check, which sits between the pattern and Kronos)
+      const pat = s.pattern_detected || {};
+      const ind = s.indicator_check;
+      const patText = pat.pattern
+        ? `${pat.pattern.replace(/_/g, " ")} ${pat.direction || ""} (${Number(pat.strength || 0).toFixed(2)})`
+        : "Pattern found";
+      if (ind && ind.passed === false) {
+        mark(2, "rejected");
+        val(2, `${patText} · blocked by the indicator check`);
+        skip(3, "Not run: the indicator check stopped this signal first");
+        skip(4, "Not reached"); skip(5, "Not reached");
+        return;
+      }
+      mark(2, "passed");
+      val(2, patText + (ind && ind.alignment !== undefined ? ` · indicators ${ind.alignment > 0 ? "+" : ""}${ind.alignment}` : ""));
+
+      // 3. Kronos
+      const k = s.kronos_result;
+      if (!k) {
+        if (d.action === "error") { mark(3, "rejected"); val(3, `Kronos failed: ${d.error || "error"}`); }
+        else if (d.action) { mark(3, "skipped"); val(3, `Not run: ${d.reason || "stopped before Kronos"}`); }
+        else if (Date.now() / 1000 - c.ts > 300) { mark(3, "skipped"); val(3, "No Kronos result recorded"); }
+        else { mark(3, "active"); val(3, "Forecasting…"); }
+        skip(4, "Not reached"); skip(5, "Not reached");
+        return;
+      }
+      const ok = k.confirmed && Number(k.confidence) >= thr;
+      mark(3, ok ? "passed" : "rejected");
+      val(3, ok ? `Confirmed · ${pct(k.confidence)} (needs ${pct(thr)})` : `Rejected · ${pct(k.confidence)} (needs ${pct(thr)})`);
+      if (!ok) { skip(4, "Not reached"); skip(5, "Not reached"); return; }
+
+      // 4. risk
+      const rc = s.risk_check, rp = s.risk_plan;
+      if ((rc && rc.allowed === false) || (rp && rp.allowed === false)) {
+        mark(4, "rejected");
+        val(4, `Blocked: ${(rp && rp.allowed === false ? rp.reason : rc.reason) || "risk limit"}`);
+        skip(5, "Not reached");
+        return;
+      }
+      if (!rc && !rp) { mark(4, "active"); val(4, "Checking limits…"); skip(5, "Not reached"); return; }
+      mark(4, "passed");
+      val(4, rp ? `Allowed · qty ${rp.quantity}${rp.max_loss !== undefined ? ` · max loss ${ccySym()}${Number(rp.max_loss).toFixed(2)}` : ""}` : "Allowed");
+
+      // 5. order
+      if (s.entry_submitted || d.action === "opened") {
+        const e = s.entry_submitted || {};
+        mark(5, "passed");
+        val(5, `Order placed${e.entry ? ` at ${ccySym()}${Number(e.entry).toFixed(2)}` : ""}${e.stop ? ` · stop ${Number(e.stop).toFixed(2)}` : ""}`);
+      } else if (d.action === "error") {
+        mark(5, "rejected");
+        val(5, `Order failed: ${(d.error || "broker error").slice(0, 120)}`);
       } else {
-        document.getElementById("pipe-val-3").textContent = "Ready for confirmation";
+        mark(5, "active");
+        val(5, "Sending order…");
       }
     }
 
