@@ -144,6 +144,11 @@ class Screener:
         self.broker = broker
         cfg = config.get("screener", {})
         self.candidate_symbols = cfg.get("candidate_symbols", [])
+        # moomoo "Market Movers" lists to start from (US/HK), e.g.
+        # [top_gainers, movers_5min, hot_list]. Empty = off.
+        self.sources = [str(s).strip().lower() for s in (cfg.get("sources") or []) if str(s).strip()]
+        self.per_source = int(cfg.get("per_source") or 30)
+        self.sources_by_symbol: dict[str, list[str]] = {}
         self.min_price = cfg.get("min_price", 0.0)
         self.max_price = cfg.get("max_price", float("inf"))
         self.min_avg_volume = cfg.get("min_avg_volume", 0)
@@ -178,7 +183,49 @@ class Screener:
             logger.warning("Screener benchmark %s unavailable (%s) - using plain returns", symbol, exc)
             return symbol, None
 
+    def _market_lists(self) -> list[str]:
+        """Symbols from the configured market lists, in list order, with
+        which lists each came from. A list that fails is logged and skipped."""
+        self.sources_by_symbol = {}
+        if not self.sources:
+            return []
+        fetch = getattr(self.broker, "get_market_list", None)
+        if fetch is None:
+            logger.warning("screener.sources is set but %s has no market lists - ignoring it",
+                           getattr(self.broker, "label", "this broker"))
+            return []
+        ordered = []
+        for src in self.sources:
+            try:
+                codes = fetch(src, self.per_source)
+            except Exception as exc:
+                logger.warning("Market list %s unavailable: %s", src, exc)
+                continue
+            logger.info("Market list %s: %d symbols", src, len(codes))
+            for code in codes:
+                sym = self.broker._normalize_symbol(code)
+                if sym not in self.sources_by_symbol:
+                    self.sources_by_symbol[sym] = []
+                    ordered.append(sym)
+                if src not in self.sources_by_symbol[sym]:
+                    self.sources_by_symbol[sym].append(src)
+        return ordered
+
     def _get_universe(self) -> list[str]:
+        from_lists = self._market_lists()
+        if self.sources:
+            # Market lists first, then the fixed list (if any) as a base. If
+            # every list failed and there is no fixed list, return nothing:
+            # the agent keeps its current symbols rather than scanning the
+            # whole market by surprise.
+            base = [self.broker._normalize_symbol(s) for s in self.candidate_symbols]
+            for sym in base:
+                self.sources_by_symbol.setdefault(sym, []).append("candidate_symbols")
+            merged = list(dict.fromkeys(from_lists + base))
+            if not from_lists:
+                logger.warning("No market list could be read%s",
+                               " - using candidate_symbols only" if base else " and no candidate_symbols set")
+            return merged
         if self.candidate_symbols:
             return [self.broker._normalize_symbol(s) for s in self.candidate_symbols]
         symbols = self.broker.list_market_symbols()
@@ -254,6 +301,7 @@ class Screener:
 
                 cand = {
                     "symbol": symbol,
+                    **({"sources": self.sources_by_symbol.get(symbol, [])} if self.sources else {}),
                     "price": float(last_price),
                     "avg_volume": float(avg_volume),
                     "atr_pct": atr_pct,
@@ -291,7 +339,7 @@ class Screener:
             "benchmark": benchmark, "benchmark_return_pct": bench_ret,
             "rs_lookback": int(self.score_cfg["rs_lookback"]),
             "ranked_by": "score" if self.score_mode == "rank" else "atr_pct",
-            "universe": len(universe), "top_n": self.top_n,
+            "universe": len(universe), "top_n": self.top_n, "sources": self.sources,
             "candidates": [{**c, "picked": c["symbol"] in picked} for c in candidates[:50]],
         }
         logger.info(

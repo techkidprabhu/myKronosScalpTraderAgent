@@ -399,6 +399,37 @@ class MoomooClient(BrokerClient):
         codes = [self._normalize_symbol(s) for s in symbols]
         return _check(*self.quote_ctx.get_market_snapshot(codes), "get_market_snapshot")
 
+    # moomoo app "Market Movers" lists the screener can start from.
+    # name -> (OpenQuoteContext method, max per call, extra kwargs builder)
+    MARKET_LISTS = {
+        "top_gainers": ("get_top_movers_rank", 200, lambda mm: {"sort_dir": mm.RankSortDir.DESCENDING}),
+        "top_losers": ("get_top_movers_rank", 200, lambda mm: {"sort_dir": mm.RankSortDir.ASCENDING}),
+        "hot_list": ("get_hot_list", 200, lambda mm: {}),                      # combined heat (default)
+        "movers_5min": ("get_period_change_rank", 200,
+                        lambda mm: {"period_type": mm.RankPeriodType.FIVE_MIN, "sort_dir": mm.RankSortDir.DESCENDING}),
+        "short_selling": ("get_short_selling_rank", 35, lambda mm: {}),       # daily short-volume change
+    }
+
+    def get_market_list(self, source: str, count: int = 30) -> list[str]:
+        """Codes from one of moomoo's ranking lists (US and HK only).
+        Raises if the market, the list name or the installed moomoo-api
+        doesn't support it - the screener logs it and carries on."""
+        if source not in self.MARKET_LISTS:
+            raise ValueError(f"unknown market list {source!r} (known: {', '.join(self.MARKET_LISTS)})")
+        if self.market not in ("US", "HK"):
+            raise RuntimeError(f"moomoo's market lists cover US and HK only, not {self.market}")
+        import moomoo as mm
+        method, cap, extra = self.MARKET_LISTS[source]
+        fn = getattr(self.quote_ctx, method, None)
+        if fn is None:
+            raise RuntimeError(f"{method} needs a newer moomoo-api and OpenD "
+                               "(pip install -U moomoo-api, and update OpenD)")
+        data = _check(*fn(self.market, count=max(1, min(int(count), cap)), **extra(mm)), method)
+        df = data[1] if isinstance(data, tuple) else data
+        if df is None or len(df) == 0 or "security" not in df:
+            return []
+        return [str(c) for c in df["security"].tolist() if c]
+
     def list_market_symbols(self) -> list[str]:
         """Every listed stock code in the configured market (thousands)."""
         market = {"CN": "SH"}.get(self.market, self.market)
