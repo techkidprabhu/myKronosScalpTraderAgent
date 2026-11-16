@@ -211,6 +211,17 @@ class SymbolWorker:
             self.symbol, float(last_close), "kronos_result",
             {"confirmed": confirmed, "confidence": confidence},
         )
+        # Shadow mode (finetune.shadow_model): a second model sees the same
+        # candles in the background. Its answer is only recorded.
+        try:
+            submit = getattr(self.kronos_agent, "shadow_submit", None)
+            if callable(submit):
+                submit(df, signal.direction, self.forecast_horizon, broker=self.global_cfg.get("_broker_name") or getattr(self.broker, "name", "broker"),
+                       symbol=self.symbol, timeframe=self.timeframe, last_close=float(last_close),
+                       threshold=self.confidence_threshold, main_confirmed=bool(confirmed),
+                       main_confidence=float(confidence))
+        except Exception:
+            logger.debug("Shadow submit failed", exc_info=True)
         if not confirmed or confidence < self.confidence_threshold:
             reason = f"kronos confidence {confidence:.2f} below threshold {self.confidence_threshold}"
             self.audit_log.log_decision(
@@ -816,6 +827,7 @@ class Orchestrator:
         shares a single offline Kronos model between them."""
         self.config = config
         self.broker_name, self.adapter, self.market_override = broker_name, adapter, market
+        config.setdefault("_broker_name", broker_name)      # lets symbol workers label shadow records
         self.data_source = data_source   # adapter supplying price data, None = the broker itself
         self.broker_label = label or ("moomoo OpenD" if adapter == "moomoo" else adapter)
         sched = config.get("schedule", {}) or {}

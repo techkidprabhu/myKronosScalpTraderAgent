@@ -148,6 +148,19 @@ def set_kronos_model(text: str, model_name: str, tokenizer_name: str) -> str:
     return new_text
 
 
+def set_shadow_model(text: str, model_name: str | None, tokenizer_name: str | None = None) -> str:
+    """Set or clear finetune.shadow_model (the model tested in shadow mode)."""
+    y = _yaml()
+    doc = y.load(text) or CommentedMap()
+    _set(doc, ["finetune", "shadow_model"], str(model_name) if model_name else None)
+    _set(doc, ["finetune", "shadow_tokenizer"], str(tokenizer_name) if tokenizer_name and model_name else None)
+    out = io.StringIO()
+    y.dump(doc, out)
+    new_text = out.getvalue()
+    yaml.safe_load(new_text)
+    return new_text
+
+
 def validate_text(text: str, scope: str, applied: dict):
     try:
         cfg = yaml.safe_load(text) or {}

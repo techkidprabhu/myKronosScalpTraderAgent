@@ -16,6 +16,17 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Shadow mode for fine-tuned Kronos models** (`finetune.shadow_model`, off
+  by default). "Shadow test" on a training run makes the agent hand every
+  signal's candles to that model as well, on a background thread. Only the
+  trading model's answer is used; the shadow's answer is recorded in
+  `data/shadow.db`. Kronos Model Lab -> Self-learning shows how often the two
+  agreed and, from the collected candles, how often each was right about the
+  price direction, plus the latest disagreements. A shadow model that fails
+  to load or errors is logged and ignored; it can never place or block a
+  trade.
+
+### Added
 - **Self-learning Kronos (fine-tuning), off by default.** New `src/finetune`
   package, following the fine-tuning method in the Kronos repository.
   - *Collect:* with `finetune.enabled`, each broker loop saves the candles of

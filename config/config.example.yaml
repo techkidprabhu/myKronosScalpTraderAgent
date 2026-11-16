@@ -42,6 +42,11 @@ finetune:
   signal_fraction: 0.3     # share of each batch taken from the agent's own signal bars
   val_fraction: 0.15       # most recent share of candles held out for the comparison
   train_tokenizer: false   # also fine-tune the tokenizer first; needs far more data
+  # Shadow mode: a fine-tuned model folder that is asked alongside the
+  # trading model on every signal. Its answer is only recorded (data/shadow.db)
+  # and compared on the dashboard; it can never place or block a trade.
+  # Normally set from the dashboard ("Shadow test" on a training run).
+  shadow_model:
 
 # How many closed bars to keep in the rolling lookback window fed to
 # Kronos. Kronos-small/base support up to 512 context bars.
