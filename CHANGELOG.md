@@ -16,6 +16,31 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Self-learning Kronos (fine-tuning), off by default.** New `src/finetune`
+  package, following the fine-tuning method in the Kronos repository.
+  - *Collect:* with `finetune.enabled`, each broker loop saves the candles of
+    every symbol it screened, decided on or traded into `data/training/` when
+    its market closes (US via moomoo / Tiger, India via Zerodha / Angel).
+    "Collect candles now" on the dashboard does it on demand.
+  - *Train:* `./start.sh finetune train`, the dashboard button, or a schedule
+    (`finetune.train_time` / `train_days`, only while every market is
+    closed). CPU-only, low priority, separate process, hard time limit. 30%
+    of each batch is drawn from the bars where the agent asked Kronos for a
+    verdict - winning and losing signals alike.
+  - *Evaluate:* the most recent 15% of candles are held out by date. Each run
+    reports prediction loss and forecast-direction hit rate for the original
+    and the fine-tuned model, with a verdict (better / no gain / worse).
+    Models that are not better are not kept.
+  - *Use:* a new model is never used for trading automatically. "Use this
+    model" / "Back to original" on Kronos Model Lab -> Self-learning rewrite
+    `kronos.model_name`; restart the agent to apply. Training always starts
+    from the original model, so runs do not stack.
+  - `./start.sh finetune check` times real training steps on this computer
+    and estimates a run; `finetune status` lists data and runs.
+  The trading pipeline is unchanged: Kronos is loaded and asked exactly as
+  before, from whichever model folder the config names.
+
+### Added
 - **moomoo Market Movers as the screener's first stage** (moomoo US/HK; off
   by default). `screener.sources` takes any of `top_gainers`, `top_losers`,
   `hot_list`, `movers_5min` and `short_selling`; `per_source` (default 30)

@@ -758,6 +758,38 @@
           </div>
         </div>
       </div>
+
+      <section class="cc-card" id="ft-card" aria-label="Kronos self-learning" style="margin-top:16px">
+        <div class="cc-card-head">
+          <h2>Self-learning <span class="cc-muted" id="ft-mode"></span></h2>
+          <span class="cc-muted" id="ft-model"></span>
+        </div>
+        <p class="cc-muted" style="margin:0 0 12px">Fine-tunes the offline Kronos model on candles of the symbols the agent screened and traded, on every broker, and compares the result with the original on candles it has not seen. A new model is never used for trading until you choose it here.</p>
+        <div class="ft-grid">
+          <div>
+            <h3 class="cc-sub-h">Candles collected</h3>
+            <div id="ft-inventory"></div>
+          </div>
+          <div>
+            <h3 class="cc-sub-h">Training</h3>
+            <div id="ft-status"></div>
+            <div class="ft-actions">
+              <button type="button" class="btn btn-sm" id="ft-btn-collect" onclick="ftAction('collect')">Collect candles now</button>
+              <button type="button" class="btn btn-sm btn-primary" id="ft-btn-train" onclick="ftTrain()">Start training now</button>
+            </div>
+          </div>
+        </div>
+        <h3 class="cc-sub-h" style="margin-top:16px">Training runs</h3>
+        <div class="scr-wrap"><table class="cc-mini-table ft-table">
+          <thead><tr>
+            <th>Run</th><th>Data</th>
+            <th title="Next-candle prediction loss on held-out candles. Lower is better">Loss: original → new</th>
+            <th title="How often the forecast direction over the horizon was right, on held-out candles">Direction right: original → new</th>
+            <th>Result</th><th></th>
+          </tr></thead>
+          <tbody id="ft-runs"></tbody>
+        </table></div>
+      </section>
     </div>
 
     <!-- TAB 5: TRADING STRATEGIES & PLAYBOOK -->
@@ -1574,6 +1606,7 @@
       if (panel) panel.classList.add("active");
       if (tabId === "risk-model") rmOpen();
       if (tabId === "performance") loadPerformance();
+      if (tabId === "kronos-lab") loadFinetune();
       if (tabId === "decisions") loadDecisionStats();
 
       if (tabId === "terminal" && chartInstance) {
@@ -3941,6 +3974,84 @@
           "The score only chooses which symbols are scanned. Patterns, indicators, Kronos and the risk rules decide trades as before.";
         card.hidden = false;
       } catch (e) { card.hidden = true; }
+    }
+
+
+    // ================= Kronos self-learning (fine-tuning) =================
+    let ftData = null, ftTimer = null;
+    const FT_VERDICT = { better: ["Better", "cc-pos"], no_gain: ["No gain", "cc-muted"], worse: ["Worse", "cc-neg"] };
+
+    async function loadFinetune() {
+      try {
+        const d = ftData = await (await fetch("/api/finetune")).json();
+        const st = d.status || {}, running = st.state === "running";
+        document.getElementById("ft-mode").textContent = d.enabled
+          ? `· collecting at each market close${d.train_time ? `, training ${(d.train_days || []).join("/")} ${d.train_time}` : ", training when you start it"}`
+          : "· automatic collection is off";
+        document.getElementById("ft-model").textContent = d.in_use ? `Agent uses fine-tuned ${d.in_use}` : `Agent uses the original ${d.base_model}`;
+        const inv = d.inventory || [];
+        const totalBars = inv.reduce((a, r) => a + r.bars, 0);
+        document.getElementById("ft-inventory").innerHTML = inv.length
+          ? `<table class="cc-mini-table"><tbody>${inv.map(r => `<tr><td>${esc(r.broker)}</td><td class="cc-muted">${esc(r.timeframe)}</td><td class="mono">${r.symbols} symbols</td><td class="mono">${r.bars.toLocaleString("en-GB")} candles</td><td class="cc-muted">${fmtDateTime(r.updated)}</td></tr>`).join("")}</tbody></table>
+             <div class="cc-muted" style="margin-top:6px">Windows of ${d.lookback}+${d.predict} candles. Training needs at least ${Number(d.min_train_windows).toLocaleString("en-GB")} of them${totalBars < d.min_train_windows ? " - not enough yet" : ""}.</div>`
+          : `<div class="cc-empty">Nothing collected yet. ${d.enabled ? "The agent saves candles at the next market close, or use Collect candles now." : "Switch on \"Self-learning: collect candles automatically\" under Config & Risk, or use Collect candles now while the agent is running."}</div>`;
+        const el = document.getElementById("ft-status");
+        if (running) {
+          const pct = Math.max(2, Math.min(100, (st.step || 0) / (st.max_steps || 1) * 100));
+          el.innerHTML = `<div><b>${esc(st.message || "Training")}</b> · step ${st.step || 0} of ${st.max_steps}${st.eta_s ? ` · about ${Math.ceil(st.eta_s / 60)} min left` : ""}</div>
+            <div class="ft-bar"><i style="width:${pct}%"></i></div>
+            ${st.val_loss ? `<div class="cc-muted">Held-out loss ${st.val_loss} (original ${st.base_val_loss}) · best so far ${st.best_val_loss}</div>` : ""}`;
+        } else if (st.state === "failed") {
+          el.innerHTML = `<div class="cc-neg">Last run did not finish: ${esc(st.message || "")}</div>`;
+        } else if (st.state === "done") {
+          el.innerHTML = `<div>Last run finished ${st.updated ? fmtDateTime(st.updated) : ""}: ${esc(st.message || "")}</div>`;
+        } else {
+          el.innerHTML = `<div class="cc-muted">No run yet. A run takes up to ${d.max_minutes} min (${d.max_steps} steps) and is best started while markets are closed.</div>`;
+        }
+        document.getElementById("ft-btn-train").disabled = running;
+        document.getElementById("ft-runs").innerHTML = (d.runs || []).length ? d.runs.map(r => {
+          const o = r.original || {}, f = r.fine_tuned || {}, v = FT_VERDICT[r.verdict] || [r.verdict, ""];
+          const inUse = d.in_use === r.run_id;
+          const brokers = Object.entries(r.symbols_by_broker || {}).map(([b, n]) => `${b} ${n}`).join(", ");
+          const pct = x => x === null || x === undefined ? "–" : x + "%";
+          return `<tr>
+            <td><span class="mono">${esc(r.run_id)}</span><br><span class="cc-muted">${fmtDateTime(r.created)} · ${r.minutes} min · ${r.steps} steps</span></td>
+            <td>${r.symbols} symbols<br><span class="cc-muted">${esc(brokers)} · ${r.signal_windows} signal windows</span></td>
+            <td class="mono">${o.val_loss ?? "–"} → ${f.val_loss ?? "–"}</td>
+            <td class="mono">${pct(o.direction_hit_pct)} → ${pct(f.direction_hit_pct)}<br><span class="cc-muted">${f.forecasts || 0} forecasts</span></td>
+            <td><b class="${v[1]}">${esc(v[0])}</b><br><span class="cc-muted">${esc(r.reason || "")}</span></td>
+            <td>${inUse ? `<span class="pc-protected">In use</span>` : r.has_weights ? `<button type="button" class="btn btn-sm" onclick="ftUse('${esc(r.run_id)}')">Use this model</button>` : `<span class="cc-muted">Not kept</span>`}</td>
+          </tr>`;
+        }).join("") + (d.in_use ? `<tr><td colspan="5" class="cc-muted">Original model: ${esc(d.base_model)}</td><td><button type="button" class="btn btn-sm" onclick="ftUse('original')">Back to original</button></td></tr>` : "")
+          : `<tr><td colspan="6" class="cc-empty">No training runs yet.</td></tr>`;
+        clearTimeout(ftTimer);
+        if (document.getElementById("tab-kronos-lab").classList.contains("active"))
+          ftTimer = setTimeout(loadFinetune, running ? 5000 : 60000);
+      } catch (e) { console.error("finetune", e); }
+    }
+
+    async function ftAction(action, body) {
+      try {
+        const res = await fetch(`/api/finetune/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+        const d = await res.json();
+        showToast(d.message || d.error || "Done");
+      } catch (e) { showToast("Request failed: " + e.message); }
+      setTimeout(loadFinetune, 800);
+    }
+
+    function ftTrain() {
+      const open = marketData && marketData.phase && ["active", "always"].includes(marketData.phase.phase);
+      if (!confirm(`Start a fine-tuning run now? It uses most of this computer's CPU for up to ${ftData ? ftData.max_minutes : 240} minutes.` +
+          (open ? "\n\nA market is open: the agent's Kronos checks will be slower while it runs." : ""))) return;
+      ftAction("train");
+    }
+
+    function ftUse(runId) {
+      const msg = runId === "original"
+        ? "Switch the agent back to the original Kronos model?"
+        : `Use ${runId} for the agent's Kronos confirmations?\n\nThis changes which model confirms live trades. You can switch back to the original at any time.`;
+      if (!confirm(msg + "\n\nIt takes effect after you restart the agent.")) return;
+      ftAction("use", { run_id: runId });
     }
 
     const TODAY_BASIS = {

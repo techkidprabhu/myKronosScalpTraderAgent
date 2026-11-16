@@ -1358,6 +1358,80 @@ def _clean_num(v):
     return v
 
 
+# ---------------------------------------------------------------- Kronos self-learning
+
+_ft_inventory_cache = {"ts": 0.0, "rows": []}
+
+
+def _finetune_in_use(cfg: dict) -> str | None:
+    """run_id of the fine-tuned model the agent is configured to use, if any."""
+    name = str((cfg.get("kronos") or {}).get("model_name") or "")
+    return Path(name).name if name and (Path(name) / "report.json").exists() else None
+
+
+@app.route("/api/finetune", methods=["GET"])
+def finetune_overview():
+    from src import finetune
+    from src.finetune import data as ftdata, trainer
+    cfg = load_config()
+    ft = finetune.settings(cfg)
+    if time.time() - _ft_inventory_cache["ts"] > 60:
+        _ft_inventory_cache.update(ts=time.time(), rows=ftdata.inventory())
+    lookback, predict = trainer.window_sizes(cfg)
+    base_model, _ = trainer.original_names(cfg)
+    runs = [{k: r.get(k) for k in ("run_id", "created", "minutes", "steps", "stopped", "symbols", "symbols_by_broker",
+                                   "train_windows", "signal_windows", "original", "fine_tuned", "verdict", "reason",
+                                   "has_weights", "base_model")} for r in trainer.list_runs()[:12]]
+    return jsonify({
+        "enabled": bool(ft["enabled"]), "train_time": ft["train_time"], "train_days": ft["train_days"],
+        "max_steps": ft["max_steps"], "max_minutes": ft["max_minutes"], "min_train_windows": ft["min_train_windows"],
+        "lookback": lookback, "predict": predict, "base_model": base_model, "in_use": _finetune_in_use(cfg),
+        "model_name": (cfg.get("kronos") or {}).get("model_name"),
+        "inventory": _ft_inventory_cache["rows"], "status": trainer.read_status(), "runs": runs,
+    })
+
+
+@app.route("/api/finetune/<action>", methods=["POST"])
+def finetune_action(action):
+    from src import finetune
+    from src.finetune import scheduler as ft_scheduler, trainer
+    if action == "collect":
+        finetune.COLLECT_REQUEST.parent.mkdir(parents=True, exist_ok=True)
+        finetune.COLLECT_REQUEST.write_text(str(time.time()))
+        return jsonify({"success": True, "message": "Asked the running agent to save candles now. "
+                                                    "Each connected broker does it within a minute."})
+    if action == "train":
+        try:
+            pid = ft_scheduler.start_training_process()
+        except RuntimeError as exc:
+            return jsonify({"error": str(exc)}), 409
+        logger.info("Dashboard started Kronos fine-tuning (pid %s)", pid)
+        return jsonify({"success": True, "message": "Training started. Progress shows here; details in logs/finetune.log."})
+    if action == "use":
+        data = request.get_json(silent=True) or {}
+        run_id = str(data.get("run_id") or "")
+        cfg = load_config()
+        if run_id == "original":
+            current = Path(str((cfg.get("kronos") or {}).get("model_name") or "")) / "report.json"
+            if not current.exists():
+                return jsonify({"success": True, "message": "The agent already uses the original model."})
+            rep = json.loads(current.read_text())
+            model, tok = rep["base_model"], rep["base_tokenizer"]
+        else:
+            run = next((r for r in trainer.list_runs() if r["run_id"] == run_id), None)
+            if run is None or not run["has_weights"]:
+                return jsonify({"error": "That run has no saved model"}), 404
+            model, tok = run["path"], run.get("tokenizer") or run["base_tokenizer"]
+        try:
+            config_writer.write_config(CONFIG_PATH, config_writer.set_kronos_model(CONFIG_PATH.read_text(), model, tok))
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Switching the Kronos model failed")
+            return jsonify({"error": str(exc)}), 400
+        logger.info("Dashboard switched the Kronos model to %s", model)
+        return jsonify({"success": True, "message": "Saved to config.yaml (backup kept). Restart the agent to load it."})
+    return jsonify({"error": "unknown action"}), 404
+
+
 @app.route("/api/screener", methods=["GET"])
 def get_screener_report():
     """What the agent's last screener run saw: each candidate's readings,
