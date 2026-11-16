@@ -1606,6 +1606,9 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .ft-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 20px; }
 .ft-grid > div { min-width: 0; }
 .ft-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.ft-actions { align-items: center; }
+.ft-actions a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+.ft-actions a.btn.is-disabled { opacity: .5; pointer-events: none; }
 .ft-bar { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; margin: 8px 0; }
 .ft-bar i { display: block; height: 100%; background: var(--accent-blue); border-radius: 4px; transition: width .4s; }
 .ft-table { min-width: 760px; }

@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import MODELS_DIR, STATUS_PATH, settings
+from . import MODELS_DIR, STATUS_PATH, ensure_kronos, settings
 from .data import load_window_set
 
 logger = logging.getLogger(__name__)
@@ -64,9 +64,8 @@ def list_runs(models_dir: Path | None = None) -> list[dict]:
 # ---------------------------------------------------------------- models
 
 def _kronos_classes():
-    from src.kronos_agent import _ensure_kronos_importable
-    if not _ensure_kronos_importable():
-        raise RuntimeError("Kronos source not found (vendor/Kronos or KRONOS_PATH)")
+    if not ensure_kronos():
+        raise RuntimeError("Kronos source not found (vendor/Kronos, a Kronos folder next to the trainer, or KRONOS_PATH)")
     from model import Kronos, KronosPredictor, KronosTokenizer
     return Kronos, KronosTokenizer, KronosPredictor
 
@@ -105,8 +104,8 @@ def window_sizes(config: dict) -> tuple[int, int]:
 
 
 def audit_dbs(config: dict) -> dict[str, Path]:
-    from src.broker_config import broker_specs
     try:
+        from src.broker_config import broker_specs
         return {s.name: s.db_path for s in broker_specs(config)}
     except Exception:  # noqa: BLE001
         return {}
@@ -114,8 +113,23 @@ def audit_dbs(config: dict) -> dict[str, Path]:
 
 # ---------------------------------------------------------------- loss / steps
 
+def pick_device(want, torch) -> str:
+    """'auto' -> the NVIDIA GPU when PyTorch can use it, else the CPU."""
+    want = str(want or "auto").lower()
+    if want == "auto":
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if want.startswith("cuda") and not torch.cuda.is_available():
+        raise RuntimeError("A GPU was asked for, but this PyTorch can't use one (install the CUDA build of PyTorch)")
+    return want
+
+
+def _dev(model):
+    return next(model.parameters()).device
+
+
 def _loss(model, tokenizer, x, stamp, torch):
     """Next-token loss, exactly as finetune/train_predictor.py in the Kronos repository."""
+    x, stamp = x.to(_dev(model)), stamp.to(_dev(model))
     with torch.no_grad():
         s1, s2 = tokenizer.encode(x, half=True)
     logits = model(s1[:, :-1], s2[:, :-1], stamp[:, :-1, :])
@@ -141,7 +155,7 @@ def _train_tokenizer(tokenizer, ws, ft, torch, log):
     tokenizer.train()
     for step in range(int(ft["tokenizer_steps"])):
         x, _ = ws.sample_train(int(ft["batch_size"]), float(ft["signal_fraction"]))
-        x = torch.from_numpy(x)
+        x = torch.from_numpy(x).to(_dev(tokenizer))
         (z_pre, z), bsq_loss, _, _ = tokenizer(x)
         loss = (F.mse_loss(z_pre, x) + F.mse_loss(z, x) + bsq_loss) / 2
         opt.zero_grad()
@@ -162,7 +176,7 @@ def forecast_quality(model, tokenizer, ws, items, config: dict, torch) -> dict:
     k = config.get("kronos") or {}
     horizon = int(config.get("forecast_horizon") or 5)
     horizon = min(horizon, ws.predict)
-    pred = KronosPredictor(model, tokenizer, device="cpu", max_context=int(k.get("max_context") or 512))
+    pred = KronosPredictor(model, tokenizer, device=str(_dev(model)), max_context=int(k.get("max_context") or 512))
     hits, errs, n = 0, [], 0
     model.eval()
     for j, (si, start) in enumerate(items):
@@ -229,7 +243,8 @@ def prune_runs(config: dict, models_dir: Path | None = None) -> None:
 
 
 def run_training(config: dict, models_dir: Path | None = None, status_path: Path | None = None,
-                 training_root: Path | None = None, log=None) -> dict:
+                 training_root: Path | None = None, log=None, signals_by_broker: dict | None = None,
+                 keep_always: bool = False) -> dict:
     """One full run: load data, fine-tune, evaluate against the original,
     save the model folder and report. Returns the report."""
     import torch
@@ -256,7 +271,7 @@ def run_training(config: dict, models_dir: Path | None = None, status_path: Path
         torch.manual_seed(int(ft["seed"]))
         lookback, predict = window_sizes(config)
         ws = load_window_set(lookback, predict, float(ft["val_fraction"]), audit_dbs(config), training_root,
-                             int(ft["seed"]))
+                             int(ft["seed"]), signals_by_broker)
         if len(ws.train) < int(ft["min_train_windows"]) or not ws.val:
             raise RuntimeError(
                 f"Not enough candles yet: {len(ws.train)} training windows from {len(ws.series)} symbols "
@@ -268,6 +283,10 @@ def run_training(config: dict, models_dir: Path | None = None, status_path: Path
         local = bool((config.get("kronos") or {}).get("local_files_only", True))
         status(state="running", step=0, message=f"Loading {base_name}")
         model, tokenizer = load_models(base_name, tok_name, local)
+        device = pick_device(ft.get("device"), torch)
+        device_name = torch.cuda.get_device_name(0) if device.startswith("cuda") else "CPU"
+        log(f"Training on {device_name}")
+        model, tokenizer = model.to(device), tokenizer.to(device)
         tokenizer.eval()
         for p in tokenizer.parameters():
             p.requires_grad_(False)
@@ -334,7 +353,7 @@ def run_training(config: dict, models_dir: Path | None = None, status_path: Path
 
         status(state="running", step=step, message="Scoring the fine-tuned model on held-out candles")
         Kronos, _, _ = _kronos_classes()
-        best_model = Kronos.from_pretrained(str(run_dir), local_files_only=True)
+        best_model = Kronos.from_pretrained(str(run_dir), local_files_only=True).to(device)
         tuned = {"val_loss": round(val_loss(best_model, tokenizer, ws, val_items, bs, torch), 5),
                  **forecast_quality(best_model, tokenizer, ws, fc_items, config, torch)}
         kind, why = verdict(base, tuned, same_tokenizer=not tuned_tokenizer)
@@ -347,6 +366,7 @@ def run_training(config: dict, models_dir: Path | None = None, status_path: Path
             by_broker[s.broker] = by_broker.get(s.broker, 0) + 1
         report = {
             "run_id": run_id, "created": time.time(), "minutes": round((time.time() - started) / 60, 1),
+            "device": device_name,
             "base_model": base_name, "base_tokenizer": tok_name, "tokenizer": tok_path,
             "tokenizer_tuned": tuned_tokenizer, "steps": step, "best_step": best_step, "stopped": stopped,
             "lookback": lookback, "predict": predict, "symbols": len(ws.series), "symbols_by_broker": by_broker,
@@ -355,7 +375,7 @@ def run_training(config: dict, models_dir: Path | None = None, status_path: Path
             "original": base, "fine_tuned": tuned, "verdict": kind, "reason": why,
         }
         (run_dir / "report.json").write_text(json.dumps(report, indent=2))
-        if kind != "better":                           # nothing worth keeping: free the disk space
+        if kind != "better" and not keep_always:       # nothing worth keeping: free the disk space
             (run_dir / "model.safetensors").unlink(missing_ok=True)
         prune_runs(config, models_dir)
         log(f"{run_id}: {kind} - {why}")

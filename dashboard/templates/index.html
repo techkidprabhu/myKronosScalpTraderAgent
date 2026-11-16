@@ -779,6 +779,14 @@
             </div>
           </div>
         </div>
+        <h3 class="cc-sub-h" style="margin-top:16px">Train on a computer with a GPU</h3>
+        <p class="cc-muted" style="margin:0">Export the collected candles with the trainer, run it on a computer with an NVIDIA GPU (<span class="mono">train.bat</span> or <span class="mono">train.sh</span> inside the zip), then import the result file it writes. The export holds candles and signal times only: no logins, keys or trade records. An imported model is listed below and is not used for trading until you choose it.</p>
+        <div class="ft-actions">
+          <a class="btn btn-sm" id="ft-btn-export" href="/api/finetune/export" download>Export for GPU training</a>
+          <button type="button" class="btn btn-sm" id="ft-btn-import" onclick="document.getElementById('ft-import-file').click()">Import trained model</button>
+          <input type="file" id="ft-import-file" accept=".zip,application/zip" hidden onchange="ftImport(this)">
+          <span class="cc-muted" id="ft-import-note" role="status"></span>
+        </div>
         <h3 class="cc-sub-h" style="margin-top:16px">Shadow test <span class="cc-muted" style="text-transform:none;letter-spacing:0" id="ft-shadow-model"></span></h3>
         <div id="ft-shadow"></div>
         <h3 class="cc-sub-h" style="margin-top:16px">Training runs</h3>
@@ -3992,6 +4000,9 @@
           : "· automatic collection is off";
         document.getElementById("ft-model").textContent = d.in_use ? `Agent uses fine-tuned ${d.in_use}` : `Agent uses the original ${d.base_model}`;
         const inv = d.inventory || [];
+        const exportBtn = document.getElementById("ft-btn-export");
+        exportBtn.classList.toggle("is-disabled", !inv.length);
+        exportBtn.title = inv.length ? "" : "Nothing to export yet - collect candles first";
         const totalBars = inv.reduce((a, r) => a + r.bars, 0);
         document.getElementById("ft-inventory").innerHTML = inv.length
           ? `<table class="cc-mini-table"><tbody>${inv.map(r => `<tr><td>${esc(r.broker)}</td><td class="cc-muted">${esc(r.timeframe)}</td><td class="mono">${r.symbols} symbols</td><td class="mono">${r.bars.toLocaleString("en-GB")} candles</td><td class="cc-muted">${fmtDateTime(r.updated)}</td></tr>`).join("")}</tbody></table>
@@ -4036,7 +4047,7 @@
           const brokers = Object.entries(r.symbols_by_broker || {}).map(([b, n]) => `${b} ${n}`).join(", ");
           const pct = x => x === null || x === undefined ? "–" : x + "%";
           return `<tr>
-            <td><span class="mono">${esc(r.run_id)}</span><br><span class="cc-muted">${fmtDateTime(r.created)} · ${r.minutes} min · ${r.steps} steps</span></td>
+            <td><span class="mono">${esc(r.run_id)}</span><br><span class="cc-muted">${fmtDateTime(r.created)} · ${r.minutes} min · ${r.steps} steps${r.imported ? ` · imported, trained on ${esc(r.device || "another computer")}` : ""}</span></td>
             <td>${r.symbols} symbols<br><span class="cc-muted">${esc(brokers)} · ${r.signal_windows} signal windows</span></td>
             <td class="mono">${o.val_loss ?? "–"} → ${f.val_loss ?? "–"}</td>
             <td class="mono">${pct(o.direction_hit_pct)} → ${pct(f.direction_hit_pct)}<br><span class="cc-muted">${f.forecasts || 0} forecasts</span></td>
@@ -4059,6 +4070,25 @@
         showToast(d.message || d.error || "Done");
       } catch (e) { showToast("Request failed: " + e.message); }
       setTimeout(loadFinetune, 800);
+    }
+
+    async function ftImport(input) {
+      const file = input.files && input.files[0];
+      input.value = "";
+      if (!file) return;
+      const note = document.getElementById("ft-import-note"), btn = document.getElementById("ft-btn-import");
+      const body = new FormData();
+      body.append("file", file);
+      btn.disabled = true;
+      note.textContent = `Uploading ${file.name} (${Math.max(1, Math.round(file.size / 1048576))} MB)…`;
+      try {
+        const res = await fetch("/api/finetune/import", { method: "POST", body });
+        const d = await res.json();
+        note.textContent = d.message || d.error || "";
+        showToast(d.message || d.error || "Done");
+      } catch (e) { note.textContent = "Upload failed: " + e.message; }
+      btn.disabled = false;
+      loadFinetune();
     }
 
     function ftTrain() {

@@ -335,3 +335,150 @@ def test_shadow_model_switch_keeps_the_config_intact():
     assert cfg["finetune"] == {"enabled": True, "shadow_model": "/m/kronos-ft-1", "shadow_tokenizer": None}
     assert cfg["kronos"]["model_name"] == "NeoQuasar/Kronos-base"   # the trading model is not touched
     assert yaml.safe_load(set_shadow_model(on, None))["finetune"]["shadow_model"] is None
+
+
+# ---------------------------------------------------------------- GPU training kit: export, train elsewhere, import
+
+def _result_zip(path, run_id="kronos-ft-20261116-2130", verdict_="better", weights=True, extra=None, report=None):
+    import zipfile
+    rep = {"run_id": run_id, "created": time.time(), "minutes": 12, "steps": 4000, "symbols": 40, "device": "RTX 2000 Ada",
+           "base_model": "NeoQuasar/Kronos-base", "base_tokenizer": "NeoQuasar/Kronos-Tokenizer-base",
+           "tokenizer": "NeoQuasar/Kronos-Tokenizer-base", "tokenizer_tuned": False, "verdict": verdict_, "reason": "r",
+           "original": {"val_loss": 5.1}, "fine_tuned": {"val_loss": 4.9}}
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr(f"{run_id}/report.json", json.dumps(rep if report is None else report))
+        z.writestr(f"{run_id}/config.json", "{}")
+        if weights:
+            z.writestr(f"{run_id}/model.safetensors", b"weights")
+        for name, data in (extra or {}).items():
+            z.writestr(name, data)
+    return path
+
+
+def test_export_holds_data_and_trainer_but_nothing_private(tmp_path):
+    import zipfile
+    from src.finetune import kit
+    root = tmp_path / "training"
+    ftdata.merge_bars(ftdata.bars_path("moomoo", "US.AAA", "MIN_5", root), bars(60))
+    ftdata.merge_bars(ftdata.bars_path("zerodha", "NSE.BBB", "MIN_5", root), bars(60, seed=1))
+    cfg = {"lookback_bars": 200, "forecast_horizon": 5, "kronos": {"model_name": "NeoQuasar/Kronos-base",
+           "tokenizer_name": "NeoQuasar/Kronos-Tokenizer-base", "sample_count": 3}, "moomoo": {"trade_password": "secret"}}
+    out = tmp_path / "kit.zip"
+    info = kit.build_export(cfg, out, training_root=root)
+    assert info["files"] == 2 and info["brokers"] == ["moomoo", "zerodha"]
+    with zipfile.ZipFile(out) as z:
+        names = set(z.namelist())
+        s = json.loads(z.read("kronos-training-kit/settings.json"))["config"]
+        everything = b"".join(z.read(n) for n in names if not n.endswith(".csv"))
+    assert {"kronos-training-kit/train.bat", "kronos-training-kit/train.sh", "kronos-training-kit/train_kronos.py",
+            "kronos-training-kit/README.txt", "kronos-training-kit/finetune/trainer.py",
+            "kronos-training-kit/signals.json", "kronos-training-kit/training/moomoo/US.AAA__MIN_5.csv"} <= names
+    assert not any(n.endswith((".db", ".env", ".yaml", ".pem")) for n in names) and b"secret" not in everything
+    assert s["finetune"]["lookback"] == 200 and s["finetune"]["predict"] == 10      # the windows the agent uses
+    assert s["finetune"]["base_model"] == "NeoQuasar/Kronos-base" and s["kronos"]["local_files_only"] is False
+    assert s["finetune"]["batch_size"] == 32 and s["finetune"]["device"] == "auto"
+    with pytest.raises(RuntimeError, match="No candles"):
+        kit.build_export(cfg, tmp_path / "empty.zip", training_root=tmp_path / "nothing")
+
+
+def test_import_lists_the_run_and_rejects_anything_else(tmp_path):
+    from src.finetune import kit
+    models = tmp_path / "models"
+    rep = kit.import_run(_result_zip(tmp_path / "ok.zip"), models)
+    assert rep["has_weights"] and rep["imported"]
+    run = list_runs(models)[0]
+    assert run["run_id"] == "kronos-ft-20261116-2130" and run["has_weights"] and run["device"] == "RTX 2000 Ada"
+    assert run["tokenizer"] == "NeoQuasar/Kronos-Tokenizer-base"
+    with pytest.raises(ValueError, match="already here"):
+        kit.import_run(tmp_path / "ok.zip", models)
+
+    rep = kit.import_run(_result_zip(tmp_path / "nogain.zip", "kronos-ft-20261117-2130", "no_gain", weights=False), models)
+    assert rep["has_weights"] is False
+
+    bad = [
+        _result_zip(tmp_path / "b1.zip", "../evil"),
+        _result_zip(tmp_path / "b2.zip", "some-other-folder"),
+        _result_zip(tmp_path / "b3.zip", "kronos-ft-1", extra={"kronos-ft-1/run.py": "x"}),
+        _result_zip(tmp_path / "b4.zip", "kronos-ft-2", extra={"kronos-ft-2/../../x.json": "x"}),
+        _result_zip(tmp_path / "b5.zip", "kronos-ft-3", extra={"kronos-ft-9/report.json": "{}"}),
+        _result_zip(tmp_path / "b6.zip", "kronos-ft-4", report={"verdict": "great"}),
+        _result_zip(tmp_path / "b7.zip", "kronos-ft-5", extra={"loose.txt": "x"}),
+    ]
+    (tmp_path / "b8.zip").write_bytes(b"not a zip")
+    for p in bad + [tmp_path / "b8.zip"]:
+        with pytest.raises(ValueError):
+            kit.import_run(p, models)
+    assert sorted(p.name for p in models.iterdir()) == ["kronos-ft-20261116-2130", "kronos-ft-20261117-2130"]
+    assert not list(tmp_path.glob("*.json")) and not (tmp_path / "x.json").exists()
+
+
+def test_dashboard_export_and_import(tmp_path, monkeypatch):
+    import io
+    import zipfile
+    import dashboard.app as app_mod
+    from src.finetune import kit, trainer
+    root, models = tmp_path / "training", tmp_path / "models"
+    ftdata.merge_bars(ftdata.bars_path("moomoo", "US.AAA", "MIN_5", root), bars(60))
+    monkeypatch.setattr(kit, "TRAINING_DIR", root)
+    monkeypatch.setattr(kit, "MODELS_DIR", models)
+    monkeypatch.setattr(trainer, "MODELS_DIR", models)
+    monkeypatch.setattr(app_mod, "load_config", lambda: {"kronos": {"model_name": "NeoQuasar/Kronos-base"}})
+    app_mod.app.config["TESTING"] = True
+    c = app_mod.app.test_client()
+    hdr = {"Authorization": f"Bearer {app_mod.DASHBOARD_TOKEN}"}
+    assert c.get("/api/finetune/export").status_code == 401
+    r = c.get("/api/finetune/export", headers=hdr)
+    assert r.status_code == 200 and "kronos-training-" in r.headers["Content-Disposition"]
+    assert "kronos-training-kit/training/moomoo/US.AAA__MIN_5.csv" in zipfile.ZipFile(io.BytesIO(r.data)).namelist()
+
+    assert c.post("/api/finetune/import", headers=hdr).status_code == 400
+    up = lambda p: c.post("/api/finetune/import", headers=hdr, content_type="multipart/form-data",   # noqa: E731
+                          data={"file": (io.BytesIO(p.read_bytes()), "result.zip")})
+    r = up(_result_zip(tmp_path / "ok.zip"))
+    assert r.status_code == 200 and r.get_json()["run_id"] == "kronos-ft-20261116-2130"
+    assert (models / "kronos-ft-20261116-2130" / "model.safetensors").exists()
+    assert up(tmp_path / "ok.zip").status_code == 400                                 # already here
+    assert up(_result_zip(tmp_path / "bad.zip", "nope")).status_code == 400
+
+
+def test_kit_trains_on_its_own_and_the_result_imports(tmp_path):
+    """Unzip the export somewhere with no agent code around, run the trainer
+    script as the laptop would, import what it wrote."""
+    import os
+    import subprocess
+    import sys
+    import zipfile
+    torch = pytest.importorskip("torch")
+    from src.finetune import ensure_kronos, kit
+    if not ensure_kronos():
+        pytest.skip("Kronos source not available")
+    from model import Kronos, KronosTokenizer
+    kronos_dir = next(p for p in sys.path if (os.path.isdir(os.path.join(p, "model")) and "ronos" in p))
+
+    torch.manual_seed(0)
+    KronosTokenizer(d_in=6, d_model=32, n_heads=2, ff_dim=64, n_enc_layers=1, n_dec_layers=1, ffn_dropout_p=0.0,
+                    attn_dropout_p=0.0, resid_dropout_p=0.0, s1_bits=4, s2_bits=4, beta=0.05, gamma0=1.0, gamma=1.1,
+                    zeta=0.05, group_size=4).save_pretrained(tmp_path / "tok")
+    Kronos(s1_bits=4, s2_bits=4, n_layers=1, d_model=32, n_heads=2, ff_dim=64, ffn_dropout_p=0.0, attn_dropout_p=0.0,
+           resid_dropout_p=0.0, token_dropout_p=0.0, learn_te=True).save_pretrained(tmp_path / "base")
+    root = tmp_path / "training"
+    for i, (broker, sym) in enumerate([("moomoo", "US.AAA"), ("zerodha", "NSE.BBB")]):
+        ftdata.merge_bars(ftdata.bars_path(broker, sym, "MIN_5", root), bars(500, seed=i))
+    cfg = {"lookback_bars": 30, "forecast_horizon": 5,
+           "kronos": {"model_name": str(tmp_path / "base"), "tokenizer_name": str(tmp_path / "tok"),
+                      "sample_count": 1, "max_context": 64},
+           "finetune": {"min_train_windows": 50, "eval_every": 4, "learning_rate": 1e-3}}
+    kit.build_export(cfg, tmp_path / "kit.zip", training_root=root)
+    laptop = tmp_path / "laptop"
+    zipfile.ZipFile(tmp_path / "kit.zip").extractall(laptop)
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env.update(KRONOS_PATH=kronos_dir, KRONOS_TRAINER_HOME=str(tmp_path / "home"))
+    p = subprocess.run([sys.executable, "train_kronos.py", "--cpu", "--steps", "8", "--batch", "4", "--keep"],
+                       cwd=laptop / "kronos-training-kit", env=env, capture_output=True, text=True, timeout=600)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "Held-out loss" in p.stdout
+    result = list((laptop / "kronos-training-kit").glob("kronos-ft-*-result.zip"))
+    assert len(result) == 1
+    rep = kit.import_run(result[0], tmp_path / "models")
+    assert rep["has_weights"] and rep["device"] == "CPU" and rep["symbols_by_broker"] == {"moomoo": 1, "zerodha": 1}
+    Kronos.from_pretrained(list_runs(tmp_path / "models")[0]["path"], local_files_only=True)
