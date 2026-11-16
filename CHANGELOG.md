@@ -15,6 +15,19 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added
+- **moomoo Market Movers as the screener's first stage** (moomoo US/HK; off
+  by default). `screener.sources` takes any of `top_gainers`, `top_losers`,
+  `hot_list`, `movers_5min` and `short_selling`; `per_source` (default 30)
+  sets how many symbols to take from each. The lists are read on every
+  screener refresh, merged with `candidate_symbols`, and then pass through
+  the same price / volume / ATR filters, stock score, patterns, Kronos and
+  risk rules as any other symbol. A list that can't be read is logged and
+  skipped; if none can be read and there is no fixed list, the agent keeps
+  its current symbols instead of scanning the whole market. The Stock
+  ranking card shows which list each symbol came from. Needs a recent
+  `moomoo-api` and OpenD (the ranking calls are in moomoo-api 10.12).
+
 ### Changed
 - **Dates and times are unambiguous.** Every screen used the browser's
   default style, which on many devices is US month/day with a 12-hour clock

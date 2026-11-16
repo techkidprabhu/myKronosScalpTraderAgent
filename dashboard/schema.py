@@ -64,6 +64,10 @@ SECTIONS = [
     {"id": "screener", "title": "Universe & screener", "fields": [
         ("screener.enabled", "Dynamic screener", "bool", {"help": "Off = the static symbols: list in config.yaml"}),
         ("screener.candidate_symbols", "Candidate symbols", "list", {"help": "e.g. US.AAPL, SG.D05 - IG uses epics"}),
+        ("screener.sources", "Start from moomoo Market Movers lists", "list", {"lowercase": True, "nullable": True,
+            "help": "moomoo US/HK only: top_gainers, top_losers, hot_list, movers_5min, short_selling. "
+                    "Merged with the candidate symbols above; empty = off"}),
+        ("screener.per_source", "Symbols taken from each list", "int", {"min": 1, "max": 200}),
         ("screener.min_price", "Min price", "float", {"min": 0, "unit": "money"}),
         ("screener.max_price", "Max price", "float", {"min": 0, "unit": "money"}),
         ("screener.min_avg_volume", "Min avg volume (per bar)", "int", {"min": 0}),
@@ -209,7 +213,8 @@ def coerce(key: str, value):
         return value
     if t == "list":
         items = value if isinstance(value, list) else str(value).split(",")
-        items = [str(x).strip().upper() for x in items if str(x).strip()]
+        case = str.lower if f.get("lowercase") else str.upper      # symbols upper, list names lower
+        items = [case(str(x).strip()) for x in items if str(x).strip()]
         if not items:
             raise ValueError(f"{f['label']}: at least one entry")
         return items
@@ -230,6 +235,12 @@ def cross_check(cfg: dict) -> list[str]:
     if (scr.get("min_atr_pct") is not None and scr.get("max_atr_pct") is not None
             and scr["min_atr_pct"] >= scr["max_atr_pct"]):
         errs.append("Screener min ATR % must be below max ATR %")
+    known = {"top_gainers", "top_losers", "hot_list", "movers_5min", "short_selling"}
+    bad = [s for s in (scr.get("sources") or []) if str(s).strip().lower() not in known]
+    if bad:
+        errs.append(f"Unknown market list(s): {', '.join(map(str, bad))} (use {', '.join(sorted(known))})")
+    if scr.get("sources") and not scr.get("enabled"):
+        errs.append("Market lists need the dynamic screener switched on")
     sc = scr.get("score") or {}
     if str(sc.get("mode") or "disabled") != "disabled":
         if not scr.get("enabled"):

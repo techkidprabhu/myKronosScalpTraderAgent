@@ -134,6 +134,19 @@ screener:
   # How often to re-run the screener and refresh the active symbol list.
   refresh_interval_minutes: 360
 
+  # moomoo "Market Movers" lists to start each screen from (moomoo, US/HK
+  # markets only - needs a recent moomoo-api and OpenD). The lists are read
+  # every refresh, merged with candidate_symbols above, and then go through
+  # the same price / volume / ATR filters, score, patterns, Kronos and risk
+  # rules as any other symbol. Empty = off.
+  #   top_gainers   today's biggest % gainers
+  #   top_losers    today's biggest % losers
+  #   hot_list      most traded / searched / in the news
+  #   movers_5min   biggest moves over the last 5 minutes
+  #   short_selling biggest change in short volume (daily data, max 35)
+  sources: []              # e.g. [top_gainers, movers_5min, hot_list]
+  per_source: 30
+
   # Stock score - ranks the candidates that pass the filters above on
   # three things swing traders look for, measured on the agent's own
   # timeframe bars:

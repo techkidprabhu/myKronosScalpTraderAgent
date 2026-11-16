@@ -1599,3 +1599,5 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .step-card.skipped .step-value { color: var(--text-secondary); }
 .step-card.rejected .step-value { color: var(--neg-text); }
 .step-card.passed .step-value { color: var(--pos-text); }
+.scr-table.scr-noscore th:nth-child(n+3):nth-child(-n+6),
+.scr-table.scr-noscore td:nth-child(n+3):nth-child(-n+6) { display: none; }
