@@ -114,6 +114,24 @@ class RiskManager:
                 self.state = RiskState(**{k: v for k, v in saved.items() if k in known})
                 logger.info("Restored risk state: %s", saved)
         self._roll_day()
+        self._recheck_halt()
+
+    def _recheck_halt(self):
+        """Keep the halt in step with the configured cap. A restart alone
+        never lifts it (today's loss is still over the cap), but if the cap
+        has been raised above today's loss, trading may resume - and if it
+        has been lowered below it, trading stops."""
+        over = self.state.daily_pnl <= -abs(self.config.max_daily_loss)
+        if self.state.trading_halted and not over:
+            logger.warning("Daily loss cap is now %.2f and today's P&L is %.2f - trading halt lifted",
+                           self.config.max_daily_loss, self.state.daily_pnl)
+            self.state.trading_halted = False
+            self._save()
+        elif over and not self.state.trading_halted:
+            logger.warning("Today's P&L %.2f is beyond the daily loss cap %.2f - trading halted",
+                           self.state.daily_pnl, self.config.max_daily_loss)
+            self.state.trading_halted = True
+            self._save()
 
     def _save(self):
         if self.store is not None:
@@ -155,7 +173,8 @@ class RiskManager:
         of the regular session, or None when that isn't known."""
         self._roll_day()
         if self.state.trading_halted:
-            return False, "daily loss cap breached"
+            return False, (f"daily loss cap breached (today {self.state.daily_pnl:+.2f}, "
+                           f"cap -{abs(self.config.max_daily_loss):.2f})")
 
         blocked = {_base(b) for b in (self.config.blocked_symbols or [])}
         if blocked and _base(epic) in blocked:

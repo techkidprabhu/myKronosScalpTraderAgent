@@ -15,6 +15,15 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Fixed
+- **Raising the daily loss cap did not lift a halt.** Once the cap was
+  breached, the "halted" flag was stored and trusted until the next trading
+  day, even after `risk.max_daily_loss` was raised above today's loss and the
+  agent restarted. The halt is now re-checked against the configured cap at
+  startup: a restart alone still never lifts it, a raised cap does, and a
+  lowered cap applies immediately. Today's loss keeps counting toward the new
+  cap. The rejection reason now shows today's P&L and the cap in force.
+
 ### Added
 - **Shadow mode for fine-tuned Kronos models** (`finetune.shadow_model`, off
   by default). "Shadow test" on a training run makes the agent hand every

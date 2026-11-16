@@ -149,3 +149,33 @@ def test_points_used_when_no_percent():
     cfg = RiskConfig(max_open_positions=3, max_stake_per_point=200, stop_loss_points=4.0,
                      take_profit_points=8.0, max_daily_loss=300, min_minutes_between_trades=60)
     assert RiskManager(cfg).bracket_distances(400.0) == (4.0, 8.0)
+
+
+def test_raising_the_cap_lifts_the_halt_but_a_restart_alone_does_not():
+    from src.risk import RiskConfig, RiskManager
+
+    class Store:
+        def __init__(self): self.kv = {}
+        def get_kv(self, k): return self.kv.get(k)
+        def set_kv(self, k, v): self.kv[k] = v
+
+    def cfg(cap):
+        return RiskConfig(max_open_positions=3, max_stake_per_point=100.0, stop_loss_points=1.0,
+                          take_profit_points=2.0, max_daily_loss=cap, min_minutes_between_trades=0)
+
+    store = Store()
+    rm = RiskManager(cfg(600), store=store, timezone="America/New_York")
+    rm.record_trade_result(-631.0)
+    assert rm.state.trading_halted
+    again = RiskManager(cfg(600), store=store, timezone="America/New_York")       # restart, same cap
+    assert again.state.trading_halted
+    assert "cap -600.00" in again.can_trade("US.AAPL", None, 0)[1]
+    raised = RiskManager(cfg(1000), store=store, timezone="America/New_York")     # cap raised, restart
+    assert not raised.state.trading_halted and raised.state.daily_pnl == -631.0   # the loss still counts
+    assert raised.can_trade("US.AAPL", None, 0)[0]
+    raised.record_trade_result(-400.0)                                             # -1031: over the new cap
+    assert raised.state.trading_halted
+    lowered = RiskManager(cfg(100), store=Store(), timezone="America/New_York")
+    lowered.state.daily_pnl = -150.0
+    lowered._recheck_halt()
+    assert lowered.state.trading_halted                                            # a lower cap applies at once
