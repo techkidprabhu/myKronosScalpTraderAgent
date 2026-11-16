@@ -9,6 +9,9 @@
 #   ./start.sh status       what is running
 #   ./start.sh logs         follow both logs (logs agent | logs dashboard)
 #   ./start.sh link         show the dashboard login link
+#   ./start.sh finetune check    can this computer fine-tune Kronos, and how long does a run take?
+#   ./start.sh finetune status   candles collected and training runs so far
+#   ./start.sh finetune train    start a fine-tuning run in the background (logs/finetune.log)
 #
 # Works from any folder. Uses the virtualenv that is active, or venv/ or
 # .venv/ in this folder or the one above it.
@@ -151,6 +154,14 @@ case "${1:-start}" in
     start_agent; a=$?; start_dashboard; d=$?; [ "$a" -eq 0 ] && [ "$d" -eq 0 ] ;;
   status)    status_one agent; status_one dashboard ;;
   link)      show_link ;;
+  finetune)
+    case "$target" in
+      check|status) exec "$PY" -m src.finetune "$target" ;;
+      train)
+        nohup "$PY" -u -m src.finetune train >> "$(log_file finetune)" 2>&1 &
+        echo "  fine-tuning started (PID $!) - follow it with: tail -f logs/finetune.log" ;;
+      *) echo "Usage: ./start.sh finetune check|status|train" >&2; exit 2 ;;
+    esac ;;
   logs)
     case "$target" in
       agent|dashboard) touch "$(log_file "$target")"; exec tail -n 40 -f "$(log_file "$target")" ;;
@@ -158,6 +169,6 @@ case "${1:-start}" in
            exec tail -n 20 -f "$(log_file agent)" "$(log_file dashboard)" ;;
       *) echo "Usage: ./start.sh logs [agent|dashboard]" >&2; exit 2 ;;
     esac ;;
-  -h|--help|help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h|--help|help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) echo "Unknown command: $1" >&2; sed -n '4,12p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac

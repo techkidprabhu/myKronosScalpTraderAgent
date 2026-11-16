@@ -1601,3 +1601,16 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .step-card.passed .step-value { color: var(--pos-text); }
 .scr-table.scr-noscore th:nth-child(n+3):nth-child(-n+6),
 .scr-table.scr-noscore td:nth-child(n+3):nth-child(-n+6) { display: none; }
+
+/* Kronos self-learning */
+.ft-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 20px; }
+.ft-grid > div { min-width: 0; }
+.ft-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.ft-bar { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; margin: 8px 0; }
+.ft-bar i { display: block; height: 100%; background: var(--accent-blue); border-radius: 4px; transition: width .4s; }
+.ft-table { min-width: 760px; }
+.ft-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); font-weight: 600; padding: 4px; border-bottom: 1px solid var(--hairline); }
+.ft-table td { white-space: normal !important; }
+#ft-inventory { overflow-x: auto; }
+#ft-inventory .cc-mini-table td { white-space: nowrap; }
+#ft-card .cc-card-head { flex-wrap: wrap; gap: 4px 12px; }

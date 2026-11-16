@@ -23,6 +23,7 @@ connection (bounded connect, health ping, automatic reconnect) and
 reports broker positions the agent doesn't manage.
 """
 import logging
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -990,6 +991,54 @@ class Orchestrator:
             return "warmup", nxt
         return "sleeping", nxt
 
+    def _finetune_tick(self, old: str | None, phase: str) -> None:
+        """Save candles for fine-tuning (finetune.enabled): when this market
+        closes, the first time there is nothing saved yet, and when the
+        dashboard asks. Runs in the background; never touches trading."""
+        from src import finetune
+        from src.finetune import data as ftdata
+        ft = finetune.settings(self.config)
+        name = self.broker_name or getattr(self.broker, "name", "broker")
+        requested = 0.0
+        try:
+            requested = finetune.COLLECT_REQUEST.stat().st_mtime
+        except OSError:
+            pass
+        last = getattr(self, "_ft_last_collect", None)
+        if last is None:                               # first tick after start
+            self._ft_last_collect = last = time.time() if (finetune.TRAINING_DIR / ftdata._safe(name)).exists() else 0.0
+        on_request = requested > last
+        if not on_request:
+            if not ft["enabled"]:
+                return
+            closed_now = ft["collect_on_close"] and phase == "sleeping" and old in ("active", "always")
+            if not (closed_now or (last == 0.0 and phase in ("active", "always", "sleeping"))):
+                return
+        thread = getattr(self, "_ft_thread", None)
+        if thread is not None and thread.is_alive():
+            return
+        if not self.broker_ok:
+            return
+        self._ft_last_collect = time.time()
+        timeframe = self.config.get("timeframe")
+        symbols = list(self.workers)
+        symbols += ftdata.symbols_from_audit(self.audit_log.db_path)
+        folder = finetune.TRAINING_DIR / ftdata._safe(name)
+        known = {ftdata._safe(s): s for s in symbols}
+        symbols += [f.stem.split("__")[0] for f in folder.glob(f"*__{ftdata._safe(timeframe)}.csv")
+                    if f.stem.split("__")[0] not in known]
+        market_open = phase in ("active", "always", "warmup")
+
+        def work():
+            try:
+                ftdata.collect(self.broker, name, timeframe, symbols, int(ft["bars_per_symbol"]),
+                               int(ft["max_symbols"]), drop_last=market_open)
+            except Exception:
+                logger.exception("Collecting fine-tuning candles failed")
+
+        self._ft_thread = threading.Thread(target=work, name=f"finetune-collect-{name}", daemon=True)
+        self._ft_thread.start()
+
     def update_phase(self, now: datetime | None = None) -> str:
         phase, nxt = self.compute_phase(now)
         old, self.phase = self.phase, phase
@@ -1009,6 +1058,10 @@ class Orchestrator:
                     self.reporter.send(f"⏰ {esc(name)} opens soon - agent warming up")
                 elif phase == "sleeping" and old in ("active", "always"):
                     self.reporter.send(f"🌙 <b>{esc(name)} closed</b> - sleeping until {esc(when)}")
+        try:
+            self._finetune_tick(old, phase)
+        except Exception:
+            logger.exception("Fine-tuning data collection check failed")
         self.audit_log.set_kv(PHASE_KEY, {
             "phase": phase, "exchange": name, "market": self.broker.market,
             "next_open": nxt, "ts": time.time(), "follow_market": self.follow_market,

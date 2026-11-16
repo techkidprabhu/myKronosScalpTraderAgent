@@ -132,6 +132,22 @@ def apply_changes(text: str, scope: str, changes: dict, resets: list | None = No
     return new_text, applied
 
 
+def set_kronos_model(text: str, model_name: str, tokenizer_name: str) -> str:
+    """Point kronos.model_name / tokenizer_name at another model, keeping
+    comments. These are deliberately not in the general settings form; only
+    the self-learning screen changes them, to a model it trained or back to
+    the original."""
+    y = _yaml()
+    doc = y.load(text) or CommentedMap()
+    _set(doc, ["kronos", "model_name"], str(model_name))
+    _set(doc, ["kronos", "tokenizer_name"], str(tokenizer_name))
+    out = io.StringIO()
+    y.dump(doc, out)
+    new_text = out.getvalue()
+    yaml.safe_load(new_text)
+    return new_text
+
+
 def validate_text(text: str, scope: str, applied: dict):
     try:
         cfg = yaml.safe_load(text) or {}

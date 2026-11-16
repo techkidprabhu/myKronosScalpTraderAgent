@@ -110,6 +110,7 @@ _POSITION_MIGRATIONS = {
 class AuditLog:
     def __init__(self, db_path: str = "data/audit.db"):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        self.db_path = str(db_path)
         self.conn = sqlite3.connect(db_path)
         # WAL mode lets a separate read-only process (e.g. the dashboard)
         # query this database concurrently without lock contention.

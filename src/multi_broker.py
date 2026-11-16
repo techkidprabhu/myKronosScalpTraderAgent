@@ -93,7 +93,16 @@ class MultiBrokerRunner:
                                  spec.name, RESTART_DELAY_SECONDS)
                 time.sleep(RESTART_DELAY_SECONDS)
 
+    def _phases(self) -> list:
+        with self._lock:
+            return [getattr(o, "phase", None) for o in self.orchestrators.values()]
+
     def run_forever(self):
+        try:
+            from src.finetune import scheduler as ft_scheduler
+            ft_scheduler.start(self.config, self._phases)
+        except Exception:  # noqa: BLE001
+            logger.exception("Could not start the fine-tuning scheduler")
         if len(self.specs) == 1:
             spec = self.specs[0]
             orch = build_orchestrator(spec, self.kronos, multi=False)

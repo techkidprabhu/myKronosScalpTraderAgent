@@ -20,6 +20,29 @@ kronos:
   top_p: 0.9
   verbose: false
 
+# Self-learning: fine-tune the offline Kronos model on your own markets.
+# The agent saves the candles of every symbol it screened, decided on or
+# traded (all brokers) at each market close into data/training/. A training
+# run then follows the Kronos repository's fine-tuning method on those
+# candles, with extra weight on the bars where the agent asked Kronos for a
+# verdict (winning and losing signals alike), and scores the result against
+# the original on the most recent candles, which it never trains on.
+# A new model is NEVER used for trading by itself: pick it on the dashboard
+# (Kronos Model Lab -> Self-learning) or set kronos.model_name to its folder.
+#   ./start.sh finetune check     can this computer do it, and how long?
+#   ./start.sh finetune train     run now
+finetune:
+  enabled: false           # collect candles automatically (and train on schedule, if set)
+  collect_on_close: true
+  bars_per_symbol: 1500
+  train_time: ""           # local "HH:MM", e.g. "05:30"; empty = only when you start it
+  train_days: [sat]        # scheduled runs start only while every market is closed
+  max_steps: 1500
+  max_minutes: 240         # hard time limit for one run
+  signal_fraction: 0.3     # share of each batch taken from the agent's own signal bars
+  val_fraction: 0.15       # most recent share of candles held out for the comparison
+  train_tokenizer: false   # also fine-tune the tokenizer first; needs far more data
+
 # How many closed bars to keep in the rolling lookback window fed to
 # Kronos. Kronos-small/base support up to 512 context bars.
 lookback_bars: 200
