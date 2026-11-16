@@ -779,6 +779,8 @@
             </div>
           </div>
         </div>
+        <h3 class="cc-sub-h" style="margin-top:16px">Shadow test <span class="cc-muted" style="text-transform:none;letter-spacing:0" id="ft-shadow-model"></span></h3>
+        <div id="ft-shadow"></div>
         <h3 class="cc-sub-h" style="margin-top:16px">Training runs</h3>
         <div class="scr-wrap"><table class="cc-mini-table ft-table">
           <thead><tr>
@@ -4009,6 +4011,25 @@
           el.innerHTML = `<div class="cc-muted">No run yet. A run takes up to ${d.max_minutes} min (${d.max_steps} steps) and is best started while markets are closed.</div>`;
         }
         document.getElementById("ft-btn-train").disabled = running;
+        const sh = d.shadow || {}, shadowModel = sh.model, rep = sh.report || {};
+        document.getElementById("ft-shadow-model").textContent = shadowModel ? `· ${shadowModel} runs beside the trading model and cannot affect trades` : "";
+        const pc = x => x === null || x === undefined ? "not scored yet" : x + "% right";
+        const line = (label, s) => `<tr><td>${label}</td><td class="mono">${s.confirmed ?? s.signals} signals</td><td class="mono">${pc(s.right_pct)}</td><td class="cc-muted">${s.scored} scored</td></tr>`;
+        document.getElementById("ft-shadow").innerHTML = !shadowModel && !rep.signals
+          ? `<div class="cc-muted">Off. Pick "Shadow test" on a kept run: the agent then asks that model too on every signal and records its answer, while trades keep following the current model.</div>`
+          : !rep.signals
+            ? `<div class="cc-muted">Set up, no signals recorded yet. It starts after the agent is restarted and the next signal reaches Kronos.</div>
+               <div class="ft-actions"><button type="button" class="btn btn-sm" onclick="ftShadow('off')">Stop shadow test</button></div>`
+            : `<div>${rep.signals} signals since ${fmtDateTime(rep.since)} · the two models agreed on <b>${rep.agree_pct}%</b></div>
+               <table class="cc-mini-table" style="margin-top:6px"><tbody>
+                 ${line("Trading model confirmed", rep.original)}
+                 ${line("Shadow model would confirm", rep.shadow)}
+                 ${line("Only the trading model confirmed", rep.only_original)}
+                 ${line("Only the shadow model would confirm", rep.only_shadow)}
+               </tbody></table>
+               <div class="cc-muted" style="margin-top:6px">"Right" = the price moved in the signal's direction over the forecast horizon, read from the collected candles${rep.scored < rep.signals ? ` (${rep.signals - rep.scored} signals can't be scored yet: their later candles aren't collected)` : ""}. Small counts are mostly chance.</div>
+               ${(rep.recent_disagreements || []).length ? `<details style="margin-top:8px"><summary class="cc-muted">Latest disagreements</summary><table class="cc-mini-table"><tbody>${rep.recent_disagreements.map(x => `<tr><td class="cc-muted">${fmtDateTime(x.ts)}</td><td class="mono">${esc(x.symbol)}</td><td>${esc(x.direction)}</td><td class="mono">trading ${Math.round(x.main_conf * 100)}% ${x.main_pass ? "✓" : "✗"}</td><td class="mono">shadow ${Math.round(x.shadow_conf * 100)}% ${x.shadow_pass ? "✓" : "✗"}</td><td>${x.right === null ? '<span class="cc-muted">not scored</span>' : x.right ? "price went with the signal" : "price went against it"}</td></tr>`).join("")}</tbody></table></details>` : ""}
+               ${shadowModel ? `<div class="ft-actions"><button type="button" class="btn btn-sm" onclick="ftShadow('off')">Stop shadow test</button></div>` : ""}`;
         document.getElementById("ft-runs").innerHTML = (d.runs || []).length ? d.runs.map(r => {
           const o = r.original || {}, f = r.fine_tuned || {}, v = FT_VERDICT[r.verdict] || [r.verdict, ""];
           const inUse = d.in_use === r.run_id;
@@ -4020,7 +4041,8 @@
             <td class="mono">${o.val_loss ?? "–"} → ${f.val_loss ?? "–"}</td>
             <td class="mono">${pct(o.direction_hit_pct)} → ${pct(f.direction_hit_pct)}<br><span class="cc-muted">${f.forecasts || 0} forecasts</span></td>
             <td><b class="${v[1]}">${esc(v[0])}</b><br><span class="cc-muted">${esc(r.reason || "")}</span></td>
-            <td>${inUse ? `<span class="pc-protected">In use</span>` : r.has_weights ? `<button type="button" class="btn btn-sm" onclick="ftUse('${esc(r.run_id)}')">Use this model</button>` : `<span class="cc-muted">Not kept</span>`}</td>
+            <td class="ft-run-actions">${inUse ? `<span class="pc-protected">In use</span>` : r.has_weights ? `<button type="button" class="btn btn-sm" onclick="ftUse('${esc(r.run_id)}')">Use this model</button>` : `<span class="cc-muted">Not kept</span>`}
+              ${shadowModel === r.run_id ? `<span class="pc-protected">Shadow testing</span>` : r.has_weights && !inUse ? `<button type="button" class="btn btn-sm" onclick="ftShadow('${esc(r.run_id)}')">Shadow test</button>` : ""}</td>
           </tr>`;
         }).join("") + (d.in_use ? `<tr><td colspan="5" class="cc-muted">Original model: ${esc(d.base_model)}</td><td><button type="button" class="btn btn-sm" onclick="ftUse('original')">Back to original</button></td></tr>` : "")
           : `<tr><td colspan="6" class="cc-empty">No training runs yet.</td></tr>`;
@@ -4044,6 +4066,13 @@
       if (!confirm(`Start a fine-tuning run now? It uses most of this computer's CPU for up to ${ftData ? ftData.max_minutes : 240} minutes.` +
           (open ? "\n\nA market is open: the agent's Kronos checks will be slower while it runs." : ""))) return;
       ftAction("train");
+    }
+
+    function ftShadow(runId) {
+      const msg = runId === "off" ? "Stop the shadow test?"
+        : `Shadow test ${runId}?\n\nThe agent will ask this model as well on every signal and record its answer. Trades keep following the current model. Each Kronos check uses more CPU while it runs.`;
+      if (!confirm(msg + "\n\nIt takes effect after you restart the agent.")) return;
+      ftAction("shadow", { run_id: runId });
     }
 
     function ftUse(runId) {

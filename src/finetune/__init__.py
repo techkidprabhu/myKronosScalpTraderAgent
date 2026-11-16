@@ -58,6 +58,8 @@ DEFAULTS = {
     "train_tokenizer": False,    # also fine-tune the tokenizer first (official step 1) - needs far more data
     "tokenizer_steps": 300,
     "threads": None,             # CPU threads; None = all cores
+    "shadow_model": None,        # model folder checked alongside the trading model; never affects trades
+    "shadow_tokenizer": None,
     "keep_runs": 3,              # model folders kept (the one in use is always kept)
     "seed": 7,
 }

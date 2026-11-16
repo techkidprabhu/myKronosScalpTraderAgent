@@ -1614,3 +1614,5 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 #ft-inventory { overflow-x: auto; }
 #ft-inventory .cc-mini-table td { white-space: nowrap; }
 #ft-card .cc-card-head { flex-wrap: wrap; gap: 4px 12px; }
+.ft-run-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+#ft-shadow { overflow-x: auto; }

@@ -269,3 +269,69 @@ def test_dashboard_overview_and_model_switch(tmp_path, monkeypatch):
     assert c.get("/api/finetune", headers=hdr).get_json()["in_use"] == run.name
     assert c.post("/api/finetune/use", json={"run_id": "original"}, headers=hdr).get_json()["success"]
     assert "model_name: NeoQuasar/Kronos-base" in cfg_path.read_text()
+
+
+# ---------------------------------------------------------------- shadow mode
+
+class FakeAgent:
+    def __init__(self, answer):
+        self.answer, self.calls = answer, 0
+
+    def confirm_direction(self, df, direction, horizon):
+        self.calls += 1
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+def test_shadow_records_without_touching_the_verdict(tmp_path):
+    from src.finetune.shadow import ShadowRunner, report
+    from src.multi_broker import SharedKronos
+    t0 = 1_780_000_000_000
+    root = tmp_path / "training"
+    df = bars(200, start_ms=t0)
+    df.loc[52:, "close"] = df.loc[50, "close"] * 1.05              # price is higher 5 bars after bar 50
+    ftdata.merge_bars(ftdata.bars_path("moomoo", "US.AAA", "MIN_5", root), df)
+    main, shadow_agent = FakeAgent((True, 0.8)), FakeAgent((True, 0.4))
+    runner = ShadowRunner(shadow_agent, "kronos-ft-x", tmp_path / "shadow.db")
+    k = SharedKronos(main, runner)
+    hist = df.iloc[:51]
+    assert k.confirm_direction(hist, "BUY", 5) == (True, 0.8)       # the trading verdict is the original's
+    kw = dict(broker="moomoo", symbol="US.AAA", timeframe="MIN_5", last_close=float(hist["close"].iloc[-1]), threshold=0.6)
+    import unittest.mock as um
+    with um.patch("time.time", return_value=(t0 + 50 * MIN5) / 1000 + 20):
+        assert k.shadow_submit(hist, "BUY", 5, main_confirmed=True, main_confidence=0.8, **kw)
+        assert k.shadow_submit(hist, "SELL", 5, main_confirmed=True, main_confidence=0.2, **kw)
+    runner.q.join()
+    assert shadow_agent.calls == 2 and main.calls == 1
+    rep = report(tmp_path / "shadow.db", root, days=10 ** 5)
+    assert rep["signals"] == 2 and rep["agree_pct"] == 50.0 and rep["scored"] == 2
+    assert rep["original"] == {"confirmed": 1, "scored": 1, "right_pct": 100.0}     # BUY passed, price rose
+    assert rep["shadow"]["confirmed"] == 0                                          # 0.4 is under the threshold
+    assert rep["only_original"]["signals"] == 1 and rep["recent_disagreements"][0]["right"] is True
+
+
+def test_shadow_failures_and_off_state_are_harmless(tmp_path):
+    from src.finetune.shadow import ShadowRunner, build, report
+    from src.multi_broker import SharedKronos
+    assert build({}) is None and build({"finetune": {"shadow_model": "/no/such/model"}, "kronos": {"local_files_only": True}}) is None
+    k = SharedKronos(FakeAgent((False, 0.1)))
+    assert k.shadow_submit(None, "BUY", 5) is False                  # shadow off
+    runner = ShadowRunner(FakeAgent(RuntimeError("boom")), "m", tmp_path / "s.db")
+    assert runner.submit(bars(10), "BUY", 5, broker="b", symbol="s", timeframe="t", last_close=1.0, threshold=0.6,
+                         main_confirmed=True, main_confidence=0.9)
+    runner.q.join()                                                  # the error stays in the shadow thread
+    assert report(tmp_path / "s.db")["signals"] == 0
+    assert report(tmp_path / "missing.db") == {"signals": 0, "model": None}
+
+
+def test_shadow_model_switch_keeps_the_config_intact():
+    import yaml
+    from dashboard.config_writer import set_shadow_model
+    text = "# top\nkronos:\n  model_name: NeoQuasar/Kronos-base  # original\nfinetune:\n  enabled: true\n"
+    on = set_shadow_model(text, "/m/kronos-ft-1")
+    assert "# top" in on and "# original" in on
+    cfg = yaml.safe_load(on)
+    assert cfg["finetune"] == {"enabled": True, "shadow_model": "/m/kronos-ft-1", "shadow_tokenizer": None}
+    assert cfg["kronos"]["model_name"] == "NeoQuasar/Kronos-base"   # the trading model is not touched
+    assert yaml.safe_load(set_shadow_model(on, None))["finetune"]["shadow_model"] is None

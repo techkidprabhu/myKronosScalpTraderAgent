@@ -33,9 +33,15 @@ class SharedKronos:
     """Thread-safe front for one KronosAgent. The model and its use are
     unchanged - this only stops two broker threads calling it at once."""
 
-    def __init__(self, agent):
+    def __init__(self, agent, shadow=None):
         self._agent = agent
         self._lock = threading.Lock()
+        self.shadow = shadow          # finetune.shadow.ShadowRunner or None
+
+    def shadow_submit(self, *args, **kwargs) -> bool:
+        """Hand the same candles to the shadow model (background, never
+        blocks, never affects the verdict). False when shadow mode is off."""
+        return bool(self.shadow and self.shadow.submit(*args, **kwargs))
 
     def confirm_direction(self, *args, **kwargs):
         with self._lock:
@@ -77,7 +83,13 @@ class MultiBrokerRunner:
                                "(set kronos: at the top level)", spec.name)
         logger.info("Loading the shared offline Kronos model for %d broker(s): %s",
                     len(self.specs), ", ".join(s.name for s in self.specs))
-        self.kronos = SharedKronos(KronosAgent(**kronos_cfg))
+        shadow = None
+        try:
+            from src.finetune import shadow as ft_shadow
+            shadow = ft_shadow.build(config)
+        except Exception:  # noqa: BLE001
+            logger.exception("Shadow mode could not start")
+        self.kronos = SharedKronos(KronosAgent(**kronos_cfg), shadow)
 
     def _run_one(self, spec: BrokerSpec, multi: bool):
         """Build and run one broker's loop; if it dies, rebuild it after a

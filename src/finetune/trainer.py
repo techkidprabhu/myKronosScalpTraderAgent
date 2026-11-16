@@ -215,9 +215,10 @@ def verdict(base: dict, tuned: dict, same_tokenizer: bool = True) -> tuple[str, 
 def prune_runs(config: dict, models_dir: Path | None = None) -> None:
     keep = int(settings(config)["keep_runs"])
     in_use = str((config.get("kronos") or {}).get("model_name") or "")
+    shadowed = str(settings(config).get("shadow_model") or "")
     with_weights = [r for r in list_runs(models_dir) if r["has_weights"]]
     for r in with_weights[keep:]:
-        if os.path.abspath(r["path"]) == os.path.abspath(in_use):
+        if os.path.abspath(r["path"]) in (os.path.abspath(in_use), os.path.abspath(shadowed) if shadowed else None):
             continue
         for name in ("model.safetensors", "tokenizer"):
             p = Path(r["path"]) / name

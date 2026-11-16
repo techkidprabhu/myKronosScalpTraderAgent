@@ -1388,7 +1388,19 @@ def finetune_overview():
         "lookback": lookback, "predict": predict, "base_model": base_model, "in_use": _finetune_in_use(cfg),
         "model_name": (cfg.get("kronos") or {}).get("model_name"),
         "inventory": _ft_inventory_cache["rows"], "status": trainer.read_status(), "runs": runs,
+        "shadow": _shadow_summary(ft),
     })
+
+
+def _shadow_summary(ft: dict) -> dict:
+    from src.finetune import shadow as ft_shadow
+    name = Path(str(ft.get("shadow_model"))).name if ft.get("shadow_model") else None
+    try:
+        rep = ft_shadow.report(model=name)
+    except Exception:  # noqa: BLE001
+        logger.exception("Shadow report failed")
+        rep = {"signals": 0}
+    return {"model": name, "report": rep}
 
 
 @app.route("/api/finetune/<action>", methods=["POST"])
@@ -1407,6 +1419,24 @@ def finetune_action(action):
             return jsonify({"error": str(exc)}), 409
         logger.info("Dashboard started Kronos fine-tuning (pid %s)", pid)
         return jsonify({"success": True, "message": "Training started. Progress shows here; details in logs/finetune.log."})
+    if action == "shadow":
+        run_id = str((request.get_json(silent=True) or {}).get("run_id") or "")
+        if run_id == "off":
+            model = tok = None
+        else:
+            run = next((r for r in trainer.list_runs() if r["run_id"] == run_id), None)
+            if run is None or not run["has_weights"]:
+                return jsonify({"error": "That run has no saved model"}), 404
+            model = run["path"]
+            tok = run.get("tokenizer") if run.get("tokenizer_tuned") else None
+        try:
+            config_writer.write_config(CONFIG_PATH, config_writer.set_shadow_model(CONFIG_PATH.read_text(), model, tok))
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Changing the shadow model failed")
+            return jsonify({"error": str(exc)}), 400
+        logger.info("Dashboard set the shadow model to %s", model)
+        return jsonify({"success": True, "message": ("Shadow test set up" if model else "Shadow test stopped") +
+                        " in config.yaml (backup kept). Restart the agent to apply."})
     if action == "use":
         data = request.get_json(silent=True) or {}
         run_id = str(data.get("run_id") or "")
