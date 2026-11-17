@@ -1091,6 +1091,7 @@
             <li>Stop and target: fixed price distance, % of price, or a multiple of ATR (target as a multiple of the stop, R).</li>
             <li>Size: fixed quantity, or what risks a set amount at the stop, capped by the account limits and rounded to the lot size.</li>
             <li>Blocks the trade at the daily loss cap, at the open-position limit, during a symbol's cooldown, past the daily trade limit, outside the entry window, below the minimum reward:risk, or for blocked symbols.</li>
+            <li>Per stock: once a stock has lost a set amount, or had a set number of losing trades today, it isn't traded again that day; the others carry on.</li>
             <li>Never trades a symbol you already hold yourself.</li>
           </ul>
           <div class="strat-section-title">Your settings now</div>
@@ -1151,7 +1152,7 @@
           <p class="strat-desc">A separate, faster loop watches the agent's open trades. It moves stops up, closes trades on time and leaves your own holdings alone.</p>
           <div class="strat-section-title">How it works</div>
           <ul class="strat-logic-list">
-            <li>Trailing stop: once a trade is far enough in profit, the stop follows the best price at a set distance (or a multiple of ATR), and only ever tightens.</li>
+            <li>Trailing stop: once a trade is far enough in profit, the stop follows the best price at a set distance (a price amount, a % of price, or a multiple of ATR), and only ever tightens.</li>
             <li>Intraday mode: every agent trade is closed a set number of minutes before the close, win or lose, and anything left from yesterday is closed at the open.</li>
             <li>Your holdings: positions the agent didn't open are shown but never sold or traded by it.</li>
             <li>A position the broker no longer holds is marked closed instead of being watched forever.</li>
@@ -1168,7 +1169,7 @@
           <div class="st-files">config.yaml: <b>trailing_stop:</b>, <b>risk.flat_by_minutes_before_close</b>, <b>unmanaged_positions:</b><br>Code: src/trailing_stop.py, src/orchestrator.py · Seen on: Positions &amp; Trailing Stop</div>
           <div class="strat-upgrade-box">
             <div class="strat-upgrade-title">How to tune it</div>
-            <div class="strat-upgrade-body">Use <span class="strat-upgrade-code">trailing_stop.use_atr: true</span> so the trail scales with each stock's volatility. Leave <span class="strat-upgrade-code">flat_by_minutes_before_close</span> empty for overnight swing trades.</div>
+            <div class="strat-upgrade-body">With a % stop and target, use <span class="strat-upgrade-code">trailing_stop.trigger_pct</span> and <span class="strat-upgrade-code">trail_pct</span> (e.g. 0.5 and 0.4) so the trail behaves the same on cheap and expensive stocks; <span class="strat-upgrade-code">use_atr: true</span> scales it with volatility instead. Leave <span class="strat-upgrade-code">flat_by_minutes_before_close</span> empty for overnight swing trades.</div>
           </div>
         </article>
 
@@ -2587,7 +2588,8 @@
     const RM_KEYS = [
       "risk.stop_loss_pct", "risk.take_profit_pct", "risk.stop_loss_points", "risk.take_profit_points",
       "trailing_stop.enabled", "trailing_stop.trigger_points", "trailing_stop.trail_distance",
-      "trailing_stop.use_atr", "trailing_stop.atr_multiplier",
+      "trailing_stop.use_atr", "trailing_stop.atr_multiplier", "trailing_stop.trigger_pct", "trailing_stop.trail_pct",
+      "risk.max_symbol_loss_per_day", "risk.max_losses_per_symbol_per_day",
       "risk.max_open_positions", "risk.max_daily_loss", "risk.min_minutes_between_trades",
       "default_quantity", "risk.max_stake_per_point", "risk.lot_size", "risk.allow_short",
       // Day-trader rules (off when empty)
@@ -2682,8 +2684,10 @@
       let T = tpPct != null ? P * tpPct / 100 : rmNumOr(c["risk.take_profit_points"], 2);
       if (rMult) T = S * rMult;
       const en = !!c["trailing_stop.enabled"], atr = !!c["trailing_stop.use_atr"];
-      const G = rmNumOr(c["trailing_stop.trigger_points"], 0);
-      const D = atr ? atrEst * rmNumOr(c["trailing_stop.atr_multiplier"], 3) : rmNumOr(c["trailing_stop.trail_distance"], 0);
+      const trigPct = c["trailing_stop.trigger_pct"], trailPct = c["trailing_stop.trail_pct"];
+      const G = trigPct ? P * trigPct / 100 : rmNumOr(c["trailing_stop.trigger_points"], 0);
+      const D = atr ? atrEst * rmNumOr(c["trailing_stop.atr_multiplier"], 3)
+                    : trailPct ? P * trailPct / 100 : rmNumOr(c["trailing_stop.trail_distance"], 0);
       const lot = Math.max(1, rmNumOr(c["risk.lot_size"], 1));
       const maxQ = rmNumOr(c["risk.max_stake_per_point"], 1);
       const defQ = rmNumOr(c["default_quantity"], 1);
@@ -2692,7 +2696,7 @@
                            : { "configured quantity": defQ, "max quantity per position": maxQ };
       const [sizedBy, raw] = Object.entries(caps).reduce((a, b) => (b[1] < a[1] ? b : a));
       const qty = Math.max(0, Math.floor(raw / lot) * lot);
-      return { P, S: Math.max(S, 1e-9), T: Math.max(T, 1e-9), G, D: Math.max(D, 0), en, atr, atrEst, liveAtr,
+      return { P, S: Math.max(S, 1e-9), T: Math.max(T, 1e-9), G, D: Math.max(D, 0), en, atr, atrEst, liveAtr, trigPct, trailPct,
                atrK, rMult, stopPct: atrK ? null : stopPct, tpPct: rMult ? null : tpPct, qty, defQ, maxQ, lot,
                maxLoss, sizedBy, d: RM.dir === "BUY" ? 1 : -1 };
     }
@@ -3111,10 +3115,12 @@
         if (m.stopPct != null) c["risk.stop_loss_pct"] = rmClamp("risk.stop_loss_pct", rmRound(S / m.P * 100, 2));
         else c["risk.stop_loss_points"] = rmClamp("risk.stop_loss_points", rmRound(S, dp));
       } else if (k === "trigger") {
-        c["trailing_stop.trigger_points"] = rmClamp("trailing_stop.trigger_points", rmRound(Math.max(0, u), dp));
+        if (m.trigPct) c["trailing_stop.trigger_pct"] = rmClamp("trailing_stop.trigger_pct", rmRound(Math.max(0.01, u / m.P * 100), 2));
+        else c["trailing_stop.trigger_points"] = rmClamp("trailing_stop.trigger_points", rmRound(Math.max(0, u), dp));
       } else if (k === "trail") {
         const D = Math.max(RM.drag.peak - u, m.P * 0.0005);
         if (m.atr) c["trailing_stop.atr_multiplier"] = rmClamp("trailing_stop.atr_multiplier", rmRound(D / m.atrEst, 1));
+        else if (m.trailPct) c["trailing_stop.trail_pct"] = rmClamp("trailing_stop.trail_pct", rmRound(D / m.P * 100, 2));
         else c["trailing_stop.trail_distance"] = rmClamp("trailing_stop.trail_distance", rmRound(D, dp));
       }
       rmSync();
@@ -3150,8 +3156,10 @@
         `<div class="rm-field" data-field="risk.stop_loss_points"><span>Stop loss ${rmModeSelect("stop")}</span><span id="rm-slot-stop"></span></div>` +
         `<div class="rm-field" data-field="risk.take_profit_points"><span>Take profit ${rmModeSelect("target")}</span><span id="rm-slot-target"></span></div>` +
         rmField("trailing_stop.enabled", "Trailing stop on", "Moves the stop up behind the best price once in profit") +
-        rmField("trailing_stop.trigger_points", "Trailing starts after profit of", "price units") +
-        rmField("trailing_stop.trail_distance", "Trail distance", "price units behind the best price") +
+        rmField("trailing_stop.trigger_pct", "Trailing starts after profit of (%)", "% of entry; empty = use price units below") +
+        rmField("trailing_stop.trail_pct", "Trail distance (%)", "% of the best price; empty = use price units below") +
+        rmField("trailing_stop.trigger_points", "Trailing starts after profit of", "price units (when % is empty)") +
+        rmField("trailing_stop.trail_distance", "Trail distance", "price units behind the best price (when % is empty)") +
         rmField("trailing_stop.use_atr", "Trail distance from ATR", "Adapts the trail to volatility") +
         rmField("trailing_stop.atr_multiplier", "ATR multiplier", "");
       document.getElementById("rm-daily-fields").innerHTML =
@@ -3162,6 +3170,8 @@
         rmField("risk.max_loss_per_trade", "Max loss per trade", `${CCY} lost if the stop fills; sets the quantity`) +
         rmField("risk.min_reward_risk", "Min reward:risk", "skip trades below, e.g. 1 or 2") +
         rmField("risk.max_trades_per_day", "Max new trades per day", "") +
+        rmField("risk.max_symbol_loss_per_day", "Per stock: stop after losing", `${CCY} lost in one stock today; other stocks keep trading`) +
+        rmField("risk.max_losses_per_symbol_per_day", "Per stock: stop after N losing trades", "in one stock today") +
         rmField("risk.daily_loss_includes_open_risk", "Daily cap counts open risk", "closed P&L + every open stop + the new trade") +
         rmField("risk.stop_atr_multiple", "Stop = ATR ×", "replaces the stop above") +
         rmField("risk.atr_period", "ATR period", "bars (default 14)") +
@@ -3265,8 +3275,9 @@
         if (help) { help.dataset.orig = help.dataset.orig || help.textContent; help.textContent = over ? txt : help.dataset.orig; }
       });
       const show = (key, on) => { const f = panel.querySelector(`.rm-field[data-field="${key}"]`); if (f) f.style.display = on ? "" : "none"; };
-      show("trailing_stop.trigger_points", en); show("trailing_stop.use_atr", en);
-      show("trailing_stop.trail_distance", en && !atr); show("trailing_stop.atr_multiplier", en && atr);
+      show("trailing_stop.trigger_pct", en); show("trailing_stop.trail_pct", en && !atr);
+      show("trailing_stop.trigger_points", en && !c["trailing_stop.trigger_pct"]); show("trailing_stop.use_atr", en);
+      show("trailing_stop.trail_distance", en && !atr && !c["trailing_stop.trail_pct"]); show("trailing_stop.atr_multiplier", en && atr);
 
       if (RM.mode === "live") rmLiveApply();
       const refEl = document.getElementById("rm-ref");
@@ -3352,6 +3363,7 @@
     function rmDayTrader(m) {
       const c = RM.cur, st = RM.state || {};
       const on = ["risk.max_loss_per_trade", "risk.min_reward_risk", "risk.max_trades_per_day", "risk.stop_atr_multiple",
+                  "risk.max_symbol_loss_per_day", "risk.max_losses_per_symbol_per_day",
                   "risk.target_r_multiple", "risk.min_stop_pct", "risk.no_entries_first_minutes", "risk.no_entries_last_minutes",
                   "risk.flat_by_minutes_before_close", "risk.max_position_pct", "risk.cash_buffer_pct"]
         .filter(k => c[k] != null && c[k] !== 0).length
@@ -3373,6 +3385,12 @@
 
       const notes = [];
       if (c["risk.max_trades_per_day"]) notes.push(`Today: ${st.trades_today || 0} of ${c["risk.max_trades_per_day"]} trades.`);
+      if (c["risk.max_symbol_loss_per_day"] || c["risk.max_losses_per_symbol_per_day"]) {
+        const syms = st.symbols_today || [];
+        const blocked = syms.filter(x => x.blocked).map(x => x.symbol);
+        const worst = syms.slice(0, 3).map(x => `${esc(x.symbol)} ${rmMoney(x.pnl)} (${x.losses} loss${x.losses === 1 ? "" : "es"})`).join(", ");
+        notes.push(`Per stock today: ${worst || "no closed trades yet"}.` + (blocked.length ? ` <span style="color:var(--accent-red)">No more entries today in ${esc(blocked.join(", "))}.</span>` : ""));
+      }
       if (c["risk.daily_loss_includes_open_risk"]) notes.push(`Open risk at the stops now: ${rmMoney(st.open_risk || 0)}.`);
       if (m.maxLoss) notes.push(`Size: ${m.qty} shares, decided by <b>${esc(m.sizedBy)}</b>${(c["risk.max_position_pct"] || c["risk.cash_buffer_pct"]) ? "; account % / cash buffer can lower it at order time" : ""}.`);
       if (m.atrK) notes.push(`Stop ${m.atrK} × ATR ${m.liveAtr ? `(${m.atrEst.toFixed(rmDp(m.P))} on these candles)` : "(example uses 1% of price - Live market mode shows the real ATR)"}.`);
@@ -5069,7 +5087,9 @@
         : `${cfg.default_quantity || 1} shares (max ${r.max_stake_per_point ?? "–"})${(r.lot_size || 1) > 1 ? `, lots of ${r.lot_size}` : ""}`;
       v.r_cap = isSet(r.max_daily_loss) ? `${money(r.max_daily_loss)}${r.daily_loss_includes_open_risk ? ", counting open risk" : ", closed trades"}` : "—";
       v.r_pos = `Up to ${r.max_open_positions ?? "–"} at once`;
-      v.r_cool = `${r.min_minutes_between_trades ?? 0} min between trades${(r.blocked_symbols || []).length ? `; ${r.blocked_symbols.length} blocked` : ""}`;
+      const perSym = [isSet(r.max_symbol_loss_per_day) ? `stop after losing ${money(r.max_symbol_loss_per_day)}` : "",
+                      isSet(r.max_losses_per_symbol_per_day) ? `after ${r.max_losses_per_symbol_per_day} losing trades` : ""].filter(Boolean).join(" or ");
+      v.r_cool = `${r.min_minutes_between_trades ?? 0} min between trades${perSym ? `; ${perSym} in a day` : ""}${(r.blocked_symbols || []).length ? `; ${r.blocked_symbols.length} blocked` : ""}`;
       const day = [];
       if (isSet(r.max_trades_per_day)) day.push(`${r.max_trades_per_day} trades a day`);
       if (isSet(r.min_reward_risk)) day.push(`reward:risk ≥ ${r.min_reward_risk}`);
@@ -5092,8 +5112,9 @@
       // 8 managing
       const tr = cfg.trailing_stop || {};
       v.t_status = tr.enabled ? `On, checked every ${tr.check_interval_seconds || 20} s` : "Off: stop stays where it was set";
-      v.t_trigger = tr.enabled ? `${tr.trigger_points ?? "–"} ${CCY} in profit` : "—";
-      v.t_dist = tr.enabled ? (tr.use_atr ? `${tr.atr_multiplier || 3} × ATR behind the best price` : `${tr.trail_distance ?? "–"} ${CCY} behind the best price`) : "—";
+      v.t_trigger = tr.enabled ? (tr.trigger_pct ? `${tr.trigger_pct}% in profit` : `${tr.trigger_points ?? "–"} ${CCY} in profit`) : "—";
+      v.t_dist = tr.enabled ? (tr.use_atr ? `${tr.atr_multiplier || 3} × ATR behind the best price`
+        : tr.trail_pct ? `${tr.trail_pct}% behind the best price` : `${tr.trail_distance ?? "–"} ${CCY} behind the best price`) : "—";
       v.t_flat = isSet(r.flat_by_minutes_before_close) ? `Intraday: everything closed ${r.flat_by_minutes_before_close} min before the close` : "Swing: trades can stay open overnight";
       const um = cfg.unmanaged_positions || {};
       v.t_holdings = `Never sold by the agent${um.mode === "off" ? "" : "; alerts on new ones"}${um.allow_manual_close ? "; Close button shown" : ""}`;

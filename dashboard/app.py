@@ -1815,6 +1815,18 @@ def _get_path(cfg: dict, key: str):
 from src.risk import open_risk_at_stops  # noqa: E402
 
 
+def _symbols_today(state: dict, risk_cfg: dict) -> list[dict]:
+    """Per-stock results today and whether a per-stock limit now blocks it."""
+    cap, n_cap = risk_cfg.get("max_symbol_loss_per_day"), risk_cfg.get("max_losses_per_symbol_per_day")
+    pnl, losses = state.get("symbol_pnl") or {}, state.get("symbol_losses") or {}
+    out = []
+    for sym in sorted(set(pnl) | set(losses)):
+        p, n = float(pnl.get(sym) or 0.0), int(losses.get(sym) or 0)
+        out.append({"symbol": sym, "pnl": round(p, 2), "losses": n,
+                    "blocked": bool((cap and p <= -abs(float(cap))) or (n_cap and n >= int(n_cap)))})
+    return sorted(out, key=lambda r: r["pnl"])
+
+
 @app.route("/api/risk_state", methods=["GET"])
 def get_risk_state():
     """Today's live risk state for the Risk Model screen: the agent's
@@ -1871,6 +1883,7 @@ def get_risk_state():
         "trades_today": 0 if stale else int(state.get("trades_today") or 0),
         "positions": active,
         "cooldowns": cooldowns,
+        "symbols_today": [] if stale else _symbols_today(state, risk_cfg),
         "reference_price": reference,
         "symbol": symbol,
     })

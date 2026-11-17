@@ -27,6 +27,11 @@ class TrailConfig:
     trail_distance: float          # fixed distance stop trails behind the extreme
     use_atr: bool = False
     atr_multiplier: float = 3.0    # trail_distance = atr * atr_multiplier when use_atr
+    # Percent versions (of the entry / of the best price): when set they
+    # replace trigger_points / trail_distance, so a $20 and a $500 stock trail
+    # alike. ATR (use_atr with an ATR available) still wins for the distance.
+    trigger_pct: float | None = None
+    trail_pct: float | None = None
 
 
 @dataclass
@@ -51,7 +56,6 @@ def compute_update(
     atr: float | None = None,
 ) -> TrailUpdate:
     is_buy = direction == "BUY"
-    trail_distance = (atr * config.atr_multiplier) if (config.use_atr and atr) else config.trail_distance
 
     # 1) update the running best price
     if is_buy:
@@ -61,8 +65,16 @@ def compute_update(
         new_extreme = min(current_extreme, current_price)
         favorable_move = entry_price - new_extreme
 
+    if config.use_atr and atr:
+        trail_distance = atr * config.atr_multiplier
+    elif config.trail_pct:
+        trail_distance = new_extreme * config.trail_pct / 100
+    else:
+        trail_distance = config.trail_distance
+    trigger = entry_price * config.trigger_pct / 100 if config.trigger_pct else config.trigger_points
+
     # 2) engage trailing once the trigger distance has been covered
-    new_trail_active = trail_active or (favorable_move >= config.trigger_points)
+    new_trail_active = trail_active or (favorable_move >= trigger)
 
     # 3) compute the candidate stop and only ratchet in the favorable direction
     new_stop = current_stop

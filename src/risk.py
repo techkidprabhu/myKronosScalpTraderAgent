@@ -68,6 +68,11 @@ class RiskConfig:
     no_entries_last_minutes: int | None = None
     # Day-trade mode: close every agent position N minutes before the close.
     flat_by_minutes_before_close: int | None = None
+    # Per-stock limits for the day (exchange day): no new entries in a symbol
+    # once its closed trades today have lost this much in total, or after this
+    # many losing trades in it. Other symbols keep trading. Exits never blocked.
+    max_symbol_loss_per_day: float | None = None
+    max_losses_per_symbol_per_day: int | None = None
 
     @property
     def plans_distances(self) -> bool:
@@ -99,6 +104,8 @@ class RiskState:
     trading_halted: bool = False
     trading_day: str = ""  # ISO date in the exchange timezone
     trades_today: int = 0
+    symbol_pnl: dict = field(default_factory=dict)      # symbol -> closed P&L today
+    symbol_losses: dict = field(default_factory=dict)   # symbol -> losing trades today
 
 
 class RiskManager:
@@ -145,12 +152,22 @@ class RiskManager:
             self.state.daily_pnl = 0.0
             self.state.trading_halted = False
             self.state.trades_today = 0
+            self.state.symbol_pnl = {}
+            self.state.symbol_losses = {}
             self.state.trading_day = today
             self._save()
 
-    def record_trade_result(self, pnl: float):
+    def record_trade_result(self, pnl: float, symbol: str | None = None):
         self._roll_day()
         self.state.daily_pnl += pnl
+        if symbol:
+            key = _base(symbol)
+            self.state.symbol_pnl[key] = round(self.state.symbol_pnl.get(key, 0.0) + pnl, 6)
+            if pnl < 0:
+                self.state.symbol_losses[key] = self.state.symbol_losses.get(key, 0) + 1
+            reason = self.symbol_limit_reason(symbol)
+            if reason:
+                logger.warning("%s: %s - no more entries in it today", symbol, reason)
         if self.state.daily_pnl <= -abs(self.config.max_daily_loss):
             self.state.trading_halted = True
             logger.warning(
@@ -179,6 +196,10 @@ class RiskManager:
         blocked = {_base(b) for b in (self.config.blocked_symbols or [])}
         if blocked and _base(epic) in blocked:
             return False, f"{epic} is on blocked_symbols"
+
+        sym_reason = self.symbol_limit_reason(epic)
+        if sym_reason:
+            return False, sym_reason
 
         limit = self.config.max_trades_per_day
         if limit and self.state.trades_today >= limit:
@@ -210,6 +231,19 @@ class RiskManager:
                 return False, "min_minutes_between_trades not elapsed for this symbol"
 
         return True, "ok"
+
+    def symbol_limit_reason(self, epic: str) -> str | None:
+        """Why this symbol may not be entered again today, or None."""
+        key = _base(epic)
+        cap = self.config.max_symbol_loss_per_day
+        pnl = self.state.symbol_pnl.get(key, 0.0)
+        if cap and pnl <= -abs(cap):
+            return f"{key} lost {abs(pnl):.2f} today (per-stock limit {abs(cap):.2f})"
+        n_cap = self.config.max_losses_per_symbol_per_day
+        n = self.state.symbol_losses.get(key, 0)
+        if n_cap and n >= n_cap:
+            return f"{key} had {n} losing trade{'s' if n != 1 else ''} today (per-stock limit {n_cap})"
+        return None
 
     def mark_trade_opened(self, epic: str):
         self._roll_day()
