@@ -22,6 +22,8 @@ def main(argv=None):
     ap.add_argument("--config", default=str(ROOT / "config" / "config.yaml"))
     ap.add_argument("--max-steps", type=int)
     ap.add_argument("--max-minutes", type=float)
+    ap.add_argument("--with-model", action="store_true",
+                    help="export: put the original Kronos model in the kit (for networks that block Hugging Face)")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     config = yaml.safe_load(open(args.config)) or {}
@@ -36,11 +38,13 @@ def main(argv=None):
         out = args.file or str(ROOT / "data" / "exports" / kit.export_name())
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         try:
-            info = kit.build_export(config, out)
+            info = kit.build_export(config, out, include_model=args.with_model)
         except RuntimeError as exc:
             print(exc)
             return 1
-        print(f"Wrote {out}\n  {info['files']} candle files ({', '.join(info['brokers'])}), {info['signals']} signal times.\n"
+        model = f", Kronos model {info['model_mb']} MB" if info["model_mb"] else ""
+        print(f"Wrote {out}\n  {info['files']} candle files ({', '.join(info['brokers'])}), "
+              f"{info['signals']} signal times{model}.\n"
               "  Unzip it on the computer with the GPU and start train.bat / train.sh.")
         return 0
 

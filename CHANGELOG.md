@@ -16,6 +16,16 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Training kit without Hugging Face.** "Include the Kronos model" next to
+  Export for GPU training (or `./start.sh finetune export --with-model`)
+  packs the original Kronos model and tokenizer from this computer's offline
+  copy into the kit. The kit now always carries the Kronos model code too.
+  The trainer then loads everything from the kit with Hugging Face switched
+  off, and keeps the model in `~/.kronos-trainer/models`, so later kits can be
+  exported without it. Reports still name the original model as the agent
+  knows it (e.g. NeoQuasar/Kronos-base), so Back to original keeps working.
+
+### Added
 - **Saved model versions on GitHub Releases.** "Save as version" on a
   training run (Kronos Model Lab -> Self-learning) uploads it to your own
   repository as release `model-v<N>`, with the scores, the device it was

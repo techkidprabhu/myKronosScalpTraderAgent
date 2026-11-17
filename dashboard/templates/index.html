@@ -825,7 +825,8 @@
         <h3 class="cc-sub-h" style="margin-top:16px">Train on a computer with a GPU</h3>
         <p class="cc-muted" style="margin:0">Export the collected candles with the trainer, run it on a computer with an NVIDIA GPU (<span class="mono">train.bat</span> or <span class="mono">train.sh</span> inside the zip), then import the result file it writes. The export holds candles and signal times only: no logins, keys or trade records. An imported model is listed below and is not used for trading until you choose it.</p>
         <div class="ft-actions">
-          <a class="btn btn-sm" id="ft-btn-export" href="/api/finetune/export" download>Export for GPU training</a>
+          <a class="btn btn-sm" id="ft-btn-export" href="/api/finetune/export" download onclick="return ftExport(event)">Export for GPU training</a>
+          <label class="ft-check" title="For a computer whose network blocks Hugging Face. Needed once: the trainer keeps the model for later kits."><input type="checkbox" id="ft-export-model" onchange="ftExportPref(this)"> Include the Kronos model (about 400 MB, for networks that block Hugging Face)</label>
           <button type="button" class="btn btn-sm" id="ft-btn-import" onclick="document.getElementById('ft-import-file').click()">Import trained model</button>
           <input type="file" id="ft-import-file" accept=".zip,application/zip" hidden onchange="ftImport(this)">
           <span class="cc-muted" id="ft-import-note" role="status"></span>
@@ -4194,6 +4195,26 @@
       if (!confirm(`Download v${version} from GitHub to this computer?\n\nIt appears under Training runs, where you can Shadow test it or Use this model. Nothing changes for trading until you do.`)) return;
       await ftAction("restore", { version });
       setTimeout(() => loadVersions(true), 600);
+    }
+
+    try { document.getElementById("ft-export-model").checked = localStorage.getItem("ftExportModel") === "1"; } catch (e) {}
+    function ftExportPref(box) { try { localStorage.setItem("ftExportModel", box.checked ? "1" : "0"); } catch (e) {} }
+
+    async function ftExport(ev) {
+      ev.preventDefault();
+      const withModel = document.getElementById("ft-export-model").checked;
+      const q = withModel ? "?model=1" : "";
+      const note = document.getElementById("ft-import-note");
+      try {
+        const c = await (await fetch("/api/finetune/export" + (q ? q + "&" : "?") + "check=1", { cache: "no-store" })).json();
+        if (!c.ok) { showToast(c.error || "Nothing to export"); note.textContent = c.error || ""; return false; }
+        note.textContent = withModel ? `Preparing the kit with the Kronos model (${c.model_mb} MB). The download starts in a moment.`
+                                     : "Preparing the kit. The download starts in a moment.";
+      } catch (e) { showToast("Export failed: " + e.message); return false; }
+      const a = document.createElement("a");
+      a.href = "/api/finetune/export" + q + (currentBroker ? (q ? "&" : "?") + "broker=" + encodeURIComponent(currentBroker) : "");
+      a.download = ""; document.body.appendChild(a); a.click(); a.remove();
+      return false;
     }
 
     async function ftImport(input) {

@@ -482,3 +482,77 @@ def test_kit_trains_on_its_own_and_the_result_imports(tmp_path):
     rep = kit.import_run(result[0], tmp_path / "models")
     assert rep["has_weights"] and rep["device"] == "CPU" and rep["symbols_by_broker"] == {"moomoo": 1, "zerodha": 1}
     Kronos.from_pretrained(list_runs(tmp_path / "models")[0]["path"], local_files_only=True)
+
+
+def _fake_hf_cache(cache, repo_id, save):
+    """Lay a model out the way the Hugging Face cache does (no network)."""
+    folder = cache / ("models--" + repo_id.replace("/", "--"))
+    snap = folder / "snapshots" / "abc123"
+    save(snap)
+    (folder / "refs").mkdir(parents=True)
+    (folder / "refs" / "main").write_text("abc123")
+
+
+def test_kit_with_the_model_needs_no_hugging_face(tmp_path, monkeypatch):
+    """Networks that block Hugging Face: the kit carries the original model,
+    tokenizer and Kronos code; the trainer keeps the model for later kits."""
+    import os
+    import subprocess
+    import sys
+    import zipfile
+    torch = pytest.importorskip("torch")
+    import huggingface_hub.constants as hfc
+    from src.finetune import ensure_kronos, kit
+    if not ensure_kronos():
+        pytest.skip("Kronos source not available")
+    from model import Kronos, KronosTokenizer
+
+    torch.manual_seed(0)
+    cache = tmp_path / "hf-cache-on-imac"
+    _fake_hf_cache(cache, "NeoQuasar/Kronos-Tokenizer-tiny", lambda d: KronosTokenizer(
+        d_in=6, d_model=32, n_heads=2, ff_dim=64, n_enc_layers=1, n_dec_layers=1, ffn_dropout_p=0.0,
+        attn_dropout_p=0.0, resid_dropout_p=0.0, s1_bits=4, s2_bits=4, beta=0.05, gamma0=1.0, gamma=1.1,
+        zeta=0.05, group_size=4).save_pretrained(d))
+    _fake_hf_cache(cache, "NeoQuasar/Kronos-tiny", lambda d: Kronos(
+        s1_bits=4, s2_bits=4, n_layers=1, d_model=32, n_heads=2, ff_dim=64, ffn_dropout_p=0.0, attn_dropout_p=0.0,
+        resid_dropout_p=0.0, token_dropout_p=0.0, learn_te=True).save_pretrained(d))
+    monkeypatch.setattr(hfc, "HF_HUB_CACHE", str(cache))
+    root = tmp_path / "training"
+    for i, (broker, sym) in enumerate([("moomoo", "US.AAA"), ("zerodha", "NSE.BBB")]):
+        ftdata.merge_bars(ftdata.bars_path(broker, sym, "MIN_5", root), bars(500, seed=i))
+    cfg = {"lookback_bars": 30, "forecast_horizon": 5,
+           "kronos": {"model_name": "NeoQuasar/Kronos-tiny", "tokenizer_name": "NeoQuasar/Kronos-Tokenizer-tiny",
+                      "sample_count": 1, "max_context": 64},
+           "finetune": {"min_train_windows": 50, "eval_every": 4, "learning_rate": 1e-3}}
+
+    chk = kit.export_check(cfg, True, root)
+    assert chk["ok"] and chk["files"] == 2
+    info = kit.build_export(cfg, tmp_path / "kit1.zip", training_root=root, include_model=True)
+    assert info["kronos_code"] and info["model_mb"] >= 0
+    names = set(zipfile.ZipFile(tmp_path / "kit1.zip").namelist())
+    assert {"kronos-training-kit/base/model/config.json", "kronos-training-kit/base/model/model.safetensors",
+            "kronos-training-kit/base/tokenizer/model.safetensors", "kronos-training-kit/Kronos/model/kronos.py",
+            "kronos-training-kit/Kronos/LICENSE"} <= names
+    bad = {**cfg, "kronos": {**cfg["kronos"], "model_name": "NeoQuasar/not-downloaded"}}
+    assert not kit.export_check(bad, True, root)["ok"] and kit.export_check(bad, False, root)["ok"]
+
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "KRONOS_PATH")}
+    env.update(KRONOS_TRAINER_HOME=str(tmp_path / "home"), HF_HUB_CACHE=str(tmp_path / "empty-laptop-cache"),
+               HF_ENDPOINT="http://127.0.0.1:9")                     # Hugging Face "blocked"
+    cmd = [sys.executable, "train_kronos.py", "--cpu", "--steps", "8", "--batch", "4", "--keep"]
+
+    def train(zip_path, folder):
+        zipfile.ZipFile(zip_path).extractall(folder)
+        p = subprocess.run(cmd, cwd=folder / "kronos-training-kit", env=env, capture_output=True, text=True, timeout=600)
+        assert p.returncode == 0, p.stdout + p.stderr
+        return p.stdout, next((folder / "kronos-training-kit").glob("kronos-ft-*-result.zip"))
+
+    out, result = train(tmp_path / "kit1.zip", tmp_path / "laptop1")
+    assert "in this kit; nothing is downloaded" in out
+    rep = kit.import_run(result, tmp_path / "models")
+    assert rep["base_model"] == "NeoQuasar/Kronos-tiny" and rep["tokenizer"] == "NeoQuasar/Kronos-Tokenizer-tiny"
+
+    kit.build_export(cfg, tmp_path / "kit2.zip", training_root=root)             # next day: without the model
+    assert not any("/base/" in n for n in zipfile.ZipFile(tmp_path / "kit2.zip").namelist())
+    out, _ = train(tmp_path / "kit2.zip", tmp_path / "laptop2")
+    assert "kept from an earlier kit" in out

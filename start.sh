@@ -13,6 +13,7 @@
 #   ./start.sh finetune status   candles collected and training runs so far
 #   ./start.sh finetune train    start a fine-tuning run in the background (logs/finetune.log)
 #   ./start.sh finetune export   write the training kit for a computer with a GPU (data/exports/)
+#   ./start.sh finetune export --with-model   same, with the Kronos model inside (no Hugging Face needed)
 #   ./start.sh finetune import <zip>   bring a model trained on that computer back
 #   ./start.sh finetune versions       models saved on GitHub Releases
 #   ./start.sh finetune save <run> [note]   keep a training run as the next version (GITHUB_TOKEN in .env)
@@ -28,7 +29,7 @@ set -u
 
 # a file argument (./start.sh finetune import <zip>) is relative to where you ran the script
 FT_FILE="${3:-}"
-case "$FT_FILE" in ""|/*) ;; *) FT_FILE="$PWD/$FT_FILE" ;; esac
+case "$FT_FILE" in ""|/*|-*) ;; *) FT_FILE="$PWD/$FT_FILE" ;; esac
 ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")" && pwd)"
 cd "$ROOT" || exit 1
 

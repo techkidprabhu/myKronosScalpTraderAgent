@@ -10,9 +10,14 @@ What you need on this computer
 - An NVIDIA GPU with a current driver (8 GB of GPU memory is enough for Kronos-base)
 - Python 3.11 or 3.12  (https://www.python.org/downloads/ - on Windows tick
   "Add python.exe to PATH")
-- Internet the first time: PyTorch (a few GB), the Kronos model code and the
-  original Kronos model (about 400 MB) are downloaded once and reused by
-  every later kit. They live in the .kronos-trainer folder in your home folder.
+- Internet the first time for PyTorch (a few GB, from download.pytorch.org)
+  and a few small packages (from PyPI). They live in the .kronos-trainer
+  folder in your home folder and are reused by every later kit.
+- The Kronos model code is inside this kit. The original Kronos model
+  (about 400 MB) comes from Hugging Face, unless the kit was exported with
+  "Include the Kronos model" ticked: then it is inside the kit too and
+  nothing is downloaded from Hugging Face. It is kept after the first run,
+  so later kits can be exported without it.
 
 Each day
 --------

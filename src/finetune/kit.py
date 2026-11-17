@@ -1,9 +1,11 @@
 """Train on another computer (one with an NVIDIA GPU) and bring the model back.
 
     build_export()   one zip with the collected candles, the agent's signal
-                     times, the settings the windows must match, and the
-                     trainer itself - nothing else. No broker credentials,
-                     no config.yaml, no audit databases.
+                     times, the settings the windows must match, the trainer
+                     and the Kronos code - and, if asked, the original Kronos
+                     model and tokenizer, for networks that block Hugging
+                     Face. No broker credentials, config.yaml or audit
+                     databases.
     import_run()     takes the result zip the trainer wrote and puts the run
                      under models/, where it shows up like a run made here.
 
@@ -20,7 +22,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from . import MODELS_DIR, TRAINING_DIR, settings
+from . import MODELS_DIR, TRAINING_DIR, kronos_dir, settings
 from .data import all_signals
 from .trainer import audit_dbs, original_names, window_sizes
 
@@ -55,16 +57,79 @@ def export_settings(config: dict) -> dict:
     }
 
 
+MODEL_FILE_SUFFIXES = (".json", ".safetensors", ".bin")
+
+
+def local_model_dir(name: str) -> Path | None:
+    """Where a model the agent loads lives on this computer: the folder
+    itself, or its copy in the Hugging Face cache (never downloads)."""
+    p = Path(str(name)).expanduser()
+    if p.is_dir() and (p / "config.json").exists():
+        return p
+    try:
+        from huggingface_hub import snapshot_download
+        d = Path(snapshot_download(repo_id=str(name), local_files_only=True))
+    except Exception:  # noqa: BLE001 - not cached, not a repo id, no huggingface_hub
+        return None
+    return d if (d / "config.json").exists() else None
+
+
+def model_files(config: dict) -> list[tuple[Path, str]]:
+    """(file, path in the kit) for the original model and tokenizer.
+    Raises RuntimeError naming what is missing."""
+    out = []
+    for name, sub in zip(original_names(config), ("model", "tokenizer")):
+        d = local_model_dir(name)
+        if d is None:
+            raise RuntimeError(f"{name} is not on this computer, so it can't go in the kit. "
+                               "Start the agent once (it loads the model), or export without the model.")
+        for f in sorted(d.iterdir()):
+            if f.is_file() and f.suffix in MODEL_FILE_SUFFIXES:
+                out.append((f.resolve(), f"{KIT_FOLDER}/base/{sub}/{f.name}"))
+        if not any(a.endswith(".safetensors") or a.endswith(".bin") for _, a in out if f"/base/{sub}/" in a):
+            raise RuntimeError(f"No weights found for {name} in {d}")
+    return out
+
+
+def kronos_code_files() -> list[tuple[Path, str]]:
+    """The Kronos model code (MIT licence) so the kit needs no GitHub."""
+    d = kronos_dir()
+    if d is None:
+        return []
+    files = [(f, f"{KIT_FOLDER}/Kronos/model/{f.name}") for f in sorted((d / "model").glob("*.py"))]
+    if (d / "LICENSE").exists():
+        files.append((d / "LICENSE", f"{KIT_FOLDER}/Kronos/LICENSE"))
+    return files
+
+
+def export_check(config: dict, include_model: bool, training_root: Path | None = None) -> dict:
+    """What an export would hold, without building it."""
+    root = training_root or TRAINING_DIR
+    n = len(list(root.glob("*/*.csv"))) if root.exists() else 0
+    if not n:
+        return {"ok": False, "error": "No candles collected yet - use 'Collect candles now' first."}
+    out = {"ok": True, "files": n, "model_mb": 0}
+    if include_model:
+        try:
+            out["model_mb"] = round(sum(f.stat().st_size for f, _ in model_files(config)) / 1048576)
+        except RuntimeError as exc:
+            return {"ok": False, "error": str(exc)}
+    return out
+
+
 def export_name() -> str:
     return f"kronos-training-{datetime.now():%Y%m%d-%H%M}.zip"
 
 
-def build_export(config: dict, out, training_root: Path | None = None) -> dict:
-    """Write the training kit zip to `out` (a path or a binary file object)."""
+def build_export(config: dict, out, training_root: Path | None = None, include_model: bool = False) -> dict:
+    """Write the training kit zip to `out` (a path or a binary file object).
+    include_model: also pack the original Kronos model and tokenizer from
+    this computer, so the trainer never needs Hugging Face."""
     root = training_root or TRAINING_DIR
     files = sorted(root.glob("*/*.csv")) if root.exists() else []
     if not files:
         raise RuntimeError("No candles collected yet - use 'Collect candles now' first.")
+    weights = model_files(config) if include_model else []
     signals = all_signals(audit_dbs(config))
     here = Path(__file__).resolve().parent
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
@@ -80,8 +145,14 @@ def build_export(config: dict, out, training_root: Path | None = None) -> dict:
         z.writestr(f"{KIT_FOLDER}/signals.json", json.dumps(signals))
         for f in files:
             z.write(f, f"{KIT_FOLDER}/training/{f.parent.name}/{f.name}")
+        code = kronos_code_files()
+        for f, arc in code:
+            z.write(f, arc)
+        for f, arc in weights:                       # weights don't compress; store them as they are
+            z.write(f, arc, compress_type=zipfile.ZIP_STORED)
     return {"files": len(files), "brokers": sorted({f.parent.name for f in files}),
-            "signals": sum(len(t) for per in signals.values() for t in per.values())}
+            "signals": sum(len(t) for per in signals.values() for t in per.values()),
+            "kronos_code": bool(code), "model_mb": round(sum(f.stat().st_size for f, _ in weights) / 1048576)}
 
 
 def import_run(zip_path, models_dir: Path | None = None, replace_without_weights: bool = False) -> dict:
