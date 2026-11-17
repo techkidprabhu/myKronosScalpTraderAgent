@@ -16,6 +16,27 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Per-stock daily limits** (off by default). `risk.max_symbol_loss_per_day`
+  stops new entries in a stock once its closed trades that day have lost
+  this much in total; `risk.max_losses_per_symbol_per_day` stops them after
+  that many losing trades in it. Other stocks keep trading, exits are never
+  blocked, and the counts reset at the exchange's midnight and survive a
+  restart. The Risk Model tab shows each stock's result today and which are
+  blocked; both settings are on Config & Risk too.
+- **Percentage trailing stop** (off by default). `trailing_stop.trigger_pct`
+  (% of the entry) and `trailing_stop.trail_pct` (% of the best price)
+  replace the price-unit `trigger_points` / `trail_distance` when set. With a
+  % stop and target, the trail then works the same on a $60 and a $500 stock.
+  The old dollar settings never got going on cheaper stocks, because the 1%
+  target was hit before a $2 trigger. Shown and draggable on Risk Model.
+
+### Fixed
+- **`trailing_stop.use_atr` had no effect.** The trailing stop was never
+  given an ATR, so it always used the fixed distance. The agent now passes
+  the ATR(14) of the latest closed candles; until the first candle is read
+  after a start, the % or fixed distance is used.
+
+### Added
 - **Auto broker selection on the dashboard.** The broker selector has a new
   "Auto: open market" choice. The dashboard then shows the broker whose
   market is open (India via Zerodha/Angel 09:15-15:30 IST, the US via moomoo

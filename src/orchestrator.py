@@ -129,7 +129,10 @@ class SymbolWorker:
             trail_distance=trail_cfg.get("trail_distance", 0.0),
             use_atr=trail_cfg.get("use_atr", False),
             atr_multiplier=trail_cfg.get("atr_multiplier", 3.0),
+            trigger_pct=trail_cfg.get("trigger_pct"),
+            trail_pct=trail_cfg.get("trail_pct"),
         )
+        self._trail_atr = None   # ATR of the latest closed candles, for use_atr (refreshed by poll_once)
         self.trail_enabled = trail_cfg.get("enabled", False)
 
         # Indicator confirmation between pattern and Kronos (off unless
@@ -175,6 +178,12 @@ class SymbolWorker:
         df = drop_unclosed_bar(bars_to_df(bars), self.timeframe)
         if df.empty:
             return
+        if self.trail_config.use_atr:
+            try:
+                a = float(atr_series(df, 14).iloc[-1])
+                self._trail_atr = a if a == a and a > 0 else self._trail_atr
+            except Exception:  # noqa: BLE001
+                pass
 
         latest_ts = df.index[-1]
         if self._last_seen_timestamp is not None and latest_ts <= self._last_seen_timestamp:
@@ -638,6 +647,7 @@ class SymbolWorker:
             current_price=current_price, current_stop=pos["current_stop"],
             current_extreme=pos["high_water"], trail_active=bool(pos["trail_active"]),
             target=pos["target"], config=self.trail_config if self.trail_enabled else NO_TRAIL,
+            atr=self._trail_atr,
         )
         exiting = update.exit_triggered or update.target_hit
 
@@ -847,7 +857,7 @@ class SymbolWorker:
         recent = {k: v for k, v in recent.items() if time.time() - v < 3600}
         recent[base_symbol(self.symbol)] = time.time()
         self.audit_log.set_kv(RECENT_CLOSES_KEY, recent)
-        self.risk_manager.record_trade_result(pnl)
+        self.risk_manager.record_trade_result(pnl, self.symbol)
         deal_id = str(pos.get("entry_order_id"))
         self.audit_log.log_trade_result(
             self.symbol, deal_id, pnl,

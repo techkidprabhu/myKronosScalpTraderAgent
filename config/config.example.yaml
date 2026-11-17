@@ -116,6 +116,8 @@ trailing_stop:
   check_interval_seconds: 20
   trigger_points: 2.00   # price units - profit distance before trailing engages
   trail_distance: 3.00   # price units - fixed trail distance behind the best price
+  trigger_pct:           # % of entry - replaces trigger_points when set, e.g. 0.5
+  trail_pct:             # % of the best price - replaces trail_distance when set, e.g. 0.4
   use_atr: false
   atr_multiplier: 3.0
 
@@ -263,6 +265,11 @@ risk:
   # win or lose - no overnight holds. Needs an intraday timeframe. Leave
   # empty for swing trading.
   flat_by_minutes_before_close: null  # e.g. 5  (15:55 ET on US)
+  # Per stock, per exchange day: no new entries in a symbol once its closed
+  # trades today lost this much in total, or after this many losing trades in
+  # it. Other symbols keep trading; exits are never blocked.
+  max_symbol_loss_per_day: null       # e.g. 150 (account currency)
+  max_losses_per_symbol_per_day: null # e.g. 2
   blocked_symbols: []               # e.g. ["US.GME", "TSLA"]
 
 # Market calendar. With follow_market the agent scans only while the
