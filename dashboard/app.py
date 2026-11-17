@@ -1422,6 +1422,66 @@ def finetune_export():
     return send_file(tmp, mimetype="application/zip", as_attachment=True, download_name=kit.export_name())
 
 
+_versions_cache = {"ts": 0.0, "key": None, "data": None}
+
+
+@app.route("/api/finetune/versions", methods=["GET"])
+def finetune_versions():
+    """Saved model versions (GitHub Releases on your repository)."""
+    from src.finetune import releases, trainer
+    cfg = load_config()
+    repo, token = releases.target(cfg)
+    job = releases.read_job()
+    out = {"configured": bool(repo and token), "repo": repo, "has_token": bool(token), "versions": [], "job": job}
+    if not out["configured"]:
+        return jsonify(out)
+    fresh = request.args.get("refresh") == "1" or job.get("state") == "running"
+    if fresh or _versions_cache["key"] != repo or time.time() - _versions_cache["ts"] > 60:
+        try:
+            data = releases.list_versions(releases.GitHub(repo, token))
+            _versions_cache.update(ts=time.time(), key=repo, data=data, error=None)
+        except releases.ReleaseError as exc:
+            _versions_cache.update(ts=time.time(), key=repo, data=[], error=str(exc))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Listing saved model versions failed", exc_info=True)
+            _versions_cache.update(ts=time.time(), key=repo, data=[], error=f"Could not reach GitHub: {exc}")
+    local = {r["run_id"]: r["has_weights"] for r in trainer.list_runs()}
+    in_use = _finetune_in_use(cfg)
+    out["error"] = _versions_cache.get("error")
+    out["versions"] = [{**v, "local": bool(local.get(v.get("run_id"))), "in_use": v.get("run_id") == in_use}
+                       for v in (_versions_cache["data"] or [])]
+    return jsonify(out)
+
+
+def _finetune_release(action: str):
+    from src.finetune import releases, trainer
+    cfg = load_config()
+    repo, token = releases.target(cfg)
+    if not (repo and token):
+        return jsonify({"error": "Add GITHUB_TOKEN to .env and restart the dashboard to save model versions"}), 400
+    data = request.get_json(silent=True) or {}
+    clear = lambda: _versions_cache.update(ts=0.0)  # noqa: E731
+    try:
+        gh = releases.GitHub(repo, token)
+        if action == "release":
+            run = next((r for r in trainer.list_runs() if r["run_id"] == str(data.get("run_id") or "")), None)
+            if run is None or not run["has_weights"]:
+                return jsonify({"error": "That run has no saved model"}), 404
+            releases.start_job("save", gh, run_dir=Path(run["path"]), note=str(data.get("note") or ""), on_done=clear)
+            msg = f"Saving {run['run_id']} to GitHub. A Kronos-base model is about 400 MB, so this takes a few minutes."
+        else:
+            try:
+                version = int(data.get("version"))
+            except (TypeError, ValueError):
+                return jsonify({"error": "Which version?"}), 400
+            releases.start_job("restore", gh, version=version, on_done=clear)
+            msg = f"Downloading v{version} from GitHub."
+    except releases.ReleaseError as exc:
+        return jsonify({"error": str(exc)}), 409
+    logger.info("Dashboard started model %s", action)
+    return jsonify({"success": True, "message": msg})
+
+
 def _finetune_import():
     import tempfile
     from src.finetune import kit
@@ -1447,6 +1507,8 @@ def finetune_action(action):
     from src.finetune import scheduler as ft_scheduler, trainer
     if action == "import":
         return _finetune_import()
+    if action in ("release", "restore"):
+        return _finetune_release(action)
     if action == "collect":
         finetune.COLLECT_REQUEST.parent.mkdir(parents=True, exist_ok=True)
         finetune.COLLECT_REQUEST.write_text(str(time.time()))

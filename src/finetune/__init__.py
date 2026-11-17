@@ -59,6 +59,7 @@ DEFAULTS = {
     "tokenizer_steps": 300,
     "threads": None,             # CPU threads; None = all cores
     "device": "auto",            # auto = NVIDIA GPU if PyTorch can use one, else CPU
+    "releases_repo": None,       # GitHub "owner/name" for saved model versions; None = this clone's origin
     "shadow_model": None,        # model folder checked alongside the trading model; never affects trades
     "shadow_tokenizer": None,
     "keep_runs": 3,              # model folders kept (the one in use is always kept)
