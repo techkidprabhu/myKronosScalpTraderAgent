@@ -1798,8 +1798,9 @@ def get_brokers():
                 pass
         out.append({**spec.to_dict(), "market": spec.market or _spec_market(spec),
                     "capabilities": caps.get(spec.adapter, {}), "agent_health": health, "agent_phase": phase})
+    auto = cal.auto_pick([{"name": b["name"], "market": b["market"], "enabled": b["enabled"]} for b in out])
     return jsonify({"brokers": out, "current": current_spec(raw).name,
-                    "multi": sum(1 for s in specs if s.enabled) > 1})
+                    "multi": sum(1 for s in specs if s.enabled) > 1, "auto": auto})
 
 
 def _get_path(cfg: dict, key: str):

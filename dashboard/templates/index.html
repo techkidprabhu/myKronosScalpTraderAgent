@@ -922,7 +922,7 @@
             Logins: .env (never in config.yaml)</div>
           <div class="strat-upgrade-box">
             <div class="strat-upgrade-title">How to tune it</div>
-            <div class="strat-upgrade-body">Switch brokers on or off under <span class="strat-upgrade-code">brokers.&lt;name&gt;.enabled</span>, and give one its own settings by writing only the keys that differ under its name. Settings changes take effect after <span class="strat-upgrade-code">./start.sh restart</span>.</div>
+            <div class="strat-upgrade-body">Switch brokers on or off under <span class="strat-upgrade-code">brokers.&lt;name&gt;.enabled</span>, and give one its own settings by writing only the keys that differ under its name. Settings changes take effect after <span class="strat-upgrade-code">./start.sh restart</span>. With several brokers enabled, pick <b>Auto</b> in the broker selector at the top and the dashboard follows whichever market is open.</div>
           </div>
         </article>
 
@@ -1534,6 +1534,8 @@
     const _fetch = window.fetch.bind(window);
     // The broker picked in the header switcher; every /api/ call is about it.
     let currentBroker = (() => { try { return localStorage.getItem("broker") || ""; } catch (e) { return ""; } })();
+    // "auto": the broker follows whichever market is open (see loadBrokers)
+    const BROKER_AUTO = (() => { try { return localStorage.getItem("brokerMode") === "auto"; } catch (e) { return false; } })();
     window.fetch = async (...args) => {
       if (currentBroker && typeof args[0] === "string" && args[0].startsWith("/api/") &&
           !args[0].startsWith("/api/brokers") && !/[?&]broker=/.test(args[0])) {
@@ -5485,11 +5487,25 @@
         const sel = document.getElementById("broker-switch");
         if (!list.some(b => b.name === currentBroker)) currentBroker = "";
         const showing = currentBroker || data.current;
-        sel.innerHTML = list.map(b => {
+        const auto = data.auto, autoB = auto && list.find(b => b.name === auto.name);
+        window._brokerAutoPick = autoB ? autoB.name : "";
+        if (BROKER_AUTO && autoB && autoB.name !== showing) {
+          // the market changed (or first load in auto mode): follow it
+          try { localStorage.setItem("broker", autoB.name); localStorage.removeItem("activeSymbol"); } catch (e) {}
+          if (!window._brokerAutoSwitching) {
+            window._brokerAutoSwitching = true;
+            showToast(`${auto.reason}: switching to ${autoB.label}`);
+            setTimeout(() => location.reload(), 2500);
+          }
+        }
+        const autoOpt = autoB ? `<option value="__auto__" ${BROKER_AUTO ? "selected" : ""}>Auto: open market (${esc(autoB.label)} · ${esc(autoB.market)})</option>` : "";
+        sel.title = BROKER_AUTO && auto ? `Auto: ${auto.reason}. Switches by itself when the other market opens.`
+                                         : "Which broker this dashboard shows - every tab follows it";
+        sel.innerHTML = autoOpt + list.map(b => {
           const h = b.agent_health;
           const dot = !b.enabled ? "○" : (h && h.ok === false ? "●" : "●");
           const state = !b.enabled ? " (off)" : (h && h.ok === false ? " (down)" : "");
-          return `<option value="${esc(b.name)}" ${b.name === showing ? "selected" : ""}>${dot} ${esc(b.label)} · ${esc(b.market)}${state}</option>`;
+          return `<option value="${esc(b.name)}" ${!BROKER_AUTO && b.name === showing ? "selected" : ""}>${dot} ${esc(b.label)} · ${esc(b.market)}${state}</option>`;
         }).join("");
         wrap.style.display = list.length > 1 ? "" : "none";
       } catch (err) {
@@ -5497,10 +5513,21 @@
       }
     }
 
+    // in auto mode, check every minute whether the other market has opened
+    if (BROKER_AUTO) setInterval(() => { if (!document.hidden) loadBrokers(); }, 60000);
+
     function initBrokerSwitch() {
       const sel = document.getElementById("broker-switch");
       sel.addEventListener("change", () => {
-        try { localStorage.setItem("broker", sel.value); } catch (e) {}
+        if (sel.value === "__auto__") {
+          // keep the broker the auto rule picked; loadBrokers follows the market from now on
+          try { localStorage.setItem("brokerMode", "auto"); } catch (e) {}
+          showToast(`Auto: the dashboard follows whichever market is open`);
+          try { localStorage.removeItem("activeSymbol"); localStorage.setItem("broker", window._brokerAutoPick || ""); } catch (e) {}
+          location.reload();
+          return;
+        }
+        try { localStorage.setItem("brokerMode", "manual"); localStorage.setItem("broker", sel.value); } catch (e) {}
         // Every panel reloads for the new broker; symbols differ per broker.
         try { localStorage.removeItem("activeSymbol"); } catch (e) {}
         location.reload();
