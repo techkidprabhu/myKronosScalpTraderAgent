@@ -1661,7 +1661,7 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .kr-amber { fill: var(--accent-amber); }
 .kr-future { fill: var(--accent-amber); opacity: .05; }
 .kr-band { fill: var(--accent-amber); opacity: .2; }
-.kr-line { fill: none; stroke: var(--accent-amber); stroke-width: 2.4; stroke-linejoin: round; }
+.kr-line { fill: none; stroke: var(--accent-amber); stroke-width: 1.6; stroke-linejoin: round; opacity: .9; }
 .kr-fdot { fill: var(--bg-card); stroke: var(--accent-amber); stroke-width: 1.6; }
 .kr-fdot.agree { fill: var(--accent-amber); }
 .kr-end { fill: var(--accent-amber); font-size: 12px; font-weight: 600; }
@@ -1756,3 +1756,10 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .st-ed-side-res { font-size: 12px; margin-top: 8px; display: grid; gap: 2px; overflow-wrap: anywhere; }
 .st-ed-metrics td:first-child { white-space: nowrap; }
 @media (max-width: 900px) { .st-ed-grid { grid-template-columns: minmax(0, 1fr); } .st-ed-text { min-height: 300px; } }
+/* Kronos card: forecast candles on the same time axis as the real ones */
+.kr-wick.fc { stroke: var(--accent-amber); opacity: .85; }
+.kr-body.fc { fill: transparent; stroke: var(--accent-amber); stroke-width: 1.2; }
+.kr-body.fc.agree { fill: color-mix(in srgb, var(--accent-amber) 38%, transparent); }
+.kr-body.forming { opacity: .5; stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 2 2; }
+.kr-sig { fill: var(--text-primary); }
+.kr-band { opacity: .14; }

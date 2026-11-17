@@ -4486,19 +4486,37 @@
 
     // ================= Kronos verdict (Command Center) =================
     // The latest signal the agent asked Kronos about: its recorded verdict and
-    // the gates it went through, with recent candles and a forecast drawn now
-    // from the latest closed candle. Drawing a forecast runs Kronos on this
-    // computer, so it happens once per new signal (at most every 3 minutes)
-    // or when you ask; the agent's own verdict is never re-run or changed.
+    // the gates it went through, with live candles and a Kronos forecast from
+    // the latest closed candle, drawn on the same time scale as the candles so
+    // the candles that close afterwards land on top of the forecast. Candles
+    // refresh every 30 s. Drawing a forecast runs Kronos on this computer, so
+    // a new one is drawn only for a new signal or after a new candle has
+    // closed (at most every 3 minutes), or when you ask. The agent's own
+    // verdict is never re-run or changed.
     let KR_THRESHOLD = 0.6;
     const KR = { decision: null, bars: [], fc: null, busy: false, lastLoad: 0, lastAuto: 0, key: null };
     const krDp = v => (Math.abs(v) < 1 ? 4 : 2);
 
     function krHeroTick() {
-      if (!document.getElementById("tab-command-center").classList.contains("active")) return;
+      if (!document.getElementById("tab-command-center").classList.contains("active") || document.hidden) return;
       if (Date.now() - KR.lastLoad < 30000) return;
       KR.lastLoad = Date.now();
       krHeroLoad();
+    }
+    setInterval(krHeroTick, 10000);   // on its own clock, not only when other data changes
+
+    function krBarSec(bars) {
+      const d = [];
+      for (let i = Math.max(1, bars.length - 30); i < bars.length; i++) d.push(bars[i].time - bars[i - 1].time);
+      d.sort((a, b) => a - b);
+      return d.length ? d[Math.floor(d.length / 2)] || 300 : 300;
+    }
+    // a candle that has closed since the forecast was made -> the forecast is out of date
+    function krForecastStale() {
+      const fc = KR.fc, bars = KR.bars;
+      if (!fc || !bars.length) return !fc;
+      const sec = krBarSec(bars), now = Date.now() / 1000;
+      return bars.some(b => b.time > fc.based_on_bar && b.time + sec <= now);
     }
 
     async function krHeroLoad() {
@@ -4510,16 +4528,20 @@
       const changed = key !== KR.key;
       KR.decision = d; KR.key = key;
       krHeroVerdict();
-      if (!changed && KR.bars.length) return;
-      KR.fc = null;
-      try { KR.fc = JSON.parse(sessionStorage.getItem("krfc:" + key) || "null"); } catch (e) {}
-      try {
-        const b = await (await fetch(`/api/bars?symbol=${encodeURIComponent(d.epic)}&limit=72&overlays=0`, { cache: "no-store" })).json();
-        KR.bars = b.bars || [];
-        document.getElementById("kr-price").textContent = b.last_close != null ? Number(b.last_close).toFixed(krDp(b.last_close)) : "";
-      } catch (e) { KR.bars = []; }
+      if (changed) {
+        KR.fc = null; KR.bars = [];
+        try { KR.fc = JSON.parse(sessionStorage.getItem("krfc:" + key) || "null"); } catch (e) {}
+      }
+      try {                                        // fresh candles every time, not once per signal
+        const b = await (await fetch(`/api/bars?symbol=${encodeURIComponent(d.epic)}&limit=90&overlays=0`, { cache: "no-store" })).json();
+        if (b.bars && b.bars.length) {
+          KR.bars = b.bars;
+          document.getElementById("kr-price").textContent = Number(b.last_close).toFixed(krDp(b.last_close));
+          document.getElementById("kr-price").title = "Latest price (the candle still forming included)";
+        }
+      } catch (e) { /* keep the last candles we had */ }
       krHeroRedraw();
-      if (!KR.fc && Date.now() - KR.lastAuto > 180000) krHeroForecast(false);
+      if (krForecastStale() && !KR.busy && Date.now() - KR.lastAuto > 180000) krHeroForecast(false);
     }
 
     function krHeroEmpty() {
@@ -4577,7 +4599,7 @@
         `${name.charAt(0).toUpperCase() + name.slice(1)}, ${buy ? "buy" : "sell"} signal, ${ago < 90 ? `${ago} min ago` : fmtDateTime(d.ts)}`;
       document.getElementById("kr-explain").textContent =
         `When the signal came, Kronos forecast the next bars and ${Math.round(conf * 100)}% of them closed ${buy ? "above" : "below"} the signal candle. ` +
-        `The amber band is a forecast drawn now from the latest closed candle; the shaded width is its forecast high-to-low range.`;
+        `The amber candles are a fresh Kronos forecast from the latest closed candle, on the same time scale as the real ones; candles that close later are drawn over them.`;
       const dash = (Math.max(0, Math.min(1, conf)) * 314.2).toFixed(1);
       const fg = document.getElementById("kr-gauge-fg");
       fg.setAttribute("stroke-dasharray", `${dash} 314.2`);
@@ -4616,54 +4638,76 @@
       if (!box || !KR.decision) return;
       const bars = KR.bars, fc = KR.fc && KR.fc.symbol === KR.decision.epic ? KR.fc : null;
       if (!bars.length) { box.innerHTML = `<div class="cc-empty">No candles for ${esc(KR.decision.epic)} from the broker right now.</div>`; return; }
-      // drawn at the box's own width so labels stay readable on a phone
+      const sec = krBarSec(bars), now = Date.now() / 1000;
+      const f = fc ? (fc.forecast_bars || []) : [];
+      const buyDir = fc ? fc.direction !== "SELL" : KR.decision.pattern_direction !== "SELL";
+      // One time axis for real and forecast candles: a slot per candle time, so a
+      // forecast candle and the real candle that later closes at that time line up.
+      const anchor = fc ? fc.based_on_bar : (bars.filter(x => x.time + sec <= now).pop() || bars[bars.length - 1]).time;
       const W = Math.round(Math.max(320, Math.min(900, (box.clientWidth || 900) - 40)));
-      const H = W < 560 ? 230 : 320, padT = 16, padB = 34;
-      const xHist = Math.round(W * (W < 560 ? 0.66 : 0.71)), xEnd = Math.round(W * 0.955);
-      const f = fc ? fc.forecast_bars || [] : [];
-      const vals = bars.flatMap(b => [b.high, b.low]).concat(f.flatMap(b => [b.high, b.low]));
+      const H = W < 560 ? 240 : 320, padT = 16, padB = 34, left = 6, right = W - 6;
+      const histKeep = W < 560 ? 22 : 42;          // leave the forecast room to be read
+      const before = bars.filter(x => x.time <= anchor).slice(-histKeep).map(x => x.time);
+      const after = [...new Set([...bars.filter(x => x.time > anchor).map(x => x.time), ...f.map(x => x.time)])].sort((x, y) => x - y);
+      const slots = [...before, ...after];
+      const slotOf = new Map(slots.map((tm, i) => [tm, i]));
+      const step = (right - left) / Math.max(slots.length, 1);
+      const X = i => left + step * (i + 0.5);
+      const bw = Math.max(2, Math.min(14, step * 0.62));
+      const shown = bars.filter(x => slotOf.has(x.time));
+      const vals = shown.flatMap(x => [x.high, x.low]).concat(f.flatMap(x => [x.high, x.low]));
       let lo = Math.min(...vals), hi = Math.max(...vals);
-      const padV = (hi - lo) * 0.06 || 1; lo -= padV; hi += padV;
+      const pad = (hi - lo) * 0.06 || 1; lo -= pad; hi += pad;
       const Y = v => (padT + (hi - v) / (hi - lo) * (H - padT - padB)).toFixed(1);
-      const n = bars.length, X = i => (8 + i * (xHist - 8) / Math.max(1, n - 1)).toFixed(1);
-      const bw = Math.max(2, Math.min(8, (xHist - 16) / n * 0.6));
-      const candles = bars.map((b, i) => {
-        const up = b.close >= b.open, cls = up ? "up" : "down";
-        const y1 = Y(Math.max(b.open, b.close)), y2 = Y(Math.min(b.open, b.close));
-        return `<line class="kr-wick ${cls}" x1="${X(i)}" x2="${X(i)}" y1="${Y(b.high)}" y2="${Y(b.low)}"></line>` +
-          `<rect class="kr-body ${cls}${i < n - 20 ? " old" : ""}" x="${(X(i) - bw / 2).toFixed(1)}" y="${y1}" width="${bw.toFixed(1)}" height="${Math.max(1.2, y2 - y1).toFixed(1)}" rx="1"></rect>`;
-      }).join("");
       const grid = [0.2, 0.5, 0.8].map(k => { const v = lo + (hi - lo) * k;
-        return `<line class="kr-grid" x1="8" x2="${xEnd}" y1="${Y(v)}" y2="${Y(v)}"></line><text class="kr-axis" x="${xEnd + 8}" y="${(+Y(v) + 4).toFixed(1)}">${v.toFixed(krDp(v))}</text>`; }).join("");
-      const last = bars[n - 1].close;
-      let fan = "", foot = "";
+        return `<line class="kr-grid" x1="${left}" x2="${right}" y1="${Y(v)}" y2="${Y(v)}"></line><text class="kr-axis" x="${right + 8}" y="${(+Y(v) + 4).toFixed(1)}">${v.toFixed(krDp(v))}</text>`; }).join("");
+      const candle = (x, cls, extra = "") => {
+        const xi = X(slotOf.get(x.time));
+        const y1 = Y(Math.max(x.open, x.close)), y2 = Y(Math.min(x.open, x.close));
+        return `<line class="kr-wick ${cls}" x1="${xi.toFixed(1)}" x2="${xi.toFixed(1)}" y1="${Y(x.high)}" y2="${Y(x.low)}"></line>` +
+          `<rect class="kr-body ${cls}${extra}" x="${(xi - bw / 2).toFixed(1)}" y="${y1}" width="${bw.toFixed(1)}" height="${Math.max(1.2, y2 - y1).toFixed(1)}" rx="1"></rect>`;
+      };
+      let fan = "", foot = "", lastClose = (bars.filter(x => x.time <= anchor).pop() || bars[0]).close;
       if (f.length) {
-        const XF = j => (xHist + j * (xEnd - xHist) / f.length).toFixed(1);
-        const top = [`${XF(0)},${Y(last)}`, ...f.map((b, j) => `${XF(j + 1)},${Y(b.high)}`)];
-        const bot = [...f.map((b, j) => `${XF(j + 1)},${Y(b.low)}`).reverse(), `${XF(0)},${Y(last)}`];
-        const line = [`M${XF(0)},${Y(last)}`, ...f.map((b, j) => `L${XF(j + 1)},${Y(b.close)}`)].join(" ");
-        const dots = f.map((b, j) => `<circle class="kr-fdot ${(b.close > last) === (fc.direction !== "SELL") ? "agree" : ""}" cx="${XF(j + 1)}" cy="${Y(b.close)}" r="3.4"></circle>`).join("");
+        const a0 = X(slotOf.get(anchor) ?? before.length - 1);
+        const fx = x => X(slotOf.get(x.time)).toFixed(1);
+        const top = [`${a0.toFixed(1)},${Y(lastClose)}`, ...f.map(x => `${fx(x)},${Y(x.high)}`)];
+        const bot = [...f.map(x => `${fx(x)},${Y(x.low)}`).reverse(), `${a0.toFixed(1)},${Y(lastClose)}`];
+        const line = [`M${a0.toFixed(1)},${Y(lastClose)}`, ...f.map(x => `L${fx(x)},${Y(x.close)}`)].join(" ");
         const endV = f[f.length - 1].close;
-        fan = `<g class="kr-fan"><rect class="kr-future" x="${xHist}" y="${padT - 6}" width="${xEnd - xHist}" height="${H - padT - padB + 12}" rx="12"></rect>
+        const fStart = X(slotOf.get(f[0].time)) - step / 2;
+        fan = `<g class="kr-fan"><rect class="kr-future" x="${fStart.toFixed(1)}" y="${padT - 6}" width="${(right - fStart).toFixed(1)}" height="${H - padT - padB + 12}" rx="10"></rect>
           <path class="kr-band" d="M${top.join(" L")} L${bot.join(" L")} Z"></path>
-          <path class="kr-line" d="${line}"></path>${dots}
-          <text class="kr-end" x="${xEnd + 8}" y="${(+Y(endV) + 4).toFixed(1)}">${endV.toFixed(krDp(endV))}</text></g>`;
-        const agree = f.filter(b => (b.close > last) === (fc.direction !== "SELL")).length;
-        const when = fmtTime(fc.computed_at * 1000);
-        foot = `Forecast drawn at ${when} from the candle at ${fmtTime(fc.based_on_bar * 1000)}: ${agree} of ${f.length} bars close ${fc.direction === "SELL" ? "below" : "above"} it. ` +
-               `Kronos samples, so a fresh forecast can differ a little from the one the agent used.`;
+          ${f.map(x => candle(x, (x.close > lastClose) === buyDir ? "fc agree" : "fc")).join("")}
+          <path class="kr-line" d="${line}"></path>
+          <text class="kr-end" x="${right + 8}" y="${(+Y(endV) + 4).toFixed(1)}">${endV.toFixed(krDp(endV))}</text></g>`;
+        const agree = f.filter(x => (x.close > lastClose) === buyDir).length;
+        const real = bars.filter(x => x.time > anchor && x.time + sec <= now).length;
+        foot = `Forecast drawn at ${fmtTime(fc.computed_at * 1000)} from the ${fmtTime(fc.based_on_bar * 1000)} candle: ${agree} of ${f.length} forecast candles close ${buyDir ? "above" : "below"} it. ` +
+               (real ? `${real} real candle${real === 1 ? " has" : "s have"} closed since; ${real === 1 ? "it is" : "they are"} drawn over the forecast. ` : "") +
+               "Kronos samples, so a fresh forecast can differ a little from the one the agent used. A new forecast is drawn when a candle closes (at most every 3 minutes).";
       } else if (!KR.busy) {
         foot = "No forecast drawn for this signal yet. Draw forecast again runs Kronos once on this computer.";
       }
-      box.innerHTML = `<svg viewBox="0 0 ${W + 40} ${H}" role="img" aria-label="${esc(KR.decision.epic)}: last ${n} candles${f.length ? ` and a ${f.length}-bar Kronos forecast` : ""}">
-        ${grid}<g>${candles}</g>${fan}
-        <line class="kr-now" x1="${xHist}" x2="${xHist}" y1="${padT - 6}" y2="${H - padB + 6}"></line>
-        <circle class="kr-now-dot" cx="${xHist}" cy="${Y(last)}" r="5"></circle>
-        <text class="kr-axis" x="${xHist - 10}" y="${H - 10}" text-anchor="end">Recent candles</text>
-        <text class="kr-axis kr-amber" x="${xHist + 10}" y="${H - 10}">${f.length ? `Kronos forecast, next ${f.length} bars` : "Kronos forecast"}</text>
+      const realCandles = shown.map(x => {
+        const forming = x.time + sec > now;
+        return candle(x, x.close >= x.open ? "up" : "down", (forming ? " forming" : "") + (x.time > anchor || slotOf.get(x.time) >= before.length - 20 ? "" : " old"));
+      }).join("");
+      // the candle the agent asked Kronos about
+      const sigBar = bars.filter(x => x.time + sec <= KR.decision.ts + 1).pop();
+      const sig = sigBar && slotOf.has(sigBar.time)
+        ? `<path class="kr-sig" d="M${X(slotOf.get(sigBar.time)).toFixed(1)},${(+Y(sigBar.low) + 6).toFixed(1)} l-5,9 h10 z"><title>The signal candle</title></path>` : "";
+      const ax = X(slotOf.get(anchor) ?? before.length - 1);
+      box.innerHTML = `<svg viewBox="0 0 ${W + 50} ${H}" role="img" aria-label="${esc(KR.decision.epic)}: last ${shown.length} candles${f.length ? ` and a ${f.length}-candle Kronos forecast` : ""}">
+        ${grid}${fan}<g>${realCandles}</g>${sig}
+        <line class="kr-now" x1="${ax.toFixed(1)}" x2="${ax.toFixed(1)}" y1="${padT - 6}" y2="${H - padB + 6}"></line>
+        <circle class="kr-now-dot" cx="${ax.toFixed(1)}" cy="${Y(lastClose)}" r="4.5"></circle>
+        <text class="kr-axis" x="${left}" y="${H - 10}">Closed candles</text>
+        <text class="kr-axis kr-amber" x="${W + 46}" y="${H - 10}" text-anchor="end">${f.length ? `Forecast, next ${f.length} candles` : "Kronos forecast"}</text>
       </svg>`;
       if (foot || !KR.busy) document.getElementById("kr-chart-foot").textContent = foot;
     }
+
 
     function ccRenderPipeline(p, reasons) {
       const afterInd = (p.patterns || 0) - (p.indicators || 0);

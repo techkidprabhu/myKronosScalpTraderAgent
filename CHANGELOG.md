@@ -15,6 +15,23 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Fixed
+- **Command Center's Kronos card didn't update and the forecast looked
+  wrong.** The candles were loaded once per signal and never refreshed, and
+  the forecast was drawn once and squeezed into a fixed box several times
+  wider per candle than the real ones. It also started one candle off,
+  because the chart included the still-forming candle while Kronos forecasts
+  from the last closed one. Now:
+  - candles refresh every 30 s on the card's own clock (forming candle drawn
+    dashed);
+  - forecast candles sit on the same time axis as the real ones, so candles
+    that close afterwards land on top of the forecast;
+  - a new forecast is drawn when a candle has closed since the last one (at
+    most every 3 minutes, only while the page is visible), or on "Draw
+    forecast again";
+  - the signal candle is marked, and the history shown is shorter so the
+    forecast is readable.
+
 ### Added
 - **Your own rules in plain Markdown (`config/skills.md`), off by default.**
   A new step between the indicator check and Kronos. Each rule is a "## "
