@@ -2254,6 +2254,15 @@ def stream():
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+def _code_defaults() -> dict:
+    """Built-in defaults of sections whose settings live in the code
+    (fine-tuning, skills.md rules), keyed by dotted settings path."""
+    from src import finetune as _ft, rules as _rules
+    out = {f"finetune.{k}": v for k, v in _ft.DEFAULTS.items()}
+    out.update({f"skills.{k}": v for k, v in _rules.DEFAULTS.items()})
+    return out
+
+
 @app.route("/api/settings", methods=["GET", "POST"])
 def handle_settings():
     """Schema-driven settings form. GET: the schema plus, for the shared
@@ -2273,6 +2282,11 @@ def handle_settings():
                           .get(s.adapter, {}).get("markets", [])})
         fields = [f["key"] for sec in settings_schema() for f in sec["fields"]]
         values = {"shared": {k: _get_path(shared, k)[0] for k in fields}}
+        # Settings added in later versions may be missing from an older
+        # config.yaml; show the value the code actually uses instead of a blank.
+        for k, v in _code_defaults().items():
+            if k in values["shared"] and not _get_path(shared, k)[1]:
+                values["shared"][k] = v
         overrides = {}
         broker_meta = {}
         for spec in specs:
