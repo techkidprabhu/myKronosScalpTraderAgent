@@ -215,3 +215,24 @@ def test_nullable_rsi_limit_can_be_turned_off(client):
     r = _post(client, {"scope": "shared", "changes": {"indicators.max_rsi_for_buy": ""}})
     assert r.status_code == 200
     assert yaml.safe_load(client.cfg_path.read_text())["indicators"]["max_rsi_for_buy"] is None
+
+
+def test_settings_daily_limits_and_selflearning_sections(client):
+    body = client.get("/api/settings", headers=AUTH).get_json()
+    secs = {s["id"]: [f["key"] for f in s["fields"]] for s in body["schema"]}
+    assert {"risk.daily_profit_target_pct", "risk.daily_profit_target", "risk.max_daily_loss",
+            "risk.max_symbol_loss_per_day", "risk.max_losses_per_symbol_per_day"} <= set(secs["daily"])
+    assert "risk.daily_profit_target_pct" not in secs["daytrader"]
+    assert {"finetune.enabled", "finetune.batch_size", "finetune.device", "finetune.releases_repo"} <= set(secs["selflearning"])
+    assert "skills.file" in secs["skills"]
+    # Not in this test config.yaml: the code's default is shown, not a blank
+    assert body["values"]["shared"]["finetune.batch_size"] == 8
+    assert body["values"]["shared"]["finetune.device"] == "auto"
+    assert body["values"]["shared"]["skills.file"] == "config/skills.md"
+
+
+def test_settings_rules_file_must_be_markdown(client):
+    r = _post(client, {"scope": "shared", "changes": {"skills.file": "config/rules.txt"}})
+    assert r.status_code == 400
+    r = _post(client, {"scope": "shared", "changes": {"finetune.device": "cuda", "skills.file": "config/my-rules.md"}})
+    assert r.status_code == 200, r.get_json()

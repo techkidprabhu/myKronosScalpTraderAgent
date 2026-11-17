@@ -16,6 +16,17 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Config & Risk: every recent setting in one clear place.** A new *Daily
+  limits* section groups the daily loss cap, the daily profit target (% and
+  amount), max trades per day and the per-stock limits. A new *Self-learning*
+  section holds all fine-tuning settings, adding ones that were only in
+  config.yaml: collect on close, candles and symbols collected, batch size,
+  learning rate, signal/held-out shares, tokenizer training, Train on
+  (auto/cpu/cuda), runs kept and the saved-versions repository. Also new on the
+  page: the skills.md rules file, the screener's relative-volume and squeeze
+  periods, the closed-market position check, the connection timeout, the
+  unmanaged-position check and the sentiment candle count. Settings missing
+  from an older config.yaml show the value the code uses instead of a blank.
 - **Live P&L % on the Command Center.** Today's P&L tile shows the result as
   a % of the account value at the start of the day, next to the amount, and
   each open position shows its % since entry. Both update live.

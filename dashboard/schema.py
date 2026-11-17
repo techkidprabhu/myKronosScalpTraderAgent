@@ -37,24 +37,44 @@ SECTIONS = [
         ("trade_outside_market_hours", "Trade outside market hours", "bool", {}),
         ("schedule.follow_market", "Follow the exchange session (sleep when closed)", "bool", {}),
         ("schedule.warmup_minutes", "Warm-up before the open (min)", "int", {"min": 0, "max": 120}),
+        ("schedule.sleep_monitor_seconds", "While closed, check positions every (s)", "int", {"min": 30, "max": 3600}),
         ("schedule.notify_open_close", "Telegram at open / close", "bool", {}),
     ]},
     {"id": "kronos", "title": "Kronos confirmation", "fields": [
         ("kronos_confidence_threshold", "Min Kronos confidence", "float", {"min": 0.5, "max": 1.0,
          "help": "Share of forecast bars that must move the pattern's way"}),
         ("forecast_horizon", "Forecast horizon (bars)", "int", {"min": 1, "max": 30}),
-        ("finetune.enabled", "Self-learning: collect candles automatically", "bool", {"scope": "shared",
-            "help": "Saves candles of screened and traded symbols at each market close (data/training)"}),
-        ("finetune.train_time", "Self-learning: train at (local HH:MM)", "text", {"scope": "shared", "nullable": True,
-            "help": "Empty = only when you start it. Runs only while all markets are closed"}),
-        ("finetune.train_days", "Self-learning: training days", "list", {"scope": "shared", "lowercase": True,
-            "help": "mon, tue, wed, thu, fri, sat, sun"}),
-        ("finetune.max_steps", "Self-learning: training steps", "int", {"scope": "shared", "min": 10, "max": 20000}),
-        ("finetune.max_minutes", "Self-learning: time limit (min)", "int", {"scope": "shared", "min": 5, "max": 1440}),
         ("kronos.sample_count", "Sample paths averaged", "int", {"min": 1, "max": 20, "scope": "shared",
          "help": "Shared Kronos model - one value for every broker"}),
         ("kronos.temperature", "Sampling temperature", "float", {"min": 0.05, "max": 2.0, "scope": "shared"}),
         ("kronos.top_p", "Top-p", "float", {"min": 0.1, "max": 1.0, "scope": "shared"}),
+    ]},
+    {"id": "selflearning", "title": "Self-learning (fine-tuning Kronos)", "fields": [
+        ("finetune.enabled", "Collect candles automatically", "bool", {"scope": "shared",
+            "help": "Saves candles of screened and traded symbols at each market close (data/training)"}),
+        ("finetune.train_time", "Train at (local HH:MM)", "text", {"scope": "shared", "nullable": True,
+            "help": "Empty = only when you start it. Runs only while all markets are closed"}),
+        ("finetune.train_days", "Training days", "list", {"scope": "shared", "lowercase": True,
+            "help": "mon, tue, wed, thu, fri, sat, sun"}),
+        ("finetune.max_steps", "Training steps (max)", "int", {"scope": "shared", "min": 10, "max": 20000}),
+        ("finetune.max_minutes", "Time limit per run (min)", "int", {"scope": "shared", "min": 5, "max": 1440}),
+        ("finetune.collect_on_close", "Collect when each market closes", "bool", {"scope": "shared"}),
+        ("finetune.bars_per_symbol", "Candles requested per symbol", "int", {"scope": "shared", "min": 200, "max": 20000}),
+        ("finetune.max_symbols", "Symbols collected per broker (max)", "int", {"scope": "shared", "min": 1, "max": 1000}),
+        ("finetune.batch_size", "Batch size", "int", {"scope": "shared", "min": 1, "max": 256,
+            "help": "Windows per training step on this computer (the GPU kit uses its own, larger default)"}),
+        ("finetune.learning_rate", "Learning rate", "float", {"scope": "shared", "min": 0.000001, "max": 0.01}),
+        ("finetune.signal_fraction", "Share of each batch from the agent's signals", "float", {"scope": "shared", "min": 0, "max": 0.9,
+            "help": "0.3 = 30% of windows end where the agent asked Kronos for a verdict"}),
+        ("finetune.val_fraction", "Newest candles held out for the comparison", "float", {"scope": "shared", "min": 0.05, "max": 0.5,
+            "help": "0.15 = the newest 15% are never trained on"}),
+        ("finetune.train_tokenizer", "Also fine-tune the tokenizer", "bool", {"scope": "shared", "help": "Needs far more data; usually off"}),
+        ("finetune.device", "Train on", "select", {"scope": "shared", "options": ["auto", "cpu", "cuda"],
+            "help": "auto = an NVIDIA GPU if PyTorch can use one, else the CPU"}),
+        ("finetune.keep_runs", "Training runs kept on this computer", "int", {"scope": "shared", "min": 1, "max": 50,
+            "help": "Older runs' weights are deleted (the model in use and the shadow model are always kept)"}),
+        ("finetune.releases_repo", "Saved versions repository (owner/name)", "text", {"scope": "shared", "nullable": True,
+            "help": "GitHub repository for Save as version; empty = this folder's GitHub origin. Needs GITHUB_TOKEN in .env"}),
     ]},
     {"id": "indicators", "title": "Indicator filter", "fields": [
         ("indicators.enabled", "Indicator filter on", "bool", {}),
@@ -75,6 +95,8 @@ SECTIONS = [
                     "Edit them on Strategies & Tactics -> Your rules. Restart the agent after switching on or off"}),
         ("skills.mode", "Mode", "select", {"options": ["log", "filter"],
          "help": "log = record what a rule would stop, never stops anything; filter = stops the signal"}),
+        ("skills.file", "Rules file", "text", {"nullable": True,
+         "help": "A .md file inside the project; empty = config/skills.md"}),
     ]},
     {"id": "screener", "title": "Universe & screener", "fields": [
         ("screener.enabled", "Dynamic screener", "bool", {"help": "Off = the static symbols: list in config.yaml"}),
@@ -97,6 +119,9 @@ SECTIONS = [
         ("screener.score.benchmark", "Score benchmark", "text", {"nullable": True,
             "help": "e.g. US.SPY - empty uses the market's main index ETF"}),
         ("screener.score.rs_lookback", "Relative strength lookback (bars)", "int", {"min": 5, "max": 500}),
+        ("screener.score.rvol_recent", "Relative volume: recent bars", "int", {"min": 1, "max": 50}),
+        ("screener.score.rvol_period", "Relative volume: usual over (bars)", "int", {"min": 5, "max": 200}),
+        ("screener.score.squeeze_period", "Squeeze: Bollinger period", "int", {"min": 5, "max": 200}),
         ("screener.score.weight_relative_strength", "Weight: relative strength", "float", {"min": 0, "max": 100}),
         ("screener.score.weight_relative_volume", "Weight: relative volume", "float", {"min": 0, "max": 100}),
         ("screener.score.weight_squeeze", "Weight: squeeze", "float", {"min": 0, "max": 100}),
@@ -125,10 +150,25 @@ SECTIONS = [
         ("risk.take_profit_pct", "Take profit % of fill", "float", {"min": 0.05, "max": 50, "nullable": True}),
         ("risk.stop_loss_points", "Stop loss distance", "float", {"min": 0.0001, "unit": "price"}),
         ("risk.take_profit_points", "Take profit distance", "float", {"min": 0.0001, "unit": "price"}),
-        ("risk.max_daily_loss", "Max daily loss", "float", {"min": 1, "unit": "money"}),
         ("risk.min_minutes_between_trades", "Per-symbol cooldown (min)", "int", {"min": 0, "max": 10080}),
         ("risk.allow_short", "Allow short selling", "bool", {}),
         ("risk.lot_size", "Lot size", "int", {"min": 1, "max": 100000}),
+    ]},
+    {"id": "daily", "title": "Daily limits (loss cap, profit target, per stock)", "fields": [
+        ("risk.max_daily_loss", "Max daily loss", "float", {"min": 1, "unit": "money"}),
+        ("risk.daily_loss_includes_open_risk", "Daily cap counts open risk at the stops", "bool", {
+         "help": "Closed P&L + what open trades lose if every stop fills + the new trade's max loss"}),
+        ("risk.daily_profit_target_pct", "Daily profit target (% of account)", "float", {"min": 0.01, "max": 100,
+         "nullable": True, "help": "No new trades for the rest of the day once today's closed profit reaches this % of the "
+                                   "start-of-day account value. Analysis, Kronos checks and data collection continue; "
+                                   "open positions keep their stops and targets"}),
+        ("risk.daily_profit_target", "Daily profit target (amount)", "float", {"min": 1, "unit": "money", "nullable": True,
+         "help": "The same as an amount; with both set, the lower one applies"}),
+        ("risk.max_trades_per_day", "Max new trades per day", "int", {"min": 1, "max": 200, "nullable": True}),
+        ("risk.max_symbol_loss_per_day", "Per stock: stop after losing", "float", {"min": 1, "unit": "money",
+         "nullable": True, "help": "No new entries in a stock once its closed trades today lost this much; others keep trading"}),
+        ("risk.max_losses_per_symbol_per_day", "Per stock: stop after N losing trades", "int", {"min": 1, "max": 50,
+         "nullable": True, "help": "No new entries in a stock after this many losing trades in it today"}),
     ]},
     {"id": "daytrader", "title": "Day-trader rules (empty / off = not used)", "danger": True, "fields": [
         ("risk.max_loss_per_trade", "Max loss per trade", "float", {"min": 0.01, "nullable": True, "unit": "money",
@@ -137,19 +177,6 @@ SECTIONS = [
         ("risk.cash_buffer_pct", "Cash buffer % of account", "float", {"min": 0, "max": 90, "nullable": True}),
         ("risk.min_reward_risk", "Min reward:risk", "float", {"min": 0.1, "max": 10, "nullable": True,
          "help": "Skip trades whose target is closer than this many times the stop"}),
-        ("risk.max_trades_per_day", "Max new trades per day", "int", {"min": 1, "max": 200, "nullable": True}),
-        ("risk.daily_profit_target_pct", "Daily profit target (% of account)", "float", {"min": 0.01, "max": 100,
-         "nullable": True, "help": "No new trades for the rest of the day once today's closed profit reaches this % of the "
-                                   "start-of-day account value. Analysis, Kronos checks and data collection continue; "
-                                   "open positions keep their stops and targets"}),
-        ("risk.daily_profit_target", "Daily profit target (amount)", "float", {"min": 1, "unit": "money", "nullable": True,
-         "help": "The same as an amount; with both set, the lower one applies"}),
-        ("risk.max_symbol_loss_per_day", "Per stock: stop after losing", "float", {"min": 1, "unit": "money",
-         "nullable": True, "help": "No new entries in a stock once its closed trades today lost this much; others keep trading"}),
-        ("risk.max_losses_per_symbol_per_day", "Per stock: stop after N losing trades", "int", {"min": 1, "max": 50,
-         "nullable": True, "help": "No new entries in a stock after this many losing trades in it today"}),
-        ("risk.daily_loss_includes_open_risk", "Daily cap counts open risk at the stops", "bool", {
-         "help": "Closed P&L + what open trades lose if every stop fills + the new trade's max loss"}),
         ("risk.stop_atr_multiple", "Stop = ATR \u00d7", "float", {"min": 0.1, "max": 10, "nullable": True,
          "help": "Overrides the % / price-unit stop"}),
         ("risk.atr_period", "ATR period (bars)", "int", {"min": 2, "max": 100}),
@@ -167,6 +194,7 @@ SECTIONS = [
         ("sentiment.enabled", "Show the sentiment meter", "bool", {}),
         ("sentiment.timeframe", "Candles used", "select", {"options": TIMEFRAMES,
          "help": "DAY = the market's trend; HOUR_1 / MIN_15 for intraday mood"}),
+        ("sentiment.lookback_bars", "Candles read per benchmark", "int", {"min": 60, "max": 1000}),
         ("sentiment.refresh_minutes", "Re-read every (min)", "int", {"min": 1, "max": 1440}),
         ("sentiment.adx_trend", "ADX that counts as trending", "float", {"min": 10, "max": 40}),
         ("sentiment.breadth_symbols", "Breadth: active symbols checked", "int", {"min": 0, "max": 50,
@@ -181,6 +209,8 @@ SECTIONS = [
     {"id": "safety", "title": "Connection & safety", "fields": [
         ("connection.health_check_seconds", "Broker health check every (s)", "int", {"min": 10, "max": 3600}),
         ("connection.reconnect_after_failures", "Reconnect after failed checks", "int", {"min": 1, "max": 20}),
+        ("connection.connect_timeout_seconds", "Give up a connection attempt after (s)", "int", {"min": 5, "max": 300}),
+        ("unmanaged_positions.check_interval_seconds", "Check for positions not opened by the agent every (s)", "int", {"min": 30, "max": 3600}),
         ("unmanaged_positions.mode", "Positions not opened by the agent", "select", {"options": ["alert", "off"]}),
         ("unmanaged_positions.close_missing_positions", "Close agent rows the broker no longer holds", "bool", {}),
         ("unmanaged_positions.allow_manual_close", "Allow closing my own holdings from the dashboard", "bool", {
@@ -268,6 +298,9 @@ def cross_check(cfg: dict) -> list[str]:
     bad = [s for s in (scr.get("sources") or []) if str(s).strip().lower() not in known]
     if bad:
         errs.append(f"Unknown market list(s): {', '.join(map(str, bad))} (use {', '.join(sorted(known))})")
+    sk = (cfg.get("skills") or {}).get("file")
+    if sk and not str(sk).lower().endswith(".md"):
+        errs.append("The rules file must be a .md file")
     if scr.get("sources") and not scr.get("enabled"):
         errs.append("Market lists need the dynamic screener switched on")
     sc = scr.get("score") or {}
