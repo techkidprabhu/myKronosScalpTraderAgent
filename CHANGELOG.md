@@ -16,6 +16,16 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Auto broker selection on the dashboard.** The broker selector has a new
+  "Auto: open market" choice. The dashboard then shows the broker whose
+  market is open (India via Zerodha/Angel 09:15-15:30 IST, the US via moomoo
+  09:30-16:00 ET), or the one that opens next while both are closed, with
+  holidays and early closes from the exchange calendars. It checks every
+  minute and switches by itself, with a message, when the other market
+  opens; choosing a broker by hand turns Auto off. The agent side needs no
+  switch: every enabled broker already trades only during its own session.
+
+### Added
 - **Running version on the dashboard.** A chip under the title shows the last
   merged pull request (e.g. "PR #32"). Clicking it lists the dashboard's
   version, the agent's version and what is on disk, each with release tag,

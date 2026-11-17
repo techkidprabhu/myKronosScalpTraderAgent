@@ -253,3 +253,28 @@ def upcoming_holidays(code: str, n: int = 4, today: date | None = None) -> list[
 
 def exchange_for_market(market: str) -> str:
     return MARKET_EXCHANGE.get(market.upper(), "NASDAQ")
+
+
+def auto_pick(brokers: list[dict], now: datetime | None = None) -> dict | None:
+    """Which broker to look at right now: the one whose market is open (the
+    first listed if several are), else the one whose market opens next.
+    brokers: [{"name", "market", "enabled"}]; disabled brokers are left out
+    unless none is enabled. Returns {"name", "reason", "state", "until"}."""
+    pool = [b for b in brokers if b.get("enabled")] or list(brokers)
+    best = None
+    for i, b in enumerate(pool):
+        try:
+            s = session(exchange_for_market(str(b.get("market") or "US")), now)
+        except Exception:  # noqa: BLE001 - an unknown market never wins
+            continue
+        if s["state"] in ("open", "lunch"):
+            key = (0, i)
+            pick = {"name": b["name"], "state": "open", "until": s.get("closes_at"),
+                    "reason": f"{s['name']} is open"}
+        else:
+            key = (1, s["next_open"])
+            pick = {"name": b["name"], "state": "next", "until": s["next_open"],
+                    "reason": f"{s['name']} opens next"}
+        if best is None or key < best[0]:
+            best = (key, pick)
+    return best[1] if best else None
