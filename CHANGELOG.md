@@ -16,6 +16,22 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Live P&L % on the Command Center.** Today's P&L tile shows the result as
+  a % of the account value at the start of the day, next to the amount, and
+  each open position shows its % since entry. Both update live.
+- **Daily profit target** (off by default): `risk.daily_profit_target_pct`
+  (% of the start-of-day account value) and/or `risk.daily_profit_target`
+  (amount; with both set the lower applies). Once today's closed trades
+  reach it, no new entries until tomorrow. Everything else keeps running:
+  patterns, indicators, your rules and Kronos are still evaluated and logged
+  (the decision log says "daily profit target reached"), candles are still
+  collected for self-learning, and open positions keep their stop, target
+  and trailing stop. A loss on a still-open trade later doesn't reopen the
+  day; raising or switching off the target does. The Today's P&L tile shows
+  progress toward the target and a "TARGET HIT" badge; the settings are on
+  Risk Model (daily section) and Config & Risk.
+
+### Added
 - **Per-stock daily limits** (off by default). `risk.max_symbol_loss_per_day`
   stops new entries in a stock once its closed trades that day have lost
   this much in total; `risk.max_losses_per_symbol_per_day` stops them after

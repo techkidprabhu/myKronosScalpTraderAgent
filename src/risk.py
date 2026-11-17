@@ -73,6 +73,14 @@ class RiskConfig:
     # many losing trades in it. Other symbols keep trading. Exits never blocked.
     max_symbol_loss_per_day: float | None = None
     max_losses_per_symbol_per_day: int | None = None
+    # Daily profit target: once today's closed P&L reaches this (an amount in
+    # the account currency, or % of the account value at the start of the
+    # day), no new entries until tomorrow. Everything else keeps running:
+    # patterns, indicators, your rules and Kronos are still evaluated and
+    # logged, candles are still collected, and open positions keep their
+    # stop, target and trailing stop.
+    daily_profit_target: float | None = None
+    daily_profit_target_pct: float | None = None
 
     @property
     def plans_distances(self) -> bool:
@@ -106,6 +114,9 @@ class RiskState:
     trades_today: int = 0
     symbol_pnl: dict = field(default_factory=dict)      # symbol -> closed P&L today
     symbol_losses: dict = field(default_factory=dict)   # symbol -> losing trades today
+    start_equity: float | None = None                   # account value at the start of the day
+    profit_locked: bool = False                         # daily profit target reached
+    profit_locked_at: float | None = None               # the target it was reached against
 
 
 class RiskManager:
@@ -122,6 +133,7 @@ class RiskManager:
                 logger.info("Restored risk state: %s", saved)
         self._roll_day()
         self._recheck_halt()
+        self._check_profit_target()      # a changed target applies straight after a restart
 
     def _recheck_halt(self):
         """Keep the halt in step with the configured cap. A restart alone
@@ -154,6 +166,9 @@ class RiskManager:
             self.state.trades_today = 0
             self.state.symbol_pnl = {}
             self.state.symbol_losses = {}
+            self.state.start_equity = None
+            self.state.profit_locked = False
+            self.state.profit_locked_at = None
             self.state.trading_day = today
             self._save()
 
@@ -168,6 +183,7 @@ class RiskManager:
             reason = self.symbol_limit_reason(symbol)
             if reason:
                 logger.warning("%s: %s - no more entries in it today", symbol, reason)
+        self._check_profit_target()
         if self.state.daily_pnl <= -abs(self.config.max_daily_loss):
             self.state.trading_halted = True
             logger.warning(
@@ -196,6 +212,11 @@ class RiskManager:
         blocked = {_base(b) for b in (self.config.blocked_symbols or [])}
         if blocked and _base(epic) in blocked:
             return False, f"{epic} is on blocked_symbols"
+
+        self._check_profit_target()
+        if self.state.profit_locked:
+            return False, (f"daily profit target reached (today {self.state.daily_pnl:+.2f}, target "
+                           f"{self.profit_target():.2f}) - no new entries today; analysis continues")
 
         sym_reason = self.symbol_limit_reason(epic)
         if sym_reason:
@@ -231,6 +252,49 @@ class RiskManager:
                 return False, "min_minutes_between_trades not elapsed for this symbol"
 
         return True, "ok"
+
+    def wants_start_equity(self) -> bool:
+        """True when the % profit target needs today's starting account value."""
+        self._roll_day()
+        return bool(self.config.daily_profit_target_pct) and not self.state.start_equity
+
+    def set_start_equity(self, account_value: float):
+        """Account value now, minus what was already made today = the start
+        of the day. Recorded once per exchange day."""
+        self._roll_day()
+        if account_value and account_value > 0 and not self.state.start_equity:
+            self.state.start_equity = round(float(account_value) - self.state.daily_pnl, 2)
+            logger.info("Start-of-day account value: %.2f", self.state.start_equity)
+            self._save()
+
+    def profit_target(self) -> float | None:
+        """Today's profit target as an amount, or None when off / not known yet."""
+        c = self.config
+        targets = [float(c.daily_profit_target)] if c.daily_profit_target else []
+        if c.daily_profit_target_pct and self.state.start_equity:
+            targets.append(self.state.start_equity * c.daily_profit_target_pct / 100)
+        return min(targets) if targets else None
+
+    def _check_profit_target(self):
+        """Lock new entries once the target is reached. The lock holds for the
+        rest of the day even if an open trade later gives some back; only
+        switching the target off, or raising it above today's P&L, lifts it."""
+        target = self.profit_target()
+        reached = target is not None and target > 0 and self.state.daily_pnl >= target
+        if reached and not self.state.profit_locked:
+            self.state.profit_locked, self.state.profit_locked_at = True, round(target, 2)
+            logger.warning("Daily profit target reached: today %+.2f >= %.2f. No new entries until tomorrow; "
+                           "analysis, Kronos checks and data collection continue.", self.state.daily_pnl, target)
+            self._save()
+        elif self.state.profit_locked:
+            off = not (self.config.daily_profit_target or self.config.daily_profit_target_pct)
+            raised = (target is not None and self.state.profit_locked_at is not None
+                      and target > self.state.profit_locked_at + 1e-9 and self.state.daily_pnl < target)
+            if off or raised:
+                self.state.profit_locked, self.state.profit_locked_at = False, None
+                logger.warning("Daily profit target %s - new entries resume (today %+.2f)",
+                               "switched off" if off else f"raised to {target:.2f}", self.state.daily_pnl)
+                self._save()
 
     def symbol_limit_reason(self, epic: str) -> str | None:
         """Why this symbol may not be entered again today, or None."""

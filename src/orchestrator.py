@@ -411,6 +411,12 @@ class SymbolWorker:
             except Exception as exc:
                 logger.exception("Could not query broker exposure for %s", self.symbol)
                 return False, f"could not verify broker exposure: {exc}"
+        if self.risk_manager.wants_start_equity():
+            try:
+                acct = self.broker.get_account_summary() or {}
+                self.risk_manager.set_start_equity(float(acct.get("total_assets") or 0))
+            except Exception:
+                logger.warning("Account value unavailable for the daily profit target", exc_info=True)
         sized = bool(self.risk_manager.config.max_loss_per_trade)
         return self.risk_manager.can_trade(
             self.symbol, None if sized else self.quantity, active_count,

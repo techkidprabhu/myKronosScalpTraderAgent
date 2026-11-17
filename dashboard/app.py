@@ -1815,6 +1815,20 @@ def _get_path(cfg: dict, key: str):
 from src.risk import open_risk_at_stops  # noqa: E402
 
 
+def _profit_target_view(state: dict, risk_cfg: dict, stale: bool) -> dict:
+    """The daily profit target as the agent sees it (amount, % of the
+    start-of-day account value, or both - the lower applies)."""
+    amount, pct = risk_cfg.get("daily_profit_target"), risk_cfg.get("daily_profit_target_pct")
+    start = None if stale else state.get("start_equity")
+    targets = [float(amount)] if amount else []
+    if pct and start:
+        targets.append(float(start) * float(pct) / 100)
+    return {"profit_target": round(min(targets), 2) if targets else None,
+            "profit_target_pct": pct, "profit_target_amount": amount,
+            "start_equity": start, "profit_locked": False if stale else bool(state.get("profit_locked")),
+            "closed_pnl_today": 0.0 if stale else round(float(state.get("daily_pnl") or 0.0), 2)}
+
+
 def _symbols_today(state: dict, risk_cfg: dict) -> list[dict]:
     """Per-stock results today and whether a per-stock limit now blocks it."""
     cap, n_cap = risk_cfg.get("max_symbol_loss_per_day"), risk_cfg.get("max_losses_per_symbol_per_day")
@@ -1884,6 +1898,7 @@ def get_risk_state():
         "positions": active,
         "cooldowns": cooldowns,
         "symbols_today": [] if stale else _symbols_today(state, risk_cfg),
+        **_profit_target_view(state, risk_cfg, stale),
         "reference_price": reference,
         "symbol": symbol,
     })
@@ -2034,6 +2049,7 @@ def _overview_data() -> dict:
         "open_risk": round(open_risk_at_stops(active), 2),
         "max_daily_loss": risk_cfg.get("max_daily_loss"),
         "halted": False if stale else bool(state.get("trading_halted")),
+        **_profit_target_view(state, risk_cfg, stale),
     }
 
     account = None

@@ -138,6 +138,12 @@ SECTIONS = [
         ("risk.min_reward_risk", "Min reward:risk", "float", {"min": 0.1, "max": 10, "nullable": True,
          "help": "Skip trades whose target is closer than this many times the stop"}),
         ("risk.max_trades_per_day", "Max new trades per day", "int", {"min": 1, "max": 200, "nullable": True}),
+        ("risk.daily_profit_target_pct", "Daily profit target (% of account)", "float", {"min": 0.01, "max": 100,
+         "nullable": True, "help": "No new trades for the rest of the day once today's closed profit reaches this % of the "
+                                   "start-of-day account value. Analysis, Kronos checks and data collection continue; "
+                                   "open positions keep their stops and targets"}),
+        ("risk.daily_profit_target", "Daily profit target (amount)", "float", {"min": 1, "unit": "money", "nullable": True,
+         "help": "The same as an amount; with both set, the lower one applies"}),
         ("risk.max_symbol_loss_per_day", "Per stock: stop after losing", "float", {"min": 1, "unit": "money",
          "nullable": True, "help": "No new entries in a stock once its closed trades today lost this much; others keep trading"}),
         ("risk.max_losses_per_symbol_per_day", "Per stock: stop after N losing trades", "int", {"min": 1, "max": 50,
