@@ -5,9 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kronos Swing Agent — Trading Terminal</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/chronos.css">
   <script>
-    // Apply the saved theme before anything paints (no dark/light flash).
-    try { if (localStorage.getItem("theme") === "light") document.documentElement.dataset.theme = "light"; } catch (e) {}
+    // Apply the saved theme before anything paints (no flash). Chronos is the
+    // default look; Classic (the old dark one) and Light stay selectable.
+    (function () {
+      var t = "chronos";
+      try { t = localStorage.getItem("ui-theme") || "chronos"; } catch (e) {}
+      if (t === "chronos" || t === "light") document.documentElement.dataset.theme = t;
+    })();
   </script>
   <script src="/static/js/lightweight-charts.js"></script>
 </head>
@@ -16,7 +22,7 @@
   <!-- Top Header -->
   <header class="header">
     <div class="brand-section">
-      <div class="brand-logo">🐅</div>
+      <div class="brand-logo" aria-hidden="true"><span class="brand-emoji">🐅</span><span class="brand-orb"><i></i></span></div>
       <div>
         <div class="brand-title">Kronos Swing Agent <span style="color:var(--accent-cyan); font-weight:400; font-size:14px;">Terminal</span></div>
         <div class="brand-sub">Powered by Kronos Offline K-Line Foundation Model (AAAI 2026)</div>
@@ -57,7 +63,8 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         <kbd class="kbd">Ctrl K</kbd>
       </button>
-      <button class="btn btn-icon" type="button" onclick="toggleTheme()" id="btn-theme" aria-label="Switch to light theme" title="Light / dark theme">
+      <button class="btn btn-icon" type="button" onclick="toggleTheme()" id="btn-theme" aria-label="Theme: Chronos. Switch to Classic" title="Theme: Chronos, Classic or Light">
+        <svg id="theme-icon-orbit" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3a9 9 0 1 0 9 9"/></svg>
         <svg id="theme-icon-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
         <svg id="theme-icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="display:none"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
       </button>
@@ -70,41 +77,41 @@
   <!-- Navigation Bar -->
   <nav class="nav-bar">
     <div class="tabs-list">
-      <button class="tab-btn active" onclick="switchTab('command-center')">
+      <button class="tab-btn active" onclick="switchTab('command-center')" title="Command Center">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
-        Command Center <span class="cc-live-dot" id="cc-tab-dot" title="Live connection"></span>
+        <span class="tab-label">Command Center</span> <span class="cc-live-dot" id="cc-tab-dot" title="Live connection"></span>
       </button>
-      <button class="tab-btn" onclick="switchTab('terminal')">
+      <button class="tab-btn" onclick="switchTab('terminal')" title="Live Terminal">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-        Live Terminal
+        <span class="tab-label">Live Terminal</span>
       </button>
-      <button class="tab-btn" onclick="switchTab('decisions')">
+      <button class="tab-btn" onclick="switchTab('decisions')" title="Decisions & Audit Log">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-        Decisions & Audit Log
+        <span class="tab-label">Decisions & Audit Log</span>
       </button>
-      <button class="tab-btn" onclick="switchTab('positions')">
+      <button class="tab-btn" onclick="switchTab('positions')" title="Positions & Trailing Stop">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-        Positions & Trailing Stop
+        <span class="tab-label">Positions & Trailing Stop</span>
       </button>
-      <button class="tab-btn" onclick="switchTab('performance')">
+      <button class="tab-btn" onclick="switchTab('performance')" title="Performance">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 6-7"/></svg>
-        Performance
+        <span class="tab-label">Performance</span>
       </button>
-      <button class="tab-btn" onclick="switchTab('kronos-lab')">
+      <button class="tab-btn" onclick="switchTab('kronos-lab')" title="Kronos Model Lab">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-        Kronos Model Lab
+        <span class="tab-label">Kronos Model Lab</span>
       </button>
-      <button class="tab-btn" onclick="switchTab('strategies')">
+      <button class="tab-btn" onclick="switchTab('strategies')" title="Strategies & Tactics">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-        Strategies & Tactics
+        <span class="tab-label">Strategies & Tactics</span>
       </button>
-      <button class="tab-btn" onclick="switchTab('risk-model')">
+      <button class="tab-btn" onclick="switchTab('risk-model')" title="Risk Model">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M8 13l3 3 5-6"/></svg>
-        Risk Model
+        <span class="tab-label">Risk Model</span>
       </button>
-      <button class="tab-btn" onclick="switchTab('settings')">
+      <button class="tab-btn" onclick="switchTab('settings')" title="Config & Risk">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        Config & Risk
+        <span class="tab-label">Config & Risk</span>
       </button>
     </div>
 
@@ -221,6 +228,42 @@
           <div class="cc-session-legend" id="cc-session-legend"></div>
         </div>
         <div class="cc-live" id="cc-live"><span class="cc-live-dot"></span><span id="cc-live-text">Connecting…</span></div>
+      </section>
+
+      <section class="cc-card kr-hero" id="kr-hero" aria-labelledby="kr-hero-h">
+        <div class="kr-main">
+          <div class="kr-head">
+            <h2 id="kr-hero-h" class="kr-sym">Latest Kronos check</h2>
+            <span class="kr-price" id="kr-price"></span>
+            <span class="cc-muted" id="kr-sig"></span>
+          </div>
+          <p class="cc-muted kr-explain" id="kr-explain">Waiting for the agent's first Kronos check.</p>
+          <div class="kr-chart" id="kr-chart"></div>
+          <div class="kr-chart-foot" id="kr-chart-foot"></div>
+        </div>
+        <aside class="kr-verdict" aria-label="Kronos verdict">
+          <div class="kr-gauge-row">
+            <svg class="kr-gauge" viewBox="0 0 120 120" role="img" id="kr-gauge" aria-label="Kronos confidence">
+              <circle cx="60" cy="60" r="50" class="kr-gauge-bg"></circle>
+              <circle cx="60" cy="60" r="50" class="kr-gauge-fg" id="kr-gauge-fg" stroke-dasharray="0 314.2" transform="rotate(-90 60 60)"></circle>
+              <line x1="60" y1="4" x2="60" y2="20" class="kr-gauge-tick" id="kr-gauge-tick"></line>
+              <text x="60" y="68" text-anchor="middle" class="kr-gauge-num" id="kr-gauge-num">–</text>
+            </svg>
+            <div>
+              <div class="kr-verdict-text" id="kr-verdict-text">No signal yet</div>
+              <div class="cc-muted" id="kr-verdict-sub"></div>
+            </div>
+          </div>
+          <div>
+            <h3 class="kr-gates-h">How the signal went through the agent</h3>
+            <ol class="kr-gates" id="kr-gates"></ol>
+          </div>
+          <div class="kr-actions">
+            <button type="button" class="btn btn-sm btn-primary" id="kr-redraw" onclick="krHeroForecast(true)" disabled>Draw forecast again</button>
+            <button type="button" class="btn btn-sm" id="kr-open" onclick="krOpenChart()" disabled>Open chart</button>
+            <button type="button" class="btn btn-sm" onclick="switchTab('decisions')">Decision log</button>
+          </div>
+        </aside>
       </section>
 
       <section class="cc-kpis" aria-label="Key figures">
@@ -1606,17 +1649,18 @@
 
     // Switch Tabs
     function switchTab(tabId) {
-      document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
+      document.querySelectorAll(".tab-btn").forEach(btn => { btn.classList.remove("active"); btn.removeAttribute("aria-current"); });
       document.querySelectorAll(".tab-panel").forEach(panel => panel.classList.remove("active"));
 
       const targetBtn = Array.from(document.querySelectorAll(".tab-btn")).find(b => (b.getAttribute("onclick") || "").includes(`'${tabId}'`));
-      if (targetBtn) targetBtn.classList.add("active");
+      if (targetBtn) { targetBtn.classList.add("active"); targetBtn.setAttribute("aria-current", "page"); }
 
       const panel = document.getElementById(`tab-${tabId}`);
       if (panel) panel.classList.add("active");
       if (tabId === "risk-model") rmOpen();
       if (tabId === "performance") loadPerformance();
       if (tabId === "kronos-lab") loadFinetune();
+      if (tabId === "command-center" && typeof KR !== "undefined") { KR.lastLoad = 0; krHeroTick(); }
       if (tabId === "decisions") loadDecisionStats();
 
       if (tabId === "terminal" && chartInstance) {
@@ -1721,6 +1765,7 @@
 
         // Metrics
         document.getElementById("metric-threshold").textContent = `${(data.confidence_threshold * 100).toFixed(1)}%`;
+        KR_THRESHOLD = Number(data.confidence_threshold) || KR_THRESHOLD;
         const hz = document.getElementById("metric-horizon");
         if (hz && data.forecast_horizon) hz.textContent = `Horizon: ${data.forecast_horizon} Bars Ahead`;
         document.getElementById("metric-loss-cap").textContent = `Loss Cap: -${ccySym()}${data.risk.max_daily_loss.toFixed(2)} ${CCY}`;
@@ -3730,19 +3775,27 @@
     }
 
     // ================= Theme =================
+    const THEMES = ["chronos", "dark", "light"];
+    const THEME_NAME = { chronos: "Chronos", dark: "Classic", light: "Light" };
+    function currentTheme() { return document.documentElement.dataset.theme || "dark"; }
     function chartTheme() {
-      const light = document.documentElement.dataset.theme === "light";
-      return light ? { bg: "#ffffff", text: "#475569", grid: "rgba(15, 23, 42, 0.06)", border: "#dce3ee" }
-                   : { bg: "#090d16", text: "#94a3b8", grid: "rgba(255, 255, 255, 0.05)", border: "#1f2937" };
+      const th = currentTheme();
+      if (th === "light") return { bg: "#ffffff", text: "#475569", grid: "rgba(15, 23, 42, 0.06)", border: "#dce3ee" };
+      if (th === "chronos") return { bg: "#0B2036", text: "#8FAAC4", grid: "rgba(143, 170, 196, 0.08)", border: "#23476B" };
+      return { bg: "#090d16", text: "#94a3b8", grid: "rgba(255, 255, 255, 0.05)", border: "#1f2937" };
     }
     function applyTheme(theme) {
-      const light = theme === "light";
-      if (light) document.documentElement.dataset.theme = "light"; else delete document.documentElement.dataset.theme;
-      try { localStorage.setItem("theme", light ? "light" : "dark"); } catch (e) {}
-      document.getElementById("theme-icon-sun").style.display = light ? "none" : "";
-      document.getElementById("theme-icon-moon").style.display = light ? "" : "none";
+      if (!THEMES.includes(theme)) theme = "chronos";
+      if (theme === "dark") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme;
+      try { localStorage.setItem("ui-theme", theme); } catch (e) {}
+      document.getElementById("theme-icon-orbit").style.display = theme === "chronos" ? "" : "none";
+      document.getElementById("theme-icon-sun").style.display = theme === "dark" ? "" : "none";
+      document.getElementById("theme-icon-moon").style.display = theme === "light" ? "" : "none";
+      const next = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
       const btn = document.getElementById("btn-theme");
-      btn.setAttribute("aria-label", light ? "Switch to dark theme" : "Switch to light theme");
+      btn.setAttribute("aria-label", `Theme: ${THEME_NAME[theme]}. Switch to ${THEME_NAME[next]}`);
+      btn.title = `Theme: ${THEME_NAME[theme]} (click for ${THEME_NAME[next]})`;
+      if (typeof krHeroRedraw === "function") krHeroRedraw();
       if (chartInstance) {
         const t = chartTheme();
         chartInstance.applyOptions({ layout: { background: { type: "solid", color: t.bg }, textColor: t.text },
@@ -3751,7 +3804,7 @@
       }
       if (typeof pfData !== "undefined" && pfData && document.getElementById("tab-performance").classList.contains("active")) renderPerformance();
     }
-    function toggleTheme() { applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light"); }
+    function toggleTheme() { applyTheme(THEMES[(THEMES.indexOf(currentTheme()) + 1) % THEMES.length]); }
 
     // ================= Command palette + shortcuts =================
     const CP_TABS = [
@@ -3772,7 +3825,7 @@
       cmds.push(
         { group: "Actions", label: "Scan bar now", sub: "Run the agent's pipeline on the latest bar", run: () => triggerScanNow() },
         { group: "Actions", label: `Turn auto-refresh ${autoRefresh ? "off" : "on"}`, run: () => toggleAutoRefresh() },
-        { group: "Actions", label: `Switch to ${document.documentElement.dataset.theme === "light" ? "dark" : "light"} theme`, run: () => toggleTheme() },
+        { group: "Actions", label: `Switch theme (now ${THEME_NAME[currentTheme()]})`, run: () => toggleTheme() },
         { group: "Actions", label: "Positions as cards", run: () => { switchTab("positions"); setPositionsView("cards"); } },
         { group: "Actions", label: "Positions as a table", run: () => { switchTab("positions"); setPositionsView("table"); } },
         { group: "Actions", label: "Risk Model on the live market", run: () => { switchTab("risk-model"); setTimeout(() => rmSetGraphMode("live"), 300); } },
@@ -4259,6 +4312,189 @@
       ccRenderPositions(pos);
       ccRenderActivity(o.activity || []);
       ccRenderSession(o.session);
+      krHeroTick();
+    }
+
+
+    // ================= Kronos verdict (Command Center) =================
+    // The latest signal the agent asked Kronos about: its recorded verdict and
+    // the gates it went through, with recent candles and a forecast drawn now
+    // from the latest closed candle. Drawing a forecast runs Kronos on this
+    // computer, so it happens once per new signal (at most every 3 minutes)
+    // or when you ask; the agent's own verdict is never re-run or changed.
+    let KR_THRESHOLD = 0.6;
+    const KR = { decision: null, bars: [], fc: null, busy: false, lastLoad: 0, lastAuto: 0, key: null };
+    const krDp = v => (Math.abs(v) < 1 ? 4 : 2);
+
+    function krHeroTick() {
+      if (!document.getElementById("tab-command-center").classList.contains("active")) return;
+      if (Date.now() - KR.lastLoad < 30000) return;
+      KR.lastLoad = Date.now();
+      krHeroLoad();
+    }
+
+    async function krHeroLoad() {
+      let rows = [];
+      try { rows = (await (await fetch("/api/decisions?limit=60", { cache: "no-store" })).json()).decisions || []; } catch (e) { return; }
+      const d = rows.find(r => r.pattern !== "manual" && r.kronos_confidence !== null && r.kronos_confidence !== undefined);
+      if (!d) { krHeroEmpty(); return; }
+      const key = `${currentBroker || "default"}:${d.id}`;
+      const changed = key !== KR.key;
+      KR.decision = d; KR.key = key;
+      krHeroVerdict();
+      if (!changed && KR.bars.length) return;
+      KR.fc = null;
+      try { KR.fc = JSON.parse(sessionStorage.getItem("krfc:" + key) || "null"); } catch (e) {}
+      try {
+        const b = await (await fetch(`/api/bars?symbol=${encodeURIComponent(d.epic)}&limit=72&overlays=0`, { cache: "no-store" })).json();
+        KR.bars = b.bars || [];
+        document.getElementById("kr-price").textContent = b.last_close != null ? Number(b.last_close).toFixed(krDp(b.last_close)) : "";
+      } catch (e) { KR.bars = []; }
+      krHeroRedraw();
+      if (!KR.fc && Date.now() - KR.lastAuto > 180000) krHeroForecast(false);
+    }
+
+    function krHeroEmpty() {
+      KR.decision = null;
+      document.getElementById("kr-hero-h").textContent = "Latest Kronos check";
+      document.getElementById("kr-sig").textContent = "";
+      document.getElementById("kr-price").textContent = "";
+      document.getElementById("kr-explain").textContent =
+        "Nothing yet. When a pattern passes the indicator check, the agent asks Kronos about it and the forecast shows here.";
+      document.getElementById("kr-chart").innerHTML = "";
+      document.getElementById("kr-chart-foot").textContent = "";
+      document.getElementById("kr-gates").innerHTML = "";
+      document.getElementById("kr-verdict-text").textContent = "No signal yet";
+      document.getElementById("kr-verdict-sub").textContent = "";
+      document.getElementById("kr-redraw").disabled = document.getElementById("kr-open").disabled = true;
+    }
+
+    function krOpenChart() { if (KR.decision) { switchTab("terminal"); selectSymbol(KR.decision.epic); } }
+
+    async function krHeroForecast(manual) {
+      const d = KR.decision;
+      if (!d || KR.busy) return;
+      KR.busy = true; KR.lastAuto = Date.now();
+      const btn = document.getElementById("kr-redraw");
+      btn.disabled = true; btn.textContent = "Kronos is forecasting…";
+      document.getElementById("kr-chart-foot").textContent = "Running Kronos on this computer. This takes a few seconds.";
+      try {
+        const res = await fetch("/api/forecast", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                   body: JSON.stringify({ symbol: d.epic }) });
+        const fc = await res.json();
+        if (fc.error) throw new Error(fc.error);
+        KR.fc = fc;
+        try { sessionStorage.setItem("krfc:" + KR.key, JSON.stringify(fc)); } catch (e) {}
+      } catch (e) {
+        document.getElementById("kr-chart-foot").textContent = `No forecast drawn: ${e.message}`;
+        if (manual) showToast(`Forecast not drawn: ${e.message}`);
+      } finally {
+        KR.busy = false; btn.disabled = false; btn.textContent = "Draw forecast again";
+        krHeroRedraw();
+      }
+    }
+
+    window.addEventListener("resize", () => { clearTimeout(window._krResize); window._krResize = setTimeout(krHeroRedraw, 200); });
+
+    function krHeroVerdict() {
+      const d = KR.decision;
+      const buy = d.pattern_direction !== "SELL";
+      const conf = Number(d.kronos_confidence), th = KR_THRESHOLD;
+      const det = (d.details && typeof d.details === "object") ? d.details : {};
+      const name = String(d.pattern || "").replace(/_/g, " ");
+      document.getElementById("kr-hero-h").textContent = String(d.epic).replace(/^[A-Z]+\./, "");
+      document.getElementById("kr-hero-h").title = d.epic;
+      const ago = Math.max(0, Math.round((Date.now() / 1000 - d.ts) / 60));
+      document.getElementById("kr-sig").textContent =
+        `${name.charAt(0).toUpperCase() + name.slice(1)}, ${buy ? "buy" : "sell"} signal, ${ago < 90 ? `${ago} min ago` : fmtDateTime(d.ts)}`;
+      document.getElementById("kr-explain").textContent =
+        `When the signal came, Kronos forecast the next bars and ${Math.round(conf * 100)}% of them closed ${buy ? "above" : "below"} the signal candle. ` +
+        `The amber band is a forecast drawn now from the latest closed candle; the shaded width is its forecast high-to-low range.`;
+      const dash = (Math.max(0, Math.min(1, conf)) * 314.2).toFixed(1);
+      const fg = document.getElementById("kr-gauge-fg");
+      fg.setAttribute("stroke-dasharray", `${dash} 314.2`);
+      fg.classList.toggle("no", !d.kronos_confirmed);
+      document.getElementById("kr-gauge-tick").setAttribute("transform", `rotate(${(th * 360).toFixed(1)} 60 60)`);
+      document.getElementById("kr-gauge-num").textContent = `${Math.round(conf * 100)}%`;
+      document.getElementById("kr-gauge").setAttribute("aria-label", `Kronos confidence ${Math.round(conf * 100)}%, needs ${Math.round(th * 100)}%`);
+      document.getElementById("kr-verdict-text").textContent = d.kronos_confirmed ? `Confirms ${buy ? "buy" : "sell"}` : `Doesn't confirm ${buy ? "buy" : "sell"}`;
+      document.getElementById("kr-verdict-sub").textContent = `Needs ${Math.round(th * 100)}% of forecast bars to agree.`;
+
+      const ind = det.indicators || null;
+      const stage = d.stage;
+      const g = (state, label, note) => ({ state, label, note });
+      const rsi = ind && ind.rsi_14 != null ? `, RSI ${Math.round(ind.rsi_14)}` : "";
+      const gates = [
+        g("ok", "Pattern", `${name}, ${buy ? "buy" : "sell"}`),
+        stage === "indicators" ? g("no", "Indicators", d.risk_reason || "rejected")
+          : g(ind ? "ok" : "skip", "Indicators", ind ? `${ind.bias || "neutral"} bias${rsi}` : "not checked"),
+        g(d.kronos_confirmed ? "kr" : "no", "Kronos", `${Math.round(conf * 100)}% agree`),
+        d.risk_allowed === 1 ? g("ok", "Risk", det.reward_risk ? `reward ${det.reward_risk} R` : "within limits")
+          : d.risk_allowed === 0 ? g("no", "Risk", d.risk_reason || "blocked") : g("skip", "Risk", "not reached"),
+        d.action === "opened" ? g("ok", "Order", det.quantity ? `${det.quantity} at ${Number(det.entry).toFixed(krDp(det.entry))}` : "entry sent")
+          : d.action === "error" ? g("no", "Order", d.risk_reason || "broker error") : g("skip", "Order", "not sent"),
+      ];
+      const mark = { ok: "✓", kr: "✓", no: "✕", skip: "–" };
+      document.getElementById("kr-gates").innerHTML = gates.map((x, i) => `
+        <li class="kr-gate ${x.state}"><span class="kr-gate-n" aria-hidden="true">${i + 1}</span>
+          <span>${x.label}<span class="sr-only">: ${x.state === "no" ? "stopped here" : x.state === "skip" ? "not reached" : "passed"}</span></span>
+          <span class="kr-gate-note" title="${esc(x.note)}">${esc(x.note)}</span></li>`).join("");
+      document.getElementById("kr-redraw").disabled = KR.busy;
+      document.getElementById("kr-open").disabled = false;
+    }
+
+    function krHeroRedraw() {
+      const box = document.getElementById("kr-chart");
+      if (!box || !KR.decision) return;
+      const bars = KR.bars, fc = KR.fc && KR.fc.symbol === KR.decision.epic ? KR.fc : null;
+      if (!bars.length) { box.innerHTML = `<div class="cc-empty">No candles for ${esc(KR.decision.epic)} from the broker right now.</div>`; return; }
+      // drawn at the box's own width so labels stay readable on a phone
+      const W = Math.round(Math.max(320, Math.min(900, (box.clientWidth || 900) - 40)));
+      const H = W < 560 ? 230 : 320, padT = 16, padB = 34;
+      const xHist = Math.round(W * (W < 560 ? 0.66 : 0.71)), xEnd = Math.round(W * 0.955);
+      const f = fc ? fc.forecast_bars || [] : [];
+      const vals = bars.flatMap(b => [b.high, b.low]).concat(f.flatMap(b => [b.high, b.low]));
+      let lo = Math.min(...vals), hi = Math.max(...vals);
+      const padV = (hi - lo) * 0.06 || 1; lo -= padV; hi += padV;
+      const Y = v => (padT + (hi - v) / (hi - lo) * (H - padT - padB)).toFixed(1);
+      const n = bars.length, X = i => (8 + i * (xHist - 8) / Math.max(1, n - 1)).toFixed(1);
+      const bw = Math.max(2, Math.min(8, (xHist - 16) / n * 0.6));
+      const candles = bars.map((b, i) => {
+        const up = b.close >= b.open, cls = up ? "up" : "down";
+        const y1 = Y(Math.max(b.open, b.close)), y2 = Y(Math.min(b.open, b.close));
+        return `<line class="kr-wick ${cls}" x1="${X(i)}" x2="${X(i)}" y1="${Y(b.high)}" y2="${Y(b.low)}"></line>` +
+          `<rect class="kr-body ${cls}${i < n - 20 ? " old" : ""}" x="${(X(i) - bw / 2).toFixed(1)}" y="${y1}" width="${bw.toFixed(1)}" height="${Math.max(1.2, y2 - y1).toFixed(1)}" rx="1"></rect>`;
+      }).join("");
+      const grid = [0.2, 0.5, 0.8].map(k => { const v = lo + (hi - lo) * k;
+        return `<line class="kr-grid" x1="8" x2="${xEnd}" y1="${Y(v)}" y2="${Y(v)}"></line><text class="kr-axis" x="${xEnd + 8}" y="${(+Y(v) + 4).toFixed(1)}">${v.toFixed(krDp(v))}</text>`; }).join("");
+      const last = bars[n - 1].close;
+      let fan = "", foot = "";
+      if (f.length) {
+        const XF = j => (xHist + j * (xEnd - xHist) / f.length).toFixed(1);
+        const top = [`${XF(0)},${Y(last)}`, ...f.map((b, j) => `${XF(j + 1)},${Y(b.high)}`)];
+        const bot = [...f.map((b, j) => `${XF(j + 1)},${Y(b.low)}`).reverse(), `${XF(0)},${Y(last)}`];
+        const line = [`M${XF(0)},${Y(last)}`, ...f.map((b, j) => `L${XF(j + 1)},${Y(b.close)}`)].join(" ");
+        const dots = f.map((b, j) => `<circle class="kr-fdot ${(b.close > last) === (fc.direction !== "SELL") ? "agree" : ""}" cx="${XF(j + 1)}" cy="${Y(b.close)}" r="3.4"></circle>`).join("");
+        const endV = f[f.length - 1].close;
+        fan = `<g class="kr-fan"><rect class="kr-future" x="${xHist}" y="${padT - 6}" width="${xEnd - xHist}" height="${H - padT - padB + 12}" rx="12"></rect>
+          <path class="kr-band" d="M${top.join(" L")} L${bot.join(" L")} Z"></path>
+          <path class="kr-line" d="${line}"></path>${dots}
+          <text class="kr-end" x="${xEnd + 8}" y="${(+Y(endV) + 4).toFixed(1)}">${endV.toFixed(krDp(endV))}</text></g>`;
+        const agree = f.filter(b => (b.close > last) === (fc.direction !== "SELL")).length;
+        const when = fmtTime(fc.computed_at * 1000);
+        foot = `Forecast drawn at ${when} from the candle at ${fmtTime(fc.based_on_bar * 1000)}: ${agree} of ${f.length} bars close ${fc.direction === "SELL" ? "below" : "above"} it. ` +
+               `Kronos samples, so a fresh forecast can differ a little from the one the agent used.`;
+      } else if (!KR.busy) {
+        foot = "No forecast drawn for this signal yet. Draw forecast again runs Kronos once on this computer.";
+      }
+      box.innerHTML = `<svg viewBox="0 0 ${W + 40} ${H}" role="img" aria-label="${esc(KR.decision.epic)}: last ${n} candles${f.length ? ` and a ${f.length}-bar Kronos forecast` : ""}">
+        ${grid}<g>${candles}</g>${fan}
+        <line class="kr-now" x1="${xHist}" x2="${xHist}" y1="${padT - 6}" y2="${H - padB + 6}"></line>
+        <circle class="kr-now-dot" cx="${xHist}" cy="${Y(last)}" r="5"></circle>
+        <text class="kr-axis" x="${xHist - 10}" y="${H - 10}" text-anchor="end">Recent candles</text>
+        <text class="kr-axis kr-amber" x="${xHist + 10}" y="${H - 10}">${f.length ? `Kronos forecast, next ${f.length} bars` : "Kronos forecast"}</text>
+      </svg>`;
+      if (foot || !KR.busy) document.getElementById("kr-chart-foot").textContent = foot;
     }
 
     function ccRenderPipeline(p, reasons) {
@@ -5255,7 +5491,7 @@
       pollOverview();
       startLiveStream();
       setPositionsView(positionsView);
-      applyTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
+      applyTheme(currentTheme());
       loadConfigData();
       initBrokerSwitch();
       loadBrokers();

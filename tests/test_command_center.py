@@ -83,3 +83,21 @@ def test_page_opens_on_command_center(client):  # noqa: F811
     html = client.get("/", headers=AUTH).get_data(as_text=True)
     assert 'id="tab-command-center" class="tab-panel active"' in html
     assert "new EventSource(" in html
+
+
+def test_chronos_look_is_served_with_bundled_fonts(client):  # noqa: F811
+    page = client.get("/", headers=AUTH).get_data(as_text=True)
+    assert '/static/css/chronos.css' in page and 'id="kr-hero"' in page
+    assert 'localStorage.getItem("ui-theme") || "chronos"' in page          # Chronos unless you picked another
+    assert "fonts.googleapis" not in page                                   # works without internet
+    css = client.get("/static/css/chronos.css").get_data(as_text=True)
+    for font in ("unbounded-latin-500-normal.woff2", "instrument-sans-latin-400-normal.woff2"):
+        assert font in css
+        assert client.get(f"/static/fonts/{font}").status_code == 200
+    assert all(line.startswith((":root[data-theme=\"chronos\"]", "@", "/*", " ", "}", "")) for line in css.splitlines())
+
+
+def test_verdict_card_reads_kronos_decisions(seeded):
+    rows = seeded.get("/api/decisions?limit=60", headers=AUTH).get_json()["decisions"]
+    latest = next(r for r in rows if r["pattern"] != "manual" and r["kronos_confidence"] is not None)
+    assert latest["epic"] == "US.NVDA" and latest["action"] == "opened" and latest["risk_allowed"] == 1
