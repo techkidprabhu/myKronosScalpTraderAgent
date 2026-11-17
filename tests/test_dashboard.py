@@ -149,9 +149,13 @@ def test_limit_parameter_bounded(client):
 def test_index_route(client):
     rv = client.get("/", headers=AUTH)
     assert rv.status_code == 200
-    assert b"moomoo Swing Agent" in rv.data
+    assert b"Kronos Swing Agent" in rv.data
     assert b"Strategies & Tactics" in rv.data
     assert b"tab-strategies" in rv.data
+    # the playbook covers the whole current pipeline, self-learning included
+    for card in (b'id="st-markets"', b'id="st-indicators"', b'id="st-kronos"', b'id="st-risk"', b'id="st-manage"',
+                 b'id="st-learn"', b'id="st-shadow"', b'id="st-versions"', b"Project map"):
+        assert card in rv.data
 
 
 def test_api_status(client):
