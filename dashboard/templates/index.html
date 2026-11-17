@@ -545,6 +545,7 @@
           <button type="button" class="cc-chip active" data-stage="all" onclick="dsFilter('all')">All</button>
           <button type="button" class="cc-chip" data-stage="opened" onclick="dsFilter('opened')">Opened</button>
           <button type="button" class="cc-chip" data-stage="indicators" onclick="dsFilter('indicators')">Indicators</button>
+          <button type="button" class="cc-chip" data-stage="rules" onclick="dsFilter('rules')">Your rules</button>
           <button type="button" class="cc-chip" data-stage="kronos" onclick="dsFilter('kronos')">Kronos</button>
           <button type="button" class="cc-chip" data-stage="risk" onclick="dsFilter('risk')">Risk</button>
           <button type="button" class="cc-chip" data-stage="manual" onclick="dsFilter('manual')">Manual</button>
@@ -867,10 +868,11 @@
             <li><a class="strategy-flow-step active" href="#st-screen">2 Screen</a></li>
             <li><a class="strategy-flow-step active" href="#st-patterns">3 Pattern</a></li>
             <li><a class="strategy-flow-step active" href="#st-indicators">4 Indicators</a></li>
-            <li><a class="strategy-flow-step active st-kronos" href="#st-kronos">5 Kronos</a></li>
-            <li><a class="strategy-flow-step active" href="#st-risk">6 Risk</a></li>
-            <li><a class="strategy-flow-step active" href="#st-orders">7 Order</a></li>
-            <li><a class="strategy-flow-step active" href="#st-manage">8 Manage</a></li>
+            <li><a class="strategy-flow-step active st-rules" href="#st-rules">5 Your rules</a></li>
+            <li><a class="strategy-flow-step active st-kronos" href="#st-kronos">6 Kronos</a></li>
+            <li><a class="strategy-flow-step active" href="#st-risk">7 Risk</a></li>
+            <li><a class="strategy-flow-step active" href="#st-orders">8 Order</a></li>
+            <li><a class="strategy-flow-step active" href="#st-manage">9 Manage</a></li>
           </ol>
           <div class="st-flow-label">After the close</div>
           <ol class="strategy-flow-nav st-flow" aria-label="Self-learning loop">
@@ -931,7 +933,7 @@
             <li>Keeps symbols inside your price range with enough average volume.</li>
             <li>Keeps a volatility band: ATR as % of price, between your minimum and maximum.</li>
             <li>Ranks by ATR% or, with the stock score on, by relative strength against the market, relative volume and how tight the Bollinger bands are. The top N are watched.</li>
-            <li>The screener only chooses what to watch. Every trade still has to pass steps 3 to 6.</li>
+            <li>The screener only chooses what to watch. Every trade still has to pass steps 3 to 7.</li>
           </ul>
           <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
@@ -1009,11 +1011,41 @@
           </div>
         </article>
 
+        <article class="strat-card st-card-rules" id="st-rules" aria-labelledby="st-rules-h">
+          <div class="strat-card-header">
+            <div><h3 class="strat-card-title" id="st-rules-h">5. Your rules (skills.md)</h3>
+              <div class="st-sub">Your own price-action habits, in plain words</div></div>
+            <span class="strat-tag green">Step 5</span>
+          </div>
+          <p class="strat-desc">Rules you write yourself in a Markdown file, such as "don't chase far above VWAP" or "inside bars need a trend". Like the indicator check, a rule can only stop a signal; it never creates one or changes what Kronos sees.</p>
+          <div class="strat-section-title">How it works</div>
+          <ul class="strat-logic-list">
+            <li>Each rule names the side it applies to (and optionally which patterns), with <em>block if</em> and <em>only if</em> conditions on measures such as VWAP distance, RSI, ADX, volume, gap and time of day.</li>
+            <li>A matching rule stops the signal, and its name appears in the decision log.</li>
+            <li>A rule that can't be checked right now, such as VWAP on daily candles, lets the signal pass. A rule the agent can't read is listed as an error and skipped.</li>
+            <li>"Log" mode only records what the rules would have stopped, so you can try a rule safely first.</li>
+            <li>Edits are picked up without a restart.</li>
+          </ul>
+          <div class="strat-section-title">Your settings now</div>
+          <div class="strat-meta-box">
+            <div class="strat-meta-row"><span class="strat-meta-label">Rules</span><span class="strat-meta-val" data-sv="u_status">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">File</span><span class="strat-meta-val" data-sv="u_file">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Rules in the file</span><span class="strat-meta-val" data-sv="u_count">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Last 7 days</span><span class="strat-meta-val" data-sv="u_week">—</span></div>
+          </div>
+          <div class="strat-section-title">Where it lives</div>
+          <div class="st-files">config.yaml: <b>skills:</b> (enabled, mode, file) · Rules: config/skills.md (starter set: config/skills.example.md)<br>Code: src/rules.py</div>
+          <div class="strat-upgrade-box">
+            <div class="strat-upgrade-title">Edit your rules</div>
+            <div class="strat-upgrade-body"><a href="#st-rules-editor" class="btn btn-sm" style="text-decoration:none">Open the rules editor</a> below. Try a rule on a live symbol before you switch on "filter" mode.</div>
+          </div>
+        </article>
+
         <article class="strat-card st-card-kronos" id="st-kronos" aria-labelledby="st-kronos-h">
           <div class="strat-card-header">
-            <div><h3 class="strat-card-title" id="st-kronos-h">5. Kronos confirmation</h3>
+            <div><h3 class="strat-card-title" id="st-kronos-h">6. Kronos confirmation</h3>
               <div class="st-sub">The offline forecasting model</div></div>
-            <span class="strat-tag purple">Step 5</span>
+            <span class="strat-tag purple">Step 6</span>
           </div>
           <p class="strat-desc">Kronos is a model trained on candlestick charts. It runs on this computer with no internet. It forecasts the next few candles, and the trade goes ahead only if enough of them move the signal's way.</p>
           <div class="strat-section-title">How it works</div>
@@ -1022,7 +1054,7 @@
             <li>It samples several forecasts and averages them into one path.</li>
             <li>Confidence is the share of forecast candles that close above the signal candle for a buy, or below it for a sell.</li>
             <li>The signal passes only above 50% <em>and</em> at or above your threshold.</li>
-            <li>A shadow model, if set, is asked the same question in the background. Only its answer is recorded (card 10).</li>
+            <li>A shadow model, if set, is asked the same question in the background. Only its answer is recorded (card 11).</li>
           </ul>
           <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
@@ -1037,15 +1069,15 @@
           <div class="st-files">config.yaml: <b>kronos:</b>, <b>forecast_horizon</b>, <b>kronos_confidence_threshold</b><br>Code: src/kronos_agent.py · Kronos source: vendor/Kronos · Try it: Kronos Model Lab, Live Terminal</div>
           <div class="strat-upgrade-box">
             <div class="strat-upgrade-title">How to tune it</div>
-            <div class="strat-upgrade-body">A higher threshold (e.g. 0.70) means fewer, more confident trades. Performance → "Does Kronos confidence pay?" shows whether higher confidence has actually won more often. To change the model itself, use self-learning (card 9) rather than editing <span class="strat-upgrade-code">model_name</span> by hand.</div>
+            <div class="strat-upgrade-body">A higher threshold (e.g. 0.70) means fewer, more confident trades. Performance → "Does Kronos confidence pay?" shows whether higher confidence has actually won more often. To change the model itself, use self-learning (card 10) rather than editing <span class="strat-upgrade-code">model_name</span> by hand.</div>
           </div>
         </article>
 
         <article class="strat-card" id="st-risk" aria-labelledby="st-risk-h">
           <div class="strat-card-header">
-            <div><h3 class="strat-card-title" id="st-risk-h">6. Risk rules</h3>
+            <div><h3 class="strat-card-title" id="st-risk-h">7. Risk rules</h3>
               <div class="st-sub">The last word before an order</div></div>
-            <span class="strat-tag amber">Step 6</span>
+            <span class="strat-tag amber">Step 7</span>
           </div>
           <p class="strat-desc">Sets the stop, the target and the size, then checks the account limits. If any rule fails, no order is sent. Exits are never blocked.</p>
           <div class="strat-section-title">How it works</div>
@@ -1076,9 +1108,9 @@
 
         <article class="strat-card" id="st-orders" aria-labelledby="st-orders-h">
           <div class="strat-card-header">
-            <div><h3 class="strat-card-title" id="st-orders-h">7. Orders and exits at the broker</h3>
+            <div><h3 class="strat-card-title" id="st-orders-h">8. Orders and exits at the broker</h3>
               <div class="st-sub">Getting in, with protection</div></div>
-            <span class="strat-tag blue">Step 7</span>
+            <span class="strat-tag blue">Step 8</span>
           </div>
           <p class="strat-desc">Sends the entry and, once it fills, places the stop and target at the broker, so they protect the position even if the agent stops.</p>
           <div class="strat-section-title">How it works</div>
@@ -1087,7 +1119,7 @@
             <li>An entry still unfilled after the timeout is cancelled.</li>
             <li>Exits: stop and target orders. These are GTC on live moomoo and Tiger accounts, re-placed daily on moomoo paper accounts, and GTT triggers on Zerodha. Angel One gets limit-priced orders, because SEBI rules don't allow market orders from algorithms.</li>
             <li>Prices are rounded to each exchange's tick size, and quantities to its lot size.</li>
-            <li>Manual orders from the Positions tab skip steps 3 to 6 but get the same stop, target and trailing.</li>
+            <li>Manual orders from the Positions tab skip steps 3 to 7 but get the same stop, target and trailing.</li>
           </ul>
           <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
@@ -1106,9 +1138,9 @@
 
         <article class="strat-card" id="st-manage" aria-labelledby="st-manage-h">
           <div class="strat-card-header">
-            <div><h3 class="strat-card-title" id="st-manage-h">8. Managing open trades</h3>
+            <div><h3 class="strat-card-title" id="st-manage-h">9. Managing open trades</h3>
               <div class="st-sub">Trailing, closing, and your own holdings</div></div>
-            <span class="strat-tag amber">Step 8</span>
+            <span class="strat-tag amber">Step 9</span>
           </div>
           <p class="strat-desc">A separate, faster loop watches the agent's open trades. It moves stops up, closes trades on time and leaves your own holdings alone.</p>
           <div class="strat-section-title">How it works</div>
@@ -1136,7 +1168,7 @@
 
         <article class="strat-card st-card-learn" id="st-learn" aria-labelledby="st-learn-h">
           <div class="strat-card-header">
-            <div><h3 class="strat-card-title" id="st-learn-h">9. Self-learning (fine-tuning Kronos)</h3>
+            <div><h3 class="strat-card-title" id="st-learn-h">10. Self-learning (fine-tuning Kronos)</h3>
               <div class="st-sub">Teaching Kronos your markets</div></div>
             <span class="strat-tag purple">After the close</span>
           </div>
@@ -1146,8 +1178,8 @@
             <li><strong>Collect:</strong> at each market close, saves the candles of every symbol the agent screened, decided on or traded, on every broker.</li>
             <li><strong>Train:</strong> starts from the original Kronos every time, so runs never stack. A share of each batch (30% by default) ends exactly where the agent asked Kronos for a verdict, winners and losers alike. Run it here on the CPU, on a schedule, or on a GPU computer with the exported kit.</li>
             <li><strong>Compare:</strong> the newest candles (15% by default) are held back. Both models forecast them, and the run gets a verdict: better, no gain or worse. Only "better" models are kept.</li>
-            <li><strong>Shadow test</strong> (card 10), then <strong>Use this model</strong> and restart. "Back to original" undoes it.</li>
-            <li><strong>Save version</strong> (card 11) to keep it for later.</li>
+            <li><strong>Shadow test</strong> (card 11), then <strong>Use this model</strong> and restart. "Back to original" undoes it.</li>
+            <li><strong>Save version</strong> (card 12) to keep it for later.</li>
           </ol>
           <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
@@ -1167,9 +1199,9 @@
 
         <article class="strat-card st-card-learn" id="st-shadow" aria-labelledby="st-shadow-h">
           <div class="strat-card-header">
-            <div><h3 class="strat-card-title" id="st-shadow-h">10. Shadow test</h3>
+            <div><h3 class="strat-card-title" id="st-shadow-h">11. Shadow test</h3>
               <div class="st-sub">Try a new model on live signals, risk-free</div></div>
-            <span class="strat-tag purple">Alongside step 5</span>
+            <span class="strat-tag purple">Alongside step 6</span>
           </div>
           <p class="strat-desc">A fine-tuned model sits next to the trading model and answers the same question on every live signal. Its answers are only recorded, so it can never place or block a trade.</p>
           <div class="strat-section-title">How it works</div>
@@ -1196,7 +1228,7 @@
 
         <article class="strat-card st-card-learn" id="st-versions" aria-labelledby="st-versions-h">
           <div class="strat-card-header">
-            <div><h3 class="strat-card-title" id="st-versions-h">11. Saved model versions</h3>
+            <div><h3 class="strat-card-title" id="st-versions-h">12. Saved model versions</h3>
               <div class="st-sub">Keep good models and get them back any time</div></div>
             <span class="strat-tag purple">After the close</span>
           </div>
@@ -1223,7 +1255,7 @@
 
         <article class="strat-card" id="st-watch" aria-labelledby="st-watch-h">
           <div class="strat-card-header">
-            <div><h3 class="strat-card-title" id="st-watch-h">12. Watching it work</h3>
+            <div><h3 class="strat-card-title" id="st-watch-h">13. Watching it work</h3>
               <div class="st-sub">Records, alerts and display-only tools</div></div>
             <span class="strat-tag blue">Always on</span>
           </div>
@@ -1241,6 +1273,39 @@
         </article>
       </div>
 
+      <section class="strat-card st-editor" id="st-rules-editor" aria-labelledby="st-ed-h">
+        <div class="strat-card-header">
+          <div><h3 class="strat-card-title" id="st-ed-h">Your rules editor</h3>
+            <div class="st-sub" id="st-ed-sub">config/skills.md</div></div>
+          <span class="strat-tag green">Step 5</span>
+        </div>
+        <div class="st-ed-grid">
+          <div class="st-ed-main">
+            <label for="st-ed-text" class="strat-section-title" style="display:block">The file</label>
+            <textarea id="st-ed-text" class="st-ed-text" spellcheck="false" rows="22"></textarea>
+            <div class="ft-actions">
+              <button type="button" class="btn btn-sm btn-primary" id="st-ed-save" onclick="rulesSave()">Save rules</button>
+              <button type="button" class="btn btn-sm" onclick="rulesLoad(true)">Discard changes</button>
+              <span class="cc-muted" id="st-ed-note" role="status"></span>
+            </div>
+            <div class="strat-section-title">What the agent understood</div>
+            <div id="st-ed-rules" class="st-ed-rules"></div>
+          </div>
+          <div class="st-ed-side">
+            <div class="strat-section-title">Try the rules on a symbol</div>
+            <div class="st-ed-try">
+              <label class="sr-only" for="st-ed-sym">Symbol</label>
+              <input id="st-ed-sym" type="text" placeholder="e.g. US.AAPL" autocomplete="off">
+              <button type="button" class="btn btn-sm" id="st-ed-check" onclick="rulesTry()">Check now</button>
+            </div>
+            <p class="cc-muted st-ed-hint">Uses the symbol's latest closed candle for both a buy and a sell, with the rules as last saved. Nothing is recorded or traded.</p>
+            <div id="st-ed-result"></div>
+            <div class="strat-section-title">Measures you can use</div>
+            <table class="st-map-table st-ed-metrics"><tbody id="st-ed-metrics"></tbody></table>
+          </div>
+        </div>
+      </section>
+
       <section class="strat-card st-map" aria-labelledby="st-map-h">
         <div class="strat-card-header">
           <div><h3 class="strat-card-title" id="st-map-h">Project map</h3>
@@ -1256,6 +1321,7 @@
               <tr><td>kite_login.py</td><td>Daily Zerodha login (saves the day's token)</td></tr>
               <tr><td>verify_opend.py</td><td>moomoo OpenD order test</td></tr>
               <tr><td>config/config.yaml</td><td>Your settings (template: config.example.yaml)</td></tr>
+              <tr><td>config/skills.md</td><td>Your own rules (template: skills.example.md)</td></tr>
               <tr><td>.env</td><td>Broker logins, Telegram, GITHUB_TOKEN. Never committed.</td></tr>
             </tbody></table>
             <div class="strat-section-title">Data on this computer (not in git)</div>
@@ -1275,12 +1341,13 @@
               <tr><td>screener.py</td><td>Step 2</td></tr>
               <tr><td>patterns.py</td><td>Step 3</td></tr>
               <tr><td>indicator_gate.py, kronos_indicators/</td><td>Step 4</td></tr>
-              <tr><td>kronos_agent.py</td><td>Step 5</td></tr>
-              <tr><td>risk.py</td><td>Step 6</td></tr>
-              <tr><td>trailing_stop.py</td><td>Step 8</td></tr>
+              <tr><td>rules.py</td><td>Step 5: your rules from config/skills.md</td></tr>
+              <tr><td>kronos_agent.py</td><td>Step 6</td></tr>
+              <tr><td>risk.py</td><td>Step 7</td></tr>
+              <tr><td>trailing_stop.py</td><td>Step 9</td></tr>
               <tr><td>market.py, market_calendar.py</td><td>Sessions, holidays, ticks, closed candles</td></tr>
-              <tr><td>finetune/</td><td>Cards 9 to 11: collect, train, GPU kit, shadow, saved versions</td></tr>
-              <tr><td>audit_log.py, telegram_bot.py, sentiment.py</td><td>Card 12</td></tr>
+              <tr><td>finetune/</td><td>Cards 10 to 12: collect, train, GPU kit, shadow, saved versions</td></tr>
+              <tr><td>audit_log.py, telegram_bot.py, sentiment.py</td><td>Card 13</td></tr>
             </tbody></table>
             <div class="strat-section-title">The dashboard (dashboard/)</div>
             <table class="st-map-table"><tbody>
@@ -3712,8 +3779,8 @@
 
     // ================= Decisions analytics =================
     let dsDays = 7, dsData = null, dsStage = "all", dsSeq = 0;
-    const DS_COLORS = { opened: "#10b981", indicators: "#a855f7", kronos: "#38bdf8", risk: "#f59e0b", error: "#f43f5e" };
-    const DS_LABEL = { opened: "Opened", indicators: "Indicators", kronos: "Kronos", risk: "Risk", error: "Error" };
+    const DS_COLORS = { opened: "#10b981", indicators: "#a855f7", rules: "#ec4899", kronos: "#38bdf8", risk: "#f59e0b", error: "#f43f5e" };
+    const DS_LABEL = { opened: "Opened", indicators: "Indicators", rules: "Your rules", kronos: "Kronos", risk: "Risk", error: "Error" };
 
     function dsSetDays(d) {
       dsDays = d;
@@ -3737,7 +3804,7 @@
         dsFunnel(d.funnel);
         dsDaily(d.daily);
         dsConf(d.confidence_hist);
-        const label = { indicators: "Indicators", kronos: "Kronos", risk: "Risk" };
+        const label = { indicators: "Indicators", rules: "Your rules", kronos: "Kronos", risk: "Risk" };
         document.getElementById("ds-reasons").innerHTML = d.top_reasons.length ? d.top_reasons.map(r =>
           `<div class="ds-reason"><span class="ds-dot" style="background:${DS_COLORS[r.stage]}"></span><span class="ds-reason-text" title="${esc(r.reason)}">${label[r.stage]} · ${esc(r.reason)}</span><b>${r.count}</b></div>`).join("")
           : `<div class="cc-empty">No rejections in this period.</div>`;
@@ -3757,8 +3824,8 @@
 
     function dsDaily(daily) {
       const { box, w, h } = pfSvgBox("ds-daily", 150);
-      const stages = ["opened", "risk", "kronos", "indicators", "error"];
-      document.getElementById("ds-legend").innerHTML = stages.slice(0, 4).map(s => `<span><i style="background:${DS_COLORS[s]}"></i>${DS_LABEL[s]}</span>`).join("");
+      const stages = ["opened", "risk", "kronos", "rules", "indicators", "error"];
+      document.getElementById("ds-legend").innerHTML = stages.slice(0, 5).map(s => `<span><i style="background:${DS_COLORS[s]}"></i>${DS_LABEL[s]}</span>`).join("");
       if (!daily.length) { box.innerHTML = `<div class="cc-empty pf-empty">No signals in this period.</div>`; return; }
       const days = daily.slice(-30), padB = 20, padT = 6, bw = (w - 10) / days.length;
       const max = Math.max(1, ...days.map(d => stages.reduce((a, s) => a + (d[s] || 0), 0)));
@@ -4600,7 +4667,8 @@
 
     function ccRenderPipeline(p, reasons) {
       const afterInd = (p.patterns || 0) - (p.indicators || 0);
-      const afterKr = afterInd - (p.kronos || 0);
+      const afterRules = afterInd - (p.rules || 0);
+      const afterKr = afterRules - (p.kronos || 0);
       const afterRisk = afterKr - (p.risk || 0) - (p.errors || 0);
       const top = Math.max(p.patterns || 0, 1);
       const stages = [
@@ -4608,12 +4676,13 @@
         { k: "scan", name: "Bars checked", num: p.scanned || 0, note: "closed candles", color: "#64748b", w: 100 },
         { k: "pat", name: "Patterns", num: p.patterns || 0, note: "signals found", color: "#a855f7", w: 100 },
         { k: "ind", name: "Indicators", num: afterInd, note: `${p.indicators || 0} filtered out`, color: "#06b6d4", w: afterInd / top * 100 },
+        ...(p.rules ? [{ k: "rules", name: "Your rules", num: afterRules, note: `${p.rules} stopped`, color: "#ec4899", w: afterRules / top * 100 }] : []),
         { k: "kr", name: "Kronos", num: afterKr, note: `${p.kronos || 0} not confirmed`, color: "#38bdf8", w: afterKr / top * 100 },
         { k: "risk", name: "Risk", num: afterRisk, note: `${p.risk || 0} blocked${p.errors ? ` · ${p.errors} errors` : ""}`, color: "#f59e0b", w: afterRisk / top * 100 },
         { k: "ord", name: "Orders", num: p.opened || 0, note: "entries sent", color: "#10b981", w: (p.opened || 0) / top * 100 },
       ];
       const box = document.getElementById("cc-pipe");
-      if (!box.children.length) {
+      if (box.children.length !== stages.length) {      // built once, rebuilt when "Your rules" appears
         box.innerHTML = stages.map((s, i) => `
           <div class="cc-stage-wrap">
             <div class="cc-stage" id="cc-st-${s.k}">
@@ -4635,7 +4704,7 @@
         el.querySelector(".cc-stage-note").textContent = s.note;
         el.querySelector(".cc-stage-bar div").style.width = `${Math.max(0, Math.min(100, s.w))}%`;
       });
-      const label = { indicators: "Indicators", kronos: "Kronos", risk: "Risk" };
+      const label = { indicators: "Indicators", rules: "Your rules", kronos: "Kronos", risk: "Risk" };
       document.getElementById("cc-reasons").innerHTML = reasons.length
         ? `<span>Top rejections today:</span>` + reasons.map(x =>
             `<span class="cc-chip" title="${esc(x.reason)}">${label[x.stage] || x.stage} · ${esc(x.reason || "no reason given")} <b>${x.count}</b></span>`).join("")
@@ -4671,7 +4740,7 @@
       }).join("");
     }
 
-    const CC_ICON = { opened: "↑", win: "✓", loss: "↓", risk: "✕", kronos: "K", indicators: "≈", error: "!", manual: "M", cancel: "–" };
+    const CC_ICON = { opened: "↑", win: "✓", loss: "↓", risk: "✕", kronos: "K", indicators: "≈", rules: "§", error: "!", manual: "M", cancel: "–" };
     function ccRenderActivity(items) {
       const list = document.getElementById("cc-activity");
       if (!items.length) { list.innerHTML = `<li class="cc-empty">Nothing yet today.</li>`; return; }
@@ -4840,6 +4909,7 @@
       STRAT.at = Date.now();
       const get = async url => { try { return await (await fetch(url, { cache: "no-store" })).json(); } catch (e) { return null; } };
       [STRAT.brokers, STRAT.finetune, STRAT.versions] = await Promise.all([get("/api/brokers"), get("/api/finetune"), get("/api/finetune/versions")]);
+      await rulesLoad(false);
       updateStrategiesView(currentConfig);
     }
 
@@ -4963,10 +5033,101 @@
       const usedV = list.find(x => x.in_use);
       v.v_inuse = usedV ? `v${usedV.version} (${usedV.run_id})` : inUse ? `${inUse} (not saved as a version)` : "The original model";
 
+      // 5 your rules
+      const ru = STRAT.rules;
+      if (ru) {
+        const rs = ru.rules || [], err = rs.filter(x => x.error).length, off = rs.filter(x => !x.error && !x.enabled).length;
+        v.u_status = !ru.enabled ? "Off" : ru.mode === "filter" ? "On: stops matching signals" : "On, log mode: records only";
+        v.u_file = ru.file + (ru.using_example ? " (not created yet: the starter rules are read)" : "");
+        v.u_count = `${rs.length - err - off} active${off ? `, ${off} switched off` : ""}${err ? `, ${err} with errors` : ""}`;
+        const wk = Object.values(ru.week || {}), stopped = wk.reduce((a, x) => a + x.stopped, 0), would = wk.reduce((a, x) => a + x.would_stop, 0);
+        v.u_week = stopped || would ? [stopped ? `${stopped} stopped` : "", would ? `${would} would have been stopped` : ""].filter(Boolean).join(", ") : "Nothing stopped";
+      }
+
       document.querySelectorAll("#tab-strategies [data-sv]").forEach(el => {
         const val = v[el.dataset.sv];
         if (val !== undefined) el.textContent = val;
       });
+    }
+
+    // ---- Your rules editor (config/skills.md) ----
+    let rulesDirty = false;
+    async function rulesLoad(force) {
+      if (rulesDirty && !force) return;
+      if (force && rulesDirty && !confirm("Discard your unsaved changes to the rules?")) return;
+      let d;
+      try { d = await (await fetch("/api/rules", { cache: "no-store" })).json(); } catch (e) { return; }
+      if (d.error) return;
+      STRAT.rules = d;
+      document.getElementById("st-ed-text").value = d.text || "";
+      rulesDirty = false;
+      document.getElementById("st-ed-note").textContent = "";
+      rulesRender(d);
+      if (force) updateStrategiesView(currentConfig);
+    }
+
+    function rulesRender(d) {
+      document.getElementById("st-ed-sub").textContent = d.using_example
+        ? `${d.file} doesn't exist yet. The starter rules below are what the agent reads; Save rules creates your own copy.`
+        : `${d.file} · ${!d.enabled ? "rules are off (switch on under Config & Risk)" : d.mode === "filter" ? "filter mode: matching signals are stopped" : "log mode: only recorded"}`;
+      const week = d.week || {}, today = d.today || {};
+      const side = { buy: "Buys", sell: "Sells", both: "Buys and sells" };
+      document.getElementById("st-ed-rules").innerHTML = (d.problems || []).map(x => `<div class="st-ed-problem">${esc(x)}</div>`).join("") +
+        ((d.rules || []).length ? (d.rules || []).map(r => {
+          const st = r.error ? `<span class="st-chip err">Error</span>` : r.enabled ? `<span class="st-chip on">On</span>` : `<span class="st-chip">Off</span>`;
+          const w = week[r.name], t = today[r.name];
+          const counts = w ? `${w.stopped ? `${w.stopped} stopped` : ""}${w.stopped && w.would_stop ? ", " : ""}${w.would_stop ? `${w.would_stop} would have been stopped` : ""} in 7 days${t ? ` (${t.stopped + t.would_stop} today)` : ""}` : "";
+          const conds = [...(r.block_if || []).map(c => `Stop if ${c}`), ...(r.only_if || []).map(c => `Only if ${c}`)];
+          return `<div class="st-ed-rule${r.error ? " has-error" : ""}">
+            <div class="st-ed-rule-head"><b>${esc(r.name)}</b>${st}<span class="cc-muted">${side[r.applies] || r.applies}${(r.patterns || []).length ? ` · ${esc(r.patterns.join(", ").replace(/_/g, " "))}` : ""}</span></div>
+            ${r.error ? `<div class="st-ed-err">${esc(r.error)}</div>` : conds.map(c => `<div class="mono st-ed-cond">${esc(c)}</div>`).join("")}
+            ${r.why ? `<div class="cc-muted">${esc(r.why)}</div>` : ""}
+            ${counts ? `<div class="st-ed-count">${esc(counts)}</div>` : ""}</div>`;
+        }).join("") : `<div class="cc-empty">No rules yet. A rule starts with a line "## Its name".</div>`);
+      document.getElementById("st-ed-metrics").innerHTML = (d.metrics || []).map(m =>
+        `<tr><td class="mono">${esc(m.name)}</td><td>${esc(m.help)}${m.kind === "word" ? " (use is / is not)" : ""}</td></tr>`).join("");
+    }
+
+    async function rulesSave() {
+      const btn = document.getElementById("st-ed-save"), note = document.getElementById("st-ed-note");
+      btn.disabled = true; note.textContent = "Saving…";
+      try {
+        const res = await fetch("/api/rules", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                body: JSON.stringify({ text: document.getElementById("st-ed-text").value }) });
+        const d = await res.json();
+        if (!res.ok || d.error) throw new Error(d.error || res.statusText);
+        rulesDirty = false;
+        note.textContent = d.message || "Saved";
+        showToast(d.message || "Saved");
+        STRAT.rules = { ...(STRAT.rules || {}), ...d };
+        rulesRender(STRAT.rules);
+        updateStrategiesView(currentConfig);
+      } catch (e) { note.textContent = "Not saved: " + e.message; }
+      btn.disabled = false;
+    }
+
+    async function rulesTry() {
+      const input = document.getElementById("st-ed-sym"), box = document.getElementById("st-ed-result");
+      const sym = (input.value || activeSymbol || "").trim();
+      if (!sym) { box.innerHTML = `<div class="cc-muted">Type a symbol first.</div>`; return; }
+      input.value = sym;
+      box.innerHTML = `<div class="cc-muted">Checking ${esc(sym)}…</div>`;
+      let d;
+      try { d = await (await fetch(`/api/rules/check?symbol=${encodeURIComponent(sym)}`, { cache: "no-store" })).json(); }
+      catch (e) { box.innerHTML = `<div class="cc-neg">${esc(e.message)}</div>`; return; }
+      if (d.error) { box.innerHTML = `<div class="cc-neg">${esc(d.error)}</div>`; return; }
+      const sideHtml = (label, r) => {
+        const head = r.stopped_by.length
+          ? `<span class="st-chip err">Stopped</span> by ${r.stopped_by.map(h => `<b>${esc(h.rule)}</b> <span class="mono">(${esc(h.detail)})</span>`).join(", ")}`
+          : `<span class="st-chip on">Passes</span> ${r.checked} rule${r.checked === 1 ? "" : "s"} checked`;
+        return `<div class="st-ed-side-res"><div><b>${label}:</b> ${head}</div>
+          ${r.not_checked.length ? `<div class="cc-muted">Couldn't be checked now: ${esc(r.not_checked.join(", "))}</div>` : ""}</div>`;
+      };
+      const m = d.buy.metrics, f = x => x === null || x === undefined ? "–" : typeof x === "number" ? (Math.abs(x) >= 100 ? x.toFixed(0) : x.toFixed(2)) : esc(x);
+      const keys = ["price_vs_vwap_pct", "price_vs_ema200_pct", "rsi", "adx", "atr_pct", "volume_ratio", "candle_range_atr", "gap_pct", "room_to_high_pct", "minutes_to_close", "trend"];
+      box.innerHTML = `<div class="cc-muted">${esc(d.symbol)}, ${esc(d.timeframe)} candle at ${fmtDateTime(d.candle)}${d.pattern ? `, pattern now: ${esc(d.pattern.replace(/_/g, " "))}` : ", no pattern on it"}</div>
+        ${sideHtml("If it were a buy", d.buy)}${sideHtml("If it were a sell", d.sell)}
+        <table class="st-map-table" style="margin-top:6px"><tbody>${keys.map(k => `<tr><td class="mono">${k}</td><td>${f(m[k])}</td></tr>`).join("")}</tbody></table>`;
     }
 
     // ---- Settings tab: built from /api/settings (dashboard/schema.py) ----
@@ -5658,6 +5819,9 @@
       document.getElementById("sent-refresh").addEventListener("click", () => loadSentiment(true));
       setInterval(() => { if (autoRefresh && !document.hidden) loadSentiment(); }, 60000);
       loadSettings(false);
+      document.getElementById("st-ed-text").addEventListener("input", () => {
+        rulesDirty = true; document.getElementById("st-ed-note").textContent = "Unsaved changes";
+      });
     });
   </script>
 </body>

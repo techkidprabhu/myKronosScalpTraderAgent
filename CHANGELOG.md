@@ -15,6 +15,31 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added
+- **Your own rules in plain Markdown (`config/skills.md`), off by default.**
+  A new step between the indicator check and Kronos. Each rule is a "## "
+  heading with `applies to`, optional `patterns`, `block if` / `only if`
+  conditions and a `why` note. Conditions use 21 measures worked out from
+  the signal's candles (VWAP distance, EMA 20/50/200 distance, RSI, ADX,
+  ATR%, volume ratio, candle size in ATRs, gap, day change, room to the
+  recent high/low, minutes since the open / to the close, trend vs the trade,
+  pattern). Like the indicator check, a rule can only stop a signal, never
+  create one or change what Kronos sees. A rule that can't be checked right
+  now lets the signal pass, and an unreadable rule is skipped and reported.
+  - `skills.enabled` / `skills.mode` (`log` records what would have been
+    stopped; `filter` stops it). Also on Config & Risk.
+  - `config/skills.example.md`: 11 common price-action rules to start from,
+    read until your own `config/skills.md` exists. That file is kept out of
+    git like config.yaml. Rule edits are picked up without a restart.
+  - Strategies & Tactics: new step 5 card and a rules editor. Save keeps the
+    previous file in config/backups/, shows what the agent understood, and
+    flags each rule's errors. "Check now" tries the saved rules on a symbol's
+    latest candle and shows the measures.
+  - Rule stops show as "Your rules" in the decision log, the Decisions
+    filters and funnel, and the Command Center pipeline. Scan Bar Now
+    applies them too.
+  Later step numbers on Strategies & Tactics move up by one.
+
 ### Changed
 - **Strategies & Tactics rewritten to match the agent as it is now.** It now
   shows the real pipeline in order (brokers and sessions, screener,

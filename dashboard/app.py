@@ -32,6 +32,7 @@ from src.orchestrator import (SCREENER_REPORT_KEY, ACTIVE_SYMBOLS_KEY, BROKER_HE
                               bars_to_df)
 from src.patterns import scan
 from src import indicator_gate
+from src import rules as rules_gate
 from src.kronos_indicators import indicators as ind_lib
 from src.market import drop_unclosed_bar, market_timezone
 from src import sentiment
@@ -1169,6 +1170,131 @@ def scan_now():
         _kronos_lock.release()
 
 
+def _session_minutes_for(market):
+    try:
+        return cal.session_minutes(cal.exchange_for_market(market or "US"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# ---------------------------------------------------------------- your rules (config/skills.md)
+
+def _rules_stats(since: float) -> dict:
+    """Per rule: signals it stopped (filter mode) and would have stopped
+    (log mode) since `since`, from this broker's audit DB."""
+    stats = {}
+    try:
+        conn = get_db()
+        for r in conn.execute("SELECT details FROM snapshots WHERE stage = 'rules_check' AND ts >= ?", (since,)):
+            try:
+                d = json.loads(r["details"] or "{}")
+            except ValueError:
+                continue
+            for h in d.get("hits") or []:
+                s = stats.setdefault(h.get("rule", "?"), {"stopped": 0, "would_stop": 0})
+                s["stopped" if d.get("mode") == "filter" else "would_stop"] += 1
+        conn.close()
+    except sqlite3.Error:
+        logger.warning("Rules stats unavailable", exc_info=True)
+    return stats
+
+
+def _rules_payload(cfg: dict, text: str | None = None) -> dict:
+    s = rules_gate.settings(cfg)
+    path, example = rules_gate.rules_path(cfg)
+    if text is None:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+    parsed, problems = rules_gate.parse(text)
+    own = Path(s["file"]) if Path(s["file"]).is_absolute() else ROOT_DIR / s["file"]
+    return {"enabled": bool(s["enabled"]), "mode": s["mode"], "file": str(own.relative_to(ROOT_DIR)) if own.is_relative_to(ROOT_DIR) else str(own),
+            "using_example": example, "text": text, "rules": [r.summary() for r in parsed], "problems": problems,
+            "metrics": [{"name": k, "kind": v[0], "help": v[1]} for k, v in rules_gate.METRICS.items()]}
+
+
+@app.route("/api/rules", methods=["GET", "POST"])
+def api_rules():
+    """GET: your rules file, parsed, with today's counts. POST {text}: save it
+    (the previous file is kept in config/backups/). Rules with errors are
+    saved but skipped by the agent; the reply lists them."""
+    cfg = load_config()
+    if request.method == "GET":
+        out = _rules_payload(cfg)
+        day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        out["today"] = _rules_stats(day)
+        out["week"] = _rules_stats(time.time() - 7 * 86400)
+        return jsonify(out)
+    data = request.get_json(silent=True) or {}
+    text = data.get("text")
+    if not isinstance(text, str):
+        raise BadRequest("expected {text}")
+    if len(text) > 200_000:
+        return jsonify({"error": "That file is too long (200 KB max)"}), 400
+    s = rules_gate.settings(cfg)
+    own = Path(s["file"]) if Path(s["file"]).is_absolute() else ROOT_DIR / s["file"]
+    if own.suffix.lower() != ".md" or not own.resolve().is_relative_to(ROOT_DIR.resolve()):
+        return jsonify({"error": f"skills.file must be a .md file inside the project, not {s['file']}"}), 400
+    try:
+        own.parent.mkdir(parents=True, exist_ok=True)
+        if own.exists():
+            backups = ROOT_DIR / "config" / "backups"
+            backups.mkdir(parents=True, exist_ok=True)
+            (backups / f"{own.stem}-{datetime.now():%Y%m%d-%H%M%S}.md").write_text(own.read_text(encoding="utf-8"), encoding="utf-8")
+        tmp = own.with_suffix(".md.tmp")
+        tmp.write_text(text.replace("\r\n", "\n"), encoding="utf-8")
+        os.replace(tmp, own)
+    except OSError as exc:
+        logger.exception("Saving the rules file failed")
+        return jsonify({"error": str(exc)}), 500
+    out = _rules_payload(cfg, text)
+    bad = [r for r in out["rules"] if r["error"]]
+    logger.info("Dashboard saved %s (%d rules, %d with errors)", own.name, len(out["rules"]), len(bad))
+    out["message"] = (f"Saved {len(out['rules'])} rules to {out['file']}." +
+                      (f" {len(bad)} {'has an error and is' if len(bad) == 1 else 'have errors and are'} skipped - see below."
+                       if bad else "") +
+                      ("" if out["enabled"] else " Rules are off: switch them on under Config & Risk.") +
+                      " The agent picks up the change by itself.")
+    return jsonify({"success": True, **out})
+
+
+@app.route("/api/rules/check", methods=["GET"])
+def api_rules_check():
+    """Try your rules on a symbol's latest closed candle, for a buy and a sell.
+    Read-only: never logs a decision or places an order."""
+    cfg = load_config()
+    symbol = _symbol_param(request.args)
+    client = get_broker()
+    if not client:
+        return jsonify({"error": _not_connected()}), 500
+    timeframe = _timeframe_param(request.args, cfg.get("timeframe", "HOUR_4"))
+    try:
+        df = drop_unclosed_bar(bars_to_df(client.get_historical_bars(symbol, timeframe, max(int(cfg.get("lookback_bars", 200)), 220))), timeframe)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Could not read candles for {symbol}: {exc}"}), 500
+    if df.empty:
+        return jsonify({"error": f"No closed candles for {symbol}"}), 400
+    try:
+        tz = market_timezone(client.market)
+    except Exception:
+        tz = None
+    rules_list, _ = rules_gate.parse(rules_gate.rules_path(cfg)[0].read_text(encoding="utf-8")) \
+        if rules_gate.rules_path(cfg)[0].exists() else ([], [])
+    sigs = scan(df)
+    pattern = max(sigs, key=lambda s: s.strength) if sigs else None
+    out = {"symbol": symbol, "timeframe": timeframe, "candle": int(df.index[-1].timestamp()),
+           "pattern": pattern.name if pattern else None}
+    sm = _session_minutes_for(client.market)
+    for side in ("BUY", "SELL"):
+        m = rules_gate.compute_metrics(df, side, pattern.name if pattern and pattern.direction == side else None,
+                                       pattern.strength if pattern and pattern.direction == side else None,
+                                       timeframe, tz, sm)
+        v = rules_gate.evaluate(rules_list, m, "filter")
+        out[side.lower()] = {"stopped_by": v.hits, "not_checked": v.unchecked, "checked": v.checked, "metrics": m}
+    return jsonify(out)
+
+
 def _scan_symbols(cfg, client, kronos, audit):
     """Pattern + Kronos pass over the configured symbols. Read-only with
     respect to the broker: never places orders."""
@@ -1178,6 +1304,7 @@ def _scan_symbols(cfg, client, kronos, audit):
     horizon = cfg["forecast_horizon"]
     thresh = cfg["kronos_confidence_threshold"]
     ind_cfg = indicator_gate.IndicatorConfig.from_dict(cfg.get("indicators"))
+    rulebook = rules_gate.RuleBook(cfg) if rules_gate.settings(cfg)["enabled"] else None
     try:
         tz = market_timezone(client.market)
     except Exception:
@@ -1222,6 +1349,21 @@ def _scan_symbols(cfg, client, kronos, audit):
                                        details={"indicators": verdict.summary})
                     scanned_results.append({
                         "symbol": sym, "stage": "indicator_check", "price": last_close,
+                        "pattern": top_sig.name, "direction": top_sig.direction,
+                        "action": "rejected", "reason": reason,
+                    })
+                    continue
+
+            if rulebook is not None:
+                rv = rulebook.check(df, top_sig.direction, top_sig.name, top_sig.strength, timeframe, tz,
+                                    _session_minutes_for(client.market))
+                audit.log_snapshot(sym, last_close, "rules_check", {"passed": rv.passed, **rv.record()})
+                if not rv.passed:
+                    reason = rv.reason()
+                    audit.log_decision(sym, top_sig.name, top_sig.direction, top_sig.strength,
+                                       None, None, None, reason, "rejected", details={"rules": rv.record()})
+                    scanned_results.append({
+                        "symbol": sym, "stage": "rules_check", "price": last_close,
                         "pattern": top_sig.name, "direction": top_sig.direction,
                         "action": "rejected", "reason": reason,
                     })
@@ -1775,7 +1917,7 @@ def _overview_data() -> dict:
         logger.warning("Session clock unavailable", exc_info=True)
         out["session"] = None
 
-    pipeline = {"scanned": 0, "patterns": 0, "indicators": 0, "kronos": 0, "risk": 0, "opened": 0, "errors": 0}
+    pipeline = {"scanned": 0, "patterns": 0, "indicators": 0, "rules": 0, "kronos": 0, "risk": 0, "opened": 0, "errors": 0}
     reasons, activity, trades = {}, [], []
     state, active, manual = {}, [], []
     try:
@@ -1900,7 +2042,7 @@ def _decision_text(d: dict, stage: str) -> str:
         return f"Entered {who}{conf}"
     if stage == "error":
         return f"Order error on {who}"
-    label = {"indicators": "Indicators", "kronos": "Kronos", "risk": "Risk"}[stage]
+    label = {"indicators": "Indicators", "rules": "Your rules", "kronos": "Kronos", "risk": "Risk"}[stage]
     return f"{label} rejected {who}{': ' + d['risk_reason'] if d['risk_reason'] else ''}"
 
 

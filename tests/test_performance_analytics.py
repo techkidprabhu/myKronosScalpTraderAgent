@@ -83,7 +83,7 @@ def test_decision_stats_funnel(client):  # noqa: F811
     a.close()
     d = client.get("/api/decision_stats?days=7", headers=AUTH).get_json()
     assert [f["count"] for f in d["funnel"]] == [4, 3, 2, 1, 1]
-    assert d["totals"] == {"opened": 1, "indicators": 1, "kronos": 1, "risk": 1, "error": 0}
+    assert d["totals"] == {"opened": 1, "indicators": 1, "rules": 0, "kronos": 1, "risk": 1, "error": 0}
     assert d["confidence_hist"]["confirmed"][8] == 1 and d["confidence_hist"]["confirmed"][7] == 1
     assert d["confidence_hist"]["rejected"][4] == 1
     assert {r["reason"] for r in d["top_reasons"]} >= {"reward:risk 1.2 below 1.5"}
