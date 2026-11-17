@@ -1785,3 +1785,13 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .ver-table { table-layout: fixed; }
 .ver-table th { width: 72px; }
 @media (max-width: 640px) { .ver-pop { position: fixed; left: 12px; right: 12px; top: 64px; width: auto; } }
+
+/* ---- Today's P&L %, profit target ---- */
+.cc-big-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.cc-pct { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cc-pct-sm { font-size: 11px; font-weight: 500; opacity: .85; }
+.cc-target { margin-top: 8px; }
+.cc-target-bar { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; margin-bottom: 4px; }
+.cc-target-bar div { height: 100%; width: 0; background: var(--accent-green); border-radius: 3px; transition: width .6s ease; }
+.cc-target.done .cc-target-bar div { background: var(--accent-amber); }
+.cc-target.done .cc-muted { color: var(--warn-text); }

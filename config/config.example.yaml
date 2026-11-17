@@ -270,6 +270,12 @@ risk:
   # it. Other symbols keep trading; exits are never blocked.
   max_symbol_loss_per_day: null       # e.g. 150 (account currency)
   max_losses_per_symbol_per_day: null # e.g. 2
+  # Daily profit target: once today's CLOSED P&L reaches it, no new entries
+  # until tomorrow. Patterns, indicators, your rules and Kronos keep being
+  # evaluated and logged, candles are still collected, and open positions
+  # keep their stop, target and trailing stop. With both set, the lower wins.
+  daily_profit_target_pct: null       # e.g. 1.0 (% of the account value at the start of the day)
+  daily_profit_target: null           # e.g. 500 (account currency)
   blocked_symbols: []               # e.g. ["US.GME", "TSLA"]
 
 # Market calendar. With follow_market the agent scans only while the

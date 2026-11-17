@@ -277,8 +277,12 @@
              aria-controls="cc-today-detail" title="Show what makes up today's P&amp;L"
              onclick="toggleTodayDetail()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleTodayDetail();}">
           <div class="cc-tile-head"><span>Today's P&amp;L <span class="cc-ccy"></span></span><span id="cc-today-sub" class="cc-muted"></span></div>
-          <div class="cc-big" id="cc-today">—</div>
+          <div class="cc-big-row"><div class="cc-big" id="cc-today">—</div><span class="cc-pct" id="cc-today-pct" title="Today's P&amp;L as a % of the account value at the start of the day"></span></div>
           <div class="cc-muted" id="cc-today-split">closed — · open today —</div>
+          <div class="cc-target" id="cc-target" hidden>
+            <div class="cc-target-bar" aria-hidden="true"><div id="cc-target-fill"></div></div>
+            <div class="cc-muted" id="cc-target-text"></div>
+          </div>
           <div class="cc-muted" id="cc-today-others" hidden></div>
           <div class="cc-muted cc-tap-hint">Tap for details</div>
         </div>
@@ -1092,6 +1096,7 @@
             <li>Size: fixed quantity, or what risks a set amount at the stop, capped by the account limits and rounded to the lot size.</li>
             <li>Blocks the trade at the daily loss cap, at the open-position limit, during a symbol's cooldown, past the daily trade limit, outside the entry window, below the minimum reward:risk, or for blocked symbols.</li>
             <li>Per stock: once a stock has lost a set amount, or had a set number of losing trades today, it isn't traded again that day; the others carry on.</li>
+            <li>Daily profit target: once today's closed trades have made a set amount or % of the account, no new trades until tomorrow. Patterns, your rules and Kronos are still checked and logged, candles are still collected, and open trades keep their stops.</li>
             <li>Never trades a symbol you already hold yourself.</li>
           </ul>
           <div class="strat-section-title">Your settings now</div>
@@ -2590,6 +2595,7 @@
       "trailing_stop.enabled", "trailing_stop.trigger_points", "trailing_stop.trail_distance",
       "trailing_stop.use_atr", "trailing_stop.atr_multiplier", "trailing_stop.trigger_pct", "trailing_stop.trail_pct",
       "risk.max_symbol_loss_per_day", "risk.max_losses_per_symbol_per_day",
+      "risk.daily_profit_target_pct", "risk.daily_profit_target",
       "risk.max_open_positions", "risk.max_daily_loss", "risk.min_minutes_between_trades",
       "default_quantity", "risk.max_stake_per_point", "risk.lot_size", "risk.allow_short",
       // Day-trader rules (off when empty)
@@ -3163,7 +3169,9 @@
         rmField("trailing_stop.use_atr", "Trail distance from ATR", "Adapts the trail to volatility") +
         rmField("trailing_stop.atr_multiplier", "ATR multiplier", "");
       document.getElementById("rm-daily-fields").innerHTML =
-        rmField("risk.max_daily_loss", "Stop trading for the day after losing", `${CCY} (resets at midnight exchange time)`);
+        rmField("risk.max_daily_loss", "Stop trading for the day after losing", `${CCY} (resets at midnight exchange time)`) +
+        rmField("risk.daily_profit_target_pct", "Stop new trades for the day after making (%)", "% of the start-of-day account value; analysis and Kronos carry on") +
+        rmField("risk.daily_profit_target", "…or after making (amount)", `${CCY}; with both set, the lower applies`);
       document.getElementById("rm-cool-fields").innerHTML =
         rmField("risk.min_minutes_between_trades", "Minutes between trades in one symbol", "");
       document.getElementById("rm-dt-fields").innerHTML =
@@ -4482,6 +4490,30 @@
       if (riskPnl) { riskPnl.textContent = ccMoney(today); riskPnl.style.color = today > 0 ? "var(--pos-text)" : today < 0 ? "var(--neg-text)" : ""; }
       const tEl = document.getElementById("cc-today");
       ccTween(tEl, today, v => ccBig(v)); ccSetSign(tEl, today);
+      // live % of the account: against the start-of-day value the agent recorded,
+      // else today's account value minus today's P&L
+      const acctNow = o.account && Number(o.account.total_assets);
+      const base = Number(risk.start_equity) || (acctNow ? acctNow - today : 0);
+      const pctEl = document.getElementById("cc-today-pct");
+      if (base > 0) {
+        const pct = today / base * 100;
+        pctEl.textContent = `${pct > 0 ? "+" : pct < 0 ? "−" : ""}${Math.abs(pct).toFixed(2)}%`;
+        pctEl.className = `cc-pct ${pct > 0 ? "cc-pos" : pct < 0 ? "cc-neg" : ""}`;
+      } else pctEl.textContent = "";
+      const tgtBox = document.getElementById("cc-target");
+      tgtBox.hidden = !risk.profit_target && !risk.profit_target_pct;
+      if (!tgtBox.hidden) {
+        const tgt = Number(risk.profit_target) || 0, closed = Number(risk.closed_pnl_today) || 0;
+        const tgtLabel = risk.profit_target_pct && base > 0 && (!risk.profit_target_amount || base * risk.profit_target_pct / 100 <= risk.profit_target_amount)
+          ? `+${risk.profit_target_pct}% (${ccMoney(tgt || base * risk.profit_target_pct / 100, false)})` : ccMoney(tgt, false);
+        const prog = tgt > 0 ? Math.max(0, Math.min(100, closed / tgt * 100)) : 0;
+        document.getElementById("cc-target-fill").style.width = `${prog}%`;
+        tgtBox.classList.toggle("done", !!risk.profit_locked);
+        document.getElementById("cc-target-text").textContent = risk.profit_locked
+          ? `Profit target ${tgtLabel} reached: no new trades today. Kronos checks, analysis and data collection carry on; open trades keep their stops.`
+          : tgt ? `Profit target ${tgtLabel}: closed trades so far ${ccMoney(closed)} (${prog.toFixed(0)}%)`
+                : `Profit target +${risk.profit_target_pct}%: set once the agent has read today's account value`;
+      }
       document.getElementById("cc-today-split").textContent =
         `closed ${ccMoney(r.realized_today || 0)} · open today ${ccMoney(open)}` +
         (sinceEntry ? ` (${sinceEntry} since entry)` : "");
@@ -4518,7 +4550,8 @@
         ? Array.from({ length: segs }, (_, i) => `<span class="${i < n ? (i >= lim ? "over" : "used") : ""}"></span>`).join("") : "";
       document.getElementById("cc-pos-count").textContent =
         `${risk.open_positions || 0} of ${risk.max_open_positions || "?"} position slots in use`;
-      document.getElementById("cc-halt").innerHTML = risk.halted ? '<span class="badge danger">HALTED</span>' : "";
+      document.getElementById("cc-halt").innerHTML = risk.halted ? '<span class="badge danger">HALTED</span>'
+        : risk.profit_locked ? '<span class="badge success" title="Daily profit target reached: no new trades today">TARGET HIT</span>' : "";
 
       const cap = Number(risk.max_daily_loss) || 0, used = Math.max(0, -(r.realized_today || 0)) + (risk.open_risk || 0);
       const pct = cap ? Math.min(100, used / cap * 100) : 0;
@@ -4844,7 +4877,7 @@
         return `<button type="button" class="cc-pcard" onclick="switchTab('positions')">
           <div class="cc-pcard-top"><b>${esc(p.symbol)}</b><span class="cc-side">${esc(p.side || "")}</span>
             <span class="cc-muted">${esc(p.quantity)} @ ${entry ? entry.toFixed(dp(entry)) : "—"}</span><span style="flex:1"></span>
-            <span class="${u > 0 ? "cc-pos" : u < 0 ? "cc-neg" : ""}" style="font-family:var(--font-mono); font-weight:600">${ccMoney(u)}</span></div>
+            <span class="${u > 0 ? "cc-pos" : u < 0 ? "cc-neg" : ""}" style="font-family:var(--font-mono); font-weight:600">${ccMoney(u)}${price && entry ? ` <span class="cc-pct-sm">${((long ? price - entry : entry - price) / entry * 100).toFixed(2)}%</span>` : ""}</span></div>
           ${track}</button>`;
       }).join("");
     }
@@ -5086,6 +5119,8 @@
       v.r_size = isSet(r.max_loss_per_trade) ? `Lose at most ${money(r.max_loss_per_trade)} at the stop (max ${r.max_stake_per_point} shares)`
         : `${cfg.default_quantity || 1} shares (max ${r.max_stake_per_point ?? "–"})${(r.lot_size || 1) > 1 ? `, lots of ${r.lot_size}` : ""}`;
       v.r_cap = isSet(r.max_daily_loss) ? `${money(r.max_daily_loss)}${r.daily_loss_includes_open_risk ? ", counting open risk" : ", closed trades"}` : "—";
+      const tgtTxt = [isSet(r.daily_profit_target_pct) ? `+${r.daily_profit_target_pct}% of the account` : "", isSet(r.daily_profit_target) ? money(r.daily_profit_target) : ""].filter(Boolean).join(" or ");
+      if (tgtTxt) v.r_cap += `; new trades stop for the day at a profit of ${tgtTxt}`;
       v.r_pos = `Up to ${r.max_open_positions ?? "–"} at once`;
       const perSym = [isSet(r.max_symbol_loss_per_day) ? `stop after losing ${money(r.max_symbol_loss_per_day)}` : "",
                       isSet(r.max_losses_per_symbol_per_day) ? `after ${r.max_losses_per_symbol_per_day} losing trades` : ""].filter(Boolean).join(" or ");
