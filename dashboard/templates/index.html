@@ -842,6 +842,13 @@
           </tr></thead>
           <tbody id="ft-runs"></tbody>
         </table></div>
+        <h3 class="cc-sub-h" style="margin-top:16px">Saved versions <span class="cc-muted" style="text-transform:none;letter-spacing:0" id="ft-ver-repo"></span></h3>
+        <p class="cc-muted" style="margin:0 0 8px">Models you keep for later, stored as GitHub Releases on your private repository. Old training runs on this computer are cleaned up; saved versions stay and can be downloaded again at any time.</p>
+        <div id="ft-ver-job" role="status"></div>
+        <div class="scr-wrap"><table class="cc-mini-table ft-table">
+          <thead><tr><th>Version</th><th>Saved</th><th>Loss: original → new</th><th>Direction right: original → new</th><th>Note</th><th></th></tr></thead>
+          <tbody id="ft-versions"><tr><td colspan="6" class="cc-empty">Loading…</td></tr></tbody>
+        </table></div>
       </section>
     </div>
 
@@ -4046,6 +4053,7 @@
 
     async function loadFinetune() {
       try {
+        await loadVersions();
         const d = ftData = await (await fetch("/api/finetune")).json();
         const st = d.status || {}, running = st.state === "running";
         document.getElementById("ft-mode").textContent = d.enabled
@@ -4106,6 +4114,7 @@
             <td class="mono">${pct(o.direction_hit_pct)} → ${pct(f.direction_hit_pct)}<br><span class="cc-muted">${f.forecasts || 0} forecasts</span></td>
             <td><b class="${v[1]}">${esc(v[0])}</b><br><span class="cc-muted">${esc(r.reason || "")}</span></td>
             <td class="ft-run-actions">${inUse ? `<span class="pc-protected">In use</span>` : r.has_weights ? `<button type="button" class="btn btn-sm" onclick="ftUse('${esc(r.run_id)}')">Use this model</button>` : `<span class="cc-muted">Not kept</span>`}
+              ${ftSaved[r.run_id] ? `<span class="cc-muted">Saved as v${ftSaved[r.run_id]}</span>` : r.has_weights && ftVers && ftVers.configured ? `<button type="button" class="btn btn-sm" onclick="ftRelease('${esc(r.run_id)}')">Save as version</button>` : ""}
               ${shadowModel === r.run_id ? `<span class="pc-protected">Shadow testing</span>` : r.has_weights && !inUse ? `<button type="button" class="btn btn-sm" onclick="ftShadow('${esc(r.run_id)}')">Shadow test</button>` : ""}</td>
           </tr>`;
         }).join("") + (d.in_use ? `<tr><td colspan="5" class="cc-muted">Original model: ${esc(d.base_model)}</td><td><button type="button" class="btn btn-sm" onclick="ftUse('original')">Back to original</button></td></tr>` : "")
@@ -4123,6 +4132,68 @@
         showToast(d.message || d.error || "Done");
       } catch (e) { showToast("Request failed: " + e.message); }
       setTimeout(loadFinetune, 800);
+    }
+
+    // ---- Saved versions (GitHub Releases) ----
+    let ftVers = null, ftSaved = {}, ftVerTimer = null;
+    async function loadVersions(refresh) {
+      clearTimeout(ftVerTimer);
+      try { ftVers = await (await fetch("/api/finetune/versions" + (refresh ? "?refresh=1" : ""), { cache: "no-store" })).json(); }
+      catch (e) { return; }
+      const v = ftVers, body = document.getElementById("ft-versions"), job = v.job || {};
+      ftSaved = Object.fromEntries((v.versions || []).filter(x => x.run_id).map(x => [x.run_id, x.version]));
+      document.getElementById("ft-ver-repo").textContent = v.repo ? `on github.com/${v.repo}` : "";
+      const jobEl = document.getElementById("ft-ver-job");
+      if (job.state === "running") {
+        const pct = job.total_bytes ? Math.min(100, job.done_bytes / job.total_bytes * 100) : null;
+        jobEl.innerHTML = `<div class="cc-muted">${job.action === "save" ? "Uploading" : "Downloading"} ${esc(job.subject || "")}${pct !== null ? ` · ${pct.toFixed(0)}% of ${(job.total_bytes / 1048576).toFixed(0)} MB` : "…"}</div>
+          <div class="ft-bar"><i style="width:${pct ?? 5}%"></i></div>`;
+      } else if (job.state === "failed" && Date.now() / 1000 - (job.updated || 0) < 3600) {
+        jobEl.innerHTML = `<div class="cc-neg" style="margin-bottom:8px; font-size:13px">${esc(job.message || "Failed")}</div>`;
+      } else if (job.state === "done" && Date.now() / 1000 - (job.updated || 0) < 600) {
+        jobEl.innerHTML = `<div class="cc-pos" style="margin-bottom:8px; font-size:13px">${esc(job.message || "Done")}</div>`;
+      } else jobEl.innerHTML = "";
+      if (!v.configured) {
+        body.innerHTML = `<tr><td colspan="6" class="cc-empty">${v.has_token ? "Set finetune.releases_repo to owner/name in config.yaml." :
+          "To save versions, create a GitHub fine-grained token for this repository with Contents: Read and write, put it in .env as GITHUB_TOKEN=…, then restart the dashboard."}</td></tr>`;
+      } else if (v.error) {
+        body.innerHTML = `<tr><td colspan="6" class="cc-empty">${esc(v.error)}</td></tr>`;
+      } else if (!(v.versions || []).length) {
+        body.innerHTML = `<tr><td colspan="6" class="cc-empty">No saved versions yet. Use Save as version on a training run.</td></tr>`;
+      } else {
+        const pct = x => x === null || x === undefined ? "–" : x + "%";
+        const busy = job.state === "running";
+        body.innerHTML = v.versions.map(x => {
+          const o = x.original || {}, f = x.fine_tuned || {};
+          const act = x.in_use ? `<span class="pc-protected">In use</span>`
+            : x.local ? `<span class="cc-muted">On this computer</span>`
+            : x.asset_id ? `<button type="button" class="btn btn-sm" ${busy ? "disabled" : ""} onclick="ftRestore(${x.version})">Download</button>` : `<span class="cc-muted">No file</span>`;
+          return `<tr>
+            <td><b>v${x.version}</b><br><span class="mono cc-muted">${esc(x.run_id || "")}</span></td>
+            <td>${x.saved_at ? fmtDateTime(x.saved_at) : esc(x.published || "")}<br><span class="cc-muted">${x.size ? (x.size < 1048576 ? "under 1 MB" : (x.size / 1048576).toFixed(0) + " MB") : ""}${x.device ? ` · ${esc(x.device)}` : ""}</span></td>
+            <td class="mono">${o.val_loss ?? "–"} → ${f.val_loss ?? "–"}</td>
+            <td class="mono">${pct(o.direction_hit_pct)} → ${pct(f.direction_hit_pct)}</td>
+            <td>${esc(x.note || "")}${x.url ? `<br><a href="${esc(x.url)}" target="_blank" rel="noopener">Release page</a>` : ""}</td>
+            <td class="ft-run-actions">${act}</td></tr>`;
+        }).join("");
+      }
+      if (job.state === "running") ftVerTimer = setTimeout(() => loadVersions(), 3000);
+      else if (job.state === "done" && ftVerWasRunning) { ftVerWasRunning = false; loadFinetune(); }
+      if (job.state === "running") ftVerWasRunning = true;
+    }
+    let ftVerWasRunning = false;
+
+    async function ftRelease(runId) {
+      const note = prompt(`Save ${runId} as a new version on GitHub?\n\nAdd a short note for later (optional), e.g. what data it was trained on:`, "");
+      if (note === null) return;
+      await ftAction("release", { run_id: runId, note });
+      setTimeout(() => loadVersions(true), 600);
+    }
+
+    async function ftRestore(version) {
+      if (!confirm(`Download v${version} from GitHub to this computer?\n\nIt appears under Training runs, where you can Shadow test it or Use this model. Nothing changes for trading until you do.`)) return;
+      await ftAction("restore", { version });
+      setTimeout(() => loadVersions(true), 600);
     }
 
     async function ftImport(input) {

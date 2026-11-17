@@ -14,6 +14,9 @@
 #   ./start.sh finetune train    start a fine-tuning run in the background (logs/finetune.log)
 #   ./start.sh finetune export   write the training kit for a computer with a GPU (data/exports/)
 #   ./start.sh finetune import <zip>   bring a model trained on that computer back
+#   ./start.sh finetune versions       models saved on GitHub Releases
+#   ./start.sh finetune save <run> [note]   keep a training run as the next version (GITHUB_TOKEN in .env)
+#   ./start.sh finetune restore <n>    download version n into models/
 #
 # Works from any folder. Uses the virtualenv that is active, or venv/ or
 # .venv/ in this folder or the one above it.
@@ -163,10 +166,11 @@ case "${1:-start}" in
     case "$target" in
       check|status) exec "$PY" -m src.finetune "$target" ;;
       export|import) exec "$PY" -m src.finetune "$target" ${FT_FILE:+"$FT_FILE"} ;;
+      versions|save|restore) shift 2; exec "$PY" -m src.finetune "$target" "$@" ;;
       train)
         nohup "$PY" -u -m src.finetune train >> "$(log_file finetune)" 2>&1 &
         echo "  fine-tuning started (PID $!) - follow it with: tail -f logs/finetune.log" ;;
-      *) echo "Usage: ./start.sh finetune check|status|train|export|import <zip>" >&2; exit 2 ;;
+      *) echo "Usage: ./start.sh finetune check|status|train|export|import <zip>|versions|save <run> [note]|restore <n>" >&2; exit 2 ;;
     esac ;;
   logs)
     case "$target" in

@@ -84,9 +84,12 @@ def build_export(config: dict, out, training_root: Path | None = None) -> dict:
             "signals": sum(len(t) for per in signals.values() for t in per.values())}
 
 
-def import_run(zip_path, models_dir: Path | None = None) -> dict:
+def import_run(zip_path, models_dir: Path | None = None, replace_without_weights: bool = False) -> dict:
     """Unpack a trainer result zip into models/<run>/ after checking it holds
-    exactly one run folder with the expected files. Returns the report."""
+    exactly one run folder with the expected files. Returns the report.
+    replace_without_weights: a folder of the same run whose weights were
+    cleaned up (only report.json left) is replaced - used when a saved
+    version is downloaded again."""
     models_dir = models_dir or MODELS_DIR
     try:
         z = zipfile.ZipFile(zip_path)
@@ -121,6 +124,8 @@ def import_run(zip_path, models_dir: Path | None = None) -> dict:
                 or not report.get("base_model") or not report.get("base_tokenizer")):
             raise ValueError("report.json is not a trainer report")
         dest = models_dir / run_id
+        if dest.exists() and replace_without_weights and not (dest / "model.safetensors").exists():
+            shutil.rmtree(dest)
         if dest.exists():
             raise ValueError(f"{run_id} is already here")
         tmp = models_dir / f".import-{run_id}"
@@ -135,6 +140,7 @@ def import_run(zip_path, models_dir: Path | None = None) -> dict:
             report.update(run_id=run_id, imported=time.time(), tokenizer_tuned=tuned_tok,
                           tokenizer=str(dest / "tokenizer") if tuned_tok else report["base_tokenizer"])
             (tmp / "report.json").write_text(json.dumps(report, indent=2))
+            models_dir.mkdir(parents=True, exist_ok=True)
             tmp.rename(dest)
         except BaseException:
             shutil.rmtree(tmp, ignore_errors=True)

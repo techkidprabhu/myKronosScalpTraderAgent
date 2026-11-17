@@ -16,6 +16,19 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Saved model versions on GitHub Releases.** "Save as version" on a
+  training run (Kronos Model Lab -> Self-learning) uploads it to your own
+  repository as release `model-v<N>`, with the scores, the device it was
+  trained on and your note; it never becomes the repository's "latest"
+  release. "Saved versions" lists them, marks the one in use and those on
+  this computer, and "Download" brings any of them back into `models/`
+  (checksum-verified), ready for Shadow test or Use this model. Runs whose
+  weights were cleaned up locally can be downloaded again. Needs
+  `GITHUB_TOKEN` in `.env` (fine-grained, this repository only, Contents:
+  Read and write); the repository is `finetune.releases_repo` or this
+  clone's GitHub origin. Also `./start.sh finetune versions | save <run>
+  [note] | restore <n>`. Saving or downloading never changes the model the
+  agent trades with.
 - **Chronos look for the dashboard, now the default.** Deep ocean-blue
   surfaces, amber reserved for Kronos, Unbounded for headings and figures and
   Instrument Sans for text (both bundled under `dashboard/static/fonts`, SIL
