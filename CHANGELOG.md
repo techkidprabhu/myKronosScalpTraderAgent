@@ -15,6 +15,19 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Changed
+- **Strategies & Tactics rewritten to match the agent as it is now.** It now
+  shows the real pipeline in order (brokers and sessions, screener,
+  patterns, indicator check, Kronos, risk rules, orders and exits, managing
+  open trades) and the self-learning loop (collect, train here or on a GPU,
+  compare, shadow test, use, saved versions). Each card says what the step
+  does, shows your current settings for the selected broker, and names the
+  config keys and code files involved. A project map lists every part of the
+  folder. Corrected earlier errors: Kronos confidence is the share of
+  forecast candles that agree (not a vote of separate paths), the pattern
+  list and strengths match src/patterns.py, and suggestions that named
+  settings or models that don't exist are gone.
+
 ### Added
 - **Training kit without Hugging Face.** "Include the Kronos model" next to
   Export for GPU training (or `./start.sh finetune export --with-model`)

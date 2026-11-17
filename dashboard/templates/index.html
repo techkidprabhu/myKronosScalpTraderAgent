@@ -855,435 +855,443 @@
 
     <!-- TAB 5: TRADING STRATEGIES & PLAYBOOK -->
     <div id="tab-strategies" class="tab-panel">
-      <!-- Strategy Architecture Flow Hero -->
-      <div class="strategy-hero">
+      <section class="strategy-hero" aria-labelledby="st-title">
         <div>
-          <div class="strategy-hero-title">
-            <span>⚡ Quantitative Swing Trading Architecture & Strategy Playbook</span>
-          </div>
-          <div class="strategy-hero-sub">
-            The moomoo Swing Agent operates as a multi-stage autonomous pipeline: screening dynamic market candidates, recognizing high-probability price action patterns, confirming directional trajectory using the offline Kronos Foundation Model, guarding risk thresholds, routing exchange orders with session compliance, and ratcheting dynamic trailing stops.
-          </div>
+          <h2 class="strategy-hero-title" id="st-title">How the agent trades, and how it learns</h2>
+          <p class="strategy-hero-sub">Every broker you enable runs the same pipeline on each newly closed candle. A signal must pass every step in order; any step can stop it, and none can be skipped. After the markets close, the self-learning loop can train a new Kronos model on what the agent saw. A new model never trades until you choose it. The values on this page are your current settings for the broker selected at the top.</p>
         </div>
-
-        <div class="strategy-flow-nav">
-          <div class="strategy-flow-step active">1. Screen</div>
-          <span class="strategy-flow-arrow">➔</span>
-          <div class="strategy-flow-step active">2. Pattern</div>
-          <span class="strategy-flow-arrow">➔</span>
-          <div class="strategy-flow-step active">3. Kronos AI</div>
-          <span class="strategy-flow-arrow">➔</span>
-          <div class="strategy-flow-step active">4. Risk Guard</div>
-          <span class="strategy-flow-arrow">➔</span>
-          <div class="strategy-flow-step active">5. Execution</div>
-          <span class="strategy-flow-arrow">➔</span>
-          <div class="strategy-flow-step active">6. Trailing Exit</div>
+        <div class="st-flows">
+          <div class="st-flow-label">On every closed candle</div>
+          <ol class="strategy-flow-nav st-flow" aria-label="Trading pipeline">
+            <li><a class="strategy-flow-step active" href="#st-markets">1 Markets</a></li>
+            <li><a class="strategy-flow-step active" href="#st-screen">2 Screen</a></li>
+            <li><a class="strategy-flow-step active" href="#st-patterns">3 Pattern</a></li>
+            <li><a class="strategy-flow-step active" href="#st-indicators">4 Indicators</a></li>
+            <li><a class="strategy-flow-step active st-kronos" href="#st-kronos">5 Kronos</a></li>
+            <li><a class="strategy-flow-step active" href="#st-risk">6 Risk</a></li>
+            <li><a class="strategy-flow-step active" href="#st-orders">7 Order</a></li>
+            <li><a class="strategy-flow-step active" href="#st-manage">8 Manage</a></li>
+          </ol>
+          <div class="st-flow-label">After the close</div>
+          <ol class="strategy-flow-nav st-flow" aria-label="Self-learning loop">
+            <li><a class="strategy-flow-step active st-learn" href="#st-learn">Collect</a></li>
+            <li><a class="strategy-flow-step active st-learn" href="#st-learn">Train</a></li>
+            <li><a class="strategy-flow-step active st-learn" href="#st-learn">Compare</a></li>
+            <li><a class="strategy-flow-step active st-learn" href="#st-shadow">Shadow test</a></li>
+            <li><a class="strategy-flow-step active st-learn" href="#st-learn">Use</a></li>
+            <li><a class="strategy-flow-step active st-learn" href="#st-versions">Save version</a></li>
+          </ol>
         </div>
-      </div>
+      </section>
 
-      <!-- Strategy Cards Grid -->
       <div class="strategy-cards-grid">
 
-        <!-- Card 1: Screen Logic -->
-        <div class="strat-card">
+        <article class="strat-card" id="st-markets" aria-labelledby="st-markets-h">
           <div class="strat-card-header">
-            <div>
-              <div class="strat-card-title">
-                <span>1. Dynamic Screener Strategy</span>
-              </div>
-              <div style="font-size:12px; color:var(--accent-blue); margin-top:2px;">Universe Selection & Volatility Ranking</div>
-            </div>
-            <span class="strat-tag blue">Screen Logic</span>
+            <div><h3 class="strat-card-title" id="st-markets-h">1. Brokers, markets and sessions</h3>
+              <div class="st-sub">Where it trades and when</div></div>
+            <span class="strat-tag blue">Step 1</span>
           </div>
-
-          <div class="strat-desc">
-            Replaces static watchlist with periodic automated screening of the configured moomoo market (US, HK, SG or CN). Filters for liquid instruments and ranks survivors by swing volatility and trend strength.
-          </div>
-
-          <div class="strat-section-title">Core Mathematical & Filtering Logic</div>
+          <p class="strat-desc">One process runs every enabled broker side by side. Each has its own connection, trade log, risk limits, screener and exchange calendar. All of them share the one offline Kronos model.</p>
+          <div class="strat-section-title">How it works</div>
           <ul class="strat-logic-list">
-            <li><strong>Stage 1 (Pre-filter):</strong> Filters universe by minimum price, maximum price, and minimum average volume using batched briefs (or historical bars for US stocks).</li>
-            <li><strong>Stage 2 (ATR% Volatility):</strong> Computes Average True Range over period 14 normalized by price: <span class="strat-upgrade-code">ATR% = (ATR_14 / Close) * 100</span>. Ranks candidates descending.</li>
-            <li><strong>Trend Directional Strength:</strong> Measures exponential moving average gap: <span class="strat-upgrade-code">(EMA_20 - EMA_50) / EMA_50 * 100</span>. Positive values signify sustained uptrends.</li>
-            <li><strong>Top-N Selection:</strong> Retains only the top N highest-ranked volatility candidates for active trading.</li>
+            <li>Brokers: moomoo (US, HK, SG, CN), Tiger, and experimental Zerodha, Angel One and IG adapters. Paper trading where the broker offers it.</li>
+            <li>A broker can trade while another supplies its prices (<span class="strat-upgrade-code">data_source</span>). Example: Zerodha's free API has no market data, so prices come from Angel One.</li>
+            <li>The agent works only while the exchange is open, with holidays and early closes from its calendar. It warms up before the open and sleeps after the close, checking positions.</li>
+            <li>Only closed candles are used; the bar still forming is ignored.</li>
           </ul>
-
-          <div class="strat-section-title">Active Running Configuration</div>
+          <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Screener Status:</span>
-              <span class="strat-meta-val" id="strat-val-screener-status">Disabled (Static List)</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Target Market:</span>
-              <span class="strat-meta-val" id="strat-val-screener-market">US</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Price Filter Bounds:</span>
-              <span class="strat-meta-val" id="strat-val-screener-price">—</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">ATR% Range Filter:</span>
-              <span class="strat-meta-val" id="strat-val-screener-atr">0.5% – 8.0%</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Candidate Pool:</span>
-              <span class="strat-meta-val" id="strat-val-screener-candidates">6 symbols</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Refresh Interval:</span>
-              <span class="strat-meta-val" id="strat-val-screener-interval">360 min (6 hrs)</span>
-            </div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Enabled brokers</span><span class="strat-meta-val" data-sv="brokers">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Shown on this page</span><span class="strat-meta-val" data-sv="broker">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Account</span><span class="strat-meta-val" data-sv="account">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Trading hours</span><span class="strat-meta-val" data-sv="hours">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Calendar</span><span class="strat-meta-val" data-sv="calendar">—</span></div>
           </div>
-
-          <div class="strat-section-title" style="color:var(--accent-blue);">File Locations</div>
-          <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
-            Config: <span style="color:var(--text-strong);">config/config.yaml</span> ➔ <span style="color:var(--accent-blue);">screener:</span><br>
-            Code: <span style="color:var(--text-strong);">src/screener.py</span> (class <span style="color:var(--accent-cyan);">Screener</span>)
-          </div>
-
+          <div class="strat-section-title">Where it lives</div>
+          <div class="st-files">config.yaml: <b>brokers:</b>, <b>schedule:</b>, <b>trade_outside_market_hours</b>, <b>connection:</b><br>
+            Code: src/multi_broker.py, src/broker_config.py, src/brokers/, src/market_calendar.py, src/market.py<br>
+            Logins: .env (never in config.yaml)</div>
           <div class="strat-upgrade-box">
-            <div class="strat-upgrade-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
-              How to Upgrade & Customize Screen Logic
-            </div>
-            <div class="strat-upgrade-body">
-              • <strong>Switch to US Market:</strong> In <span class="strat-upgrade-code">config/config.yaml</span> set <span class="strat-upgrade-code">screener.market: "US"</span> and list tickers in <span class="strat-upgrade-code">candidate_symbols: ["AAPL", "NVDA", "MSFT", "TSLA"]</span>.<br>
-              • <strong>Target Explosive Runners:</strong> Increase <span class="strat-upgrade-code">min_atr_pct: 2.0</span> to screen only highly volatile momentum stocks.<br>
-              • <strong>Add Fundamental Metrics:</strong> In <span class="strat-upgrade-code">src/screener.py</span>, query financial metrics like P/E ratio, market capitalization, or earnings dates before ranking.
-            </div>
+            <div class="strat-upgrade-title">How to tune it</div>
+            <div class="strat-upgrade-body">Switch brokers on or off under <span class="strat-upgrade-code">brokers.&lt;name&gt;.enabled</span>, and give one its own settings by writing only the keys that differ under its name. Settings changes take effect after <span class="strat-upgrade-code">./start.sh restart</span>.</div>
           </div>
-        </div>
+        </article>
 
-        <!-- Card 2: Trigger Logic -->
-        <div class="strat-card">
+        <article class="strat-card" id="st-screen" aria-labelledby="st-screen-h">
           <div class="strat-card-header">
-            <div>
-              <div class="strat-card-title">
-                <span>2. Candlestick Pattern Engine</span>
-              </div>
-              <div style="font-size:12px; color:var(--accent-green); margin-top:2px;">Deterministic Price Action Setup Detection</div>
-            </div>
-            <span class="strat-tag green">Trigger Logic</span>
+            <div><h3 class="strat-card-title" id="st-screen-h">2. Screener</h3>
+              <div class="st-sub">Which symbols get watched</div></div>
+            <span class="strat-tag blue">Step 2</span>
           </div>
-
-          <div class="strat-desc">
-            Evaluates closed multi-hour/daily candlestick bars for classic institutional price action patterns. Signals an initial directional bias (BUY or SELL) with assigned pattern strength.
-          </div>
-
-          <div class="strat-section-title">Supported Candlestick Formations</div>
+          <p class="strat-desc">Picks the symbols the agent watches, on a timer. With the screener off, it watches the fixed <span class="strat-upgrade-code">symbols:</span> list instead.</p>
+          <div class="strat-section-title">How it works</div>
           <ul class="strat-logic-list">
-            <li><strong>Inside Bar (Strength 0.45):</strong> Current bar's High and Low are completely contained within the previous bar's range. Signifies consolidation prior to continuation breakout.</li>
-            <li><strong>Bullish/Bearish Engulfing (Strength 0.60):</strong> Current bar body completely engulfs prior bar body against previous trend, signaling strong momentum shift.</li>
-            <li><strong>Hammer & Inverted Hammer (Strength 0.55):</strong> Small body with a lower/upper shadow at least twice the body size, showing sharp price rejection.</li>
-            <li><strong>Morning Star / Evening Star (Strength 0.70):</strong> 3-candle reversal pattern consisting of a large directional bar, an indecision star, and a confirming reversal bar.</li>
+            <li>Starts from your candidate list, plus moomoo Market Movers lists if switched on (top gainers, top losers, hot list, 5-minute movers, short selling).</li>
+            <li>Keeps symbols inside your price range with enough average volume.</li>
+            <li>Keeps a volatility band: ATR as % of price, between your minimum and maximum.</li>
+            <li>Ranks by ATR% or, with the stock score on, by relative strength against the market, relative volume and how tight the Bollinger bands are. The top N are watched.</li>
+            <li>The screener only chooses what to watch. Every trade still has to pass steps 3 to 6.</li>
           </ul>
-
-          <div class="strat-section-title">Active Running Configuration</div>
+          <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Bar Timeframe:</span>
-              <span class="strat-meta-val" id="strat-val-pattern-tf">HOUR_4 (4 Hours)</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Lookback Window:</span>
-              <span class="strat-meta-val" id="strat-val-pattern-lb">200 closed bars</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Evaluation Cadence:</span>
-              <span class="strat-meta-val">On bar close (every 60s scan)</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Multi-Pattern Arbitration:</span>
-              <span class="strat-meta-val">Highest strength signal selected</span>
-            </div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Screener</span><span class="strat-meta-val" data-sv="scr_status">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Starts from</span><span class="strat-meta-val" data-sv="scr_from">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Price range</span><span class="strat-meta-val" data-sv="scr_price">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Min. average volume</span><span class="strat-meta-val" data-sv="scr_vol">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">ATR% band</span><span class="strat-meta-val" data-sv="scr_atr">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Ranking</span><span class="strat-meta-val" data-sv="scr_rank">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Refresh</span><span class="strat-meta-val" data-sv="scr_refresh">—</span></div>
           </div>
-
-          <div class="strat-section-title" style="color:var(--accent-green);">File Locations</div>
-          <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
-            Config: <span style="color:var(--text-strong);">config/config.yaml</span> ➔ <span style="color:var(--accent-green);">timeframe, lookback_bars</span><br>
-            Code: <span style="color:var(--text-strong);">src/patterns.py</span> (function <span style="color:var(--accent-cyan);">scan()</span>)
-          </div>
-
+          <div class="strat-section-title">Where it lives</div>
+          <div class="st-files">config.yaml: <b>screener:</b> (incl. <b>sources</b>, <b>score</b>), <b>symbols:</b><br>Code: src/screener.py · Results: Command Center, Stock ranking</div>
           <div class="strat-upgrade-box">
-            <div class="strat-upgrade-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
-              How to Upgrade & Customize Pattern Triggers
-            </div>
-            <div class="strat-upgrade-body">
-              • <strong>Add Fair Value Gaps (FVG):</strong> Add a 3-bar imbalance detector in <span class="strat-upgrade-code">src/patterns.py</span> where Candle 1 High < Candle 3 Low (bullish imbalance).<br>
-              • <strong>Add RSI Confluence:</strong> Calculate 14-period RSI; require RSI < 35 for bullish setups or RSI > 65 for bearish setups before signaling.<br>
-              • <strong>Multi-Timeframe Trend Confirmation:</strong> Only allow BUY signals if price is trading above the 200 EMA on the Daily timeframe.
-            </div>
+            <div class="strat-upgrade-title">How to tune it</div>
+            <div class="strat-upgrade-body">Try <span class="strat-upgrade-code">score.mode: log</span> first to see the scores on the Command Center without changing what's picked, then <span class="strat-upgrade-code">rank</span>. Raise <span class="strat-upgrade-code">min_atr_pct</span> for livelier stocks; lower <span class="strat-upgrade-code">top_n</span> to focus on fewer.</div>
           </div>
-        </div>
+        </article>
 
-        <!-- Card 3: AI Confirmation Logic -->
-        <div class="strat-card">
+        <article class="strat-card" id="st-patterns" aria-labelledby="st-patterns-h">
           <div class="strat-card-header">
-            <div>
-              <div class="strat-card-title">
-                <span>3. Kronos AI Foundation Model</span>
-              </div>
-              <div style="font-size:12px; color:var(--accent-purple); margin-top:2px;">Offline K-Line Generative Trajectory Filter</div>
-            </div>
-            <span class="strat-tag purple">AI Confirmation</span>
+            <div><h3 class="strat-card-title" id="st-patterns-h">3. Candlestick patterns</h3>
+              <div class="st-sub">The trigger</div></div>
+            <span class="strat-tag green">Step 3</span>
           </div>
-
-          <div class="strat-desc">
-            Offline K-Line foundation model (AAAI 2026). Ingests normalized historical price action tokens, generates forward trajectory paths, and validates whether the statistical probability supports the detected pattern.
-          </div>
-
-          <div class="strat-section-title">Generative Inference & Validation Logic</div>
+          <p class="strat-desc">When a new candle closes, the agent checks it against four patterns. A pattern gives a direction, buy or sell, and a strength. If several fire on the same candle, the strongest one goes forward.</p>
+          <div class="strat-section-title">The four patterns</div>
           <ul class="strat-logic-list">
-            <li><strong>Temporal Tokenization:</strong> Quantizes normalized OHLCV bars into temporal discrete tokens for offline context understanding.</li>
-            <li><strong>Autoregressive Prediction:</strong> Generates synthetic future candlestick paths over the designated <span class="strat-upgrade-code">forecast_horizon</span> (default 6 bars).</li>
-            <li><strong>Monte Carlo Ensemble:</strong> Generates <span class="strat-upgrade-code">sample_count</span> forward paths with temperature sampling (0.5) to quantify uncertainty and direction.</li>
-            <li><strong>Confidence Decision Gate:</strong> Calculates directional agreement percentage: <span class="strat-upgrade-code">conf = agreement_count / total_samples</span>. Confirms trade only if <span class="strat-upgrade-code">conf >= threshold (62%)</span>.</li>
+            <li><strong>Engulfing</strong> (strength 0.7): the candle's body swallows the previous opposite-coloured body. Bullish = buy, bearish = sell.</li>
+            <li><strong>Hammer</strong> (0.6, buy): small body near the top, lower wick at least twice the body.</li>
+            <li><strong>Shooting star</strong> (0.6, sell): small body near the bottom, upper wick at least twice the body.</li>
+            <li><strong>Inside bar</strong> (0.45): the candle sits inside the previous one's range; direction follows the previous candle.</li>
           </ul>
-
-          <div class="strat-section-title">Active Running Configuration</div>
+          <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Model Weights:</span>
-              <span class="strat-meta-val" id="strat-val-kronos-model">NeoQuasar/Kronos-base</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Compute Device:</span>
-              <span class="strat-meta-val" id="strat-val-kronos-device">cpu (Offline mode)</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Forecast Horizon:</span>
-              <span class="strat-meta-val" id="strat-val-kronos-horizon">6 bars ahead (24h in 4H TF)</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Confidence Gate:</span>
-              <span class="strat-meta-val" id="strat-val-kronos-conf">62.0% required</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Sample Ensemble:</span>
-              <span class="strat-meta-val" id="strat-val-kronos-samples">3 forward sample paths</span>
-            </div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Candle size</span><span class="strat-meta-val" data-sv="tf">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">History read</span><span class="strat-meta-val" data-sv="lookback">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Checked for new candles</span><span class="strat-meta-val" data-sv="poll">—</span></div>
           </div>
-
-          <div class="strat-section-title" style="color:var(--accent-purple);">File Locations</div>
-          <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
-            Config: <span style="color:var(--text-strong);">config/config.yaml</span> ➔ <span style="color:var(--accent-purple);">kronos:, kronos_confidence_threshold</span><br>
-            Code: <span style="color:var(--text-strong);">src/kronos_agent.py</span> (class <span style="color:var(--accent-cyan);">KronosAgent</span>)
-          </div>
-
+          <div class="strat-section-title">Where it lives</div>
+          <div class="st-files">config.yaml: <b>timeframe</b>, <b>lookback_bars</b>, <b>polling_interval_seconds</b><br>Code: src/patterns.py (<b>scan</b>) · Seen on: Live Terminal markers</div>
           <div class="strat-upgrade-box">
-            <div class="strat-upgrade-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
-              How to Upgrade & Customize AI Logic
-            </div>
-            <div class="strat-upgrade-body">
-              • <strong>Upgrade to Kronos-large:</strong> If you have an NVIDIA GPU, set <span class="strat-upgrade-code">model_name: "NeoQuasar/Kronos-large"</span> and <span class="strat-upgrade-code">device: "cuda"</span> in config for higher accuracy.<br>
-              • <strong>Increase Conviction:</strong> Raise <span class="strat-upgrade-code">kronos_confidence_threshold: 0.70</span> (70%) and lower <span class="strat-upgrade-code">temperature: 0.3</span> to trade only the highest-conviction signals.<br>
-              • <strong>Extend Forecast Horizon:</strong> Change <span class="strat-upgrade-code">forecast_horizon: 10</span> to project 10 bars ahead for longer-duration swing moves.
-            </div>
+            <div class="strat-upgrade-title">How to tune it</div>
+            <div class="strat-upgrade-body">A shorter timeframe gives more signals and more noise; intraday trading uses MIN_5 or MIN_15. Each broker can have its own <span class="strat-upgrade-code">timeframe</span>. Decisions &amp; Audit Log shows how each pattern has performed.</div>
           </div>
-        </div>
+        </article>
 
-        <!-- Card 4: Execution Logic -->
-        <div class="strat-card">
+        <article class="strat-card" id="st-indicators" aria-labelledby="st-indicators-h">
           <div class="strat-card-header">
-            <div>
-              <div class="strat-card-title">
-                <span>4. Exchange Execution & Order Routing</span>
-              </div>
-              <div style="font-size:12px; color:var(--accent-cyan); margin-top:2px;">Exchange Hours Compliance & Resilient Routing</div>
-            </div>
-            <span class="strat-tag blue">Execution Logic</span>
+            <div><h3 class="strat-card-title" id="st-indicators-h">4. Indicator check</h3>
+              <div class="st-sub">Drops setups that fight the trend</div></div>
+            <span class="strat-tag green">Step 4</span>
           </div>
-
-          <div class="strat-desc">
-            Dispatches orders through moomoo OpenD (OpenSecTradeContext) with session validation for US, HK, SGX and A-share markets, preventing off-market-hours exchange rejections and handling bracket protections.
-          </div>
-
-          <div class="strat-section-title">Session-Aware Execution Mechanics</div>
+          <p class="strat-desc">Before asking Kronos, the agent reads the usual indicators and rejects signals that go against them. This check can only stop a signal; it never creates one.</p>
+          <div class="strat-section-title">How it works</div>
           <ul class="strat-logic-list">
-            <li><strong>Limit Order Placement (Default):</strong> Places entries using <span class="strat-upgrade-code">order_type: "LIMIT"</span> priced at the latest completed bar close, safely queued by the broker even outside regular trading hours.</li>
-            <li><strong>Off-Hours Auto-Fallback:</strong> MARKET orders are only sent while the exchange session is open; outside it the entry is placed as a LIMIT at the last close instead.</li>
-            <li><strong>Protective Order Fallback:</strong> If the broker rejects separate resting stop orders before the buy order fills (e.g. short-selling not permitted on cash/paper accounts), software trailing stop safely assumes position control.</li>
-            <li><strong>Code Normalization & Ticks:</strong> Bare tickers get the moomoo market prefix (<span class="strat-upgrade-code">AAPL</span> ➔ <span class="strat-upgrade-code">US.AAPL</span>, <span class="strat-upgrade-code">00700</span> ➔ <span class="strat-upgrade-code">HK.00700</span>) and prices are rounded to each exchange's tick table (incl. the HKEX spread table).</li>
-            <li><strong>Broker-side Protection:</strong> Stop (<span class="strat-upgrade-code">OrderType.STOP</span>) and target (LIMIT) exits are placed GTC once the entry fills, so they keep protecting the position even if the agent is offline.</li>
+            <li>Reads EMA 9/20/50/200, ADX, Supertrend, RSI, MACD, Stochastic, Bollinger, Donchian, volume/OBV and, intraday, session VWAP.</li>
+            <li>Turns them into a bias score from −100 to +100 toward the trade; the signal needs at least your minimum.</li>
+            <li>Optional: buy only when the fast moving average is above the slow one (and the reverse for sells).</li>
+            <li>Skips buys when RSI is overbought and sells when it is oversold.</li>
+            <li>With too few candles, the check is skipped and the signal passes.</li>
           </ul>
-
-          <div class="strat-section-title">Active Running Configuration</div>
+          <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Configured Order Type:</span>
-              <span class="strat-meta-val" id="strat-val-order-type">LIMIT (Safe Queuing)</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Broker Target:</span>
-              <span class="strat-meta-val" id="strat-val-broker-account">moomoo OpenD</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Default Order Quantity:</span>
-              <span class="strat-meta-val" id="strat-val-order-qty">100 shares</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Environment:</span>
-              <span class="strat-meta-val" id="strat-val-broker-env">Paper Trading (SIMULATE)</span>
-            </div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Check</span><span class="strat-meta-val" data-sv="ind_status">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Minimum bias</span><span class="strat-meta-val" data-sv="ind_align">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Trend rule</span><span class="strat-meta-val" data-sv="ind_ma">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">RSI limits</span><span class="strat-meta-val" data-sv="ind_rsi">—</span></div>
           </div>
-
-          <div class="strat-section-title" style="color:var(--accent-cyan);">File Locations</div>
-          <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
-            Config: <span style="color:var(--text-strong);">config/config.yaml</span> ➔ <span style="color:var(--accent-cyan);">order_type, symbols</span><br>
-            Code: <span style="color:var(--text-strong);">src/moomoo_client.py</span> & <span style="color:var(--text-strong);">src/orchestrator.py</span>
-          </div>
-
+          <div class="strat-section-title">Where it lives</div>
+          <div class="st-files">config.yaml: <b>indicators:</b><br>Code: src/indicator_gate.py, src/kronos_indicators/</div>
           <div class="strat-upgrade-box">
-            <div class="strat-upgrade-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
-              How to Upgrade & Customize Execution Logic
-            </div>
-            <div class="strat-upgrade-body">
-              • <strong>Marketable Limit Slippage:</strong> In <span class="strat-upgrade-code">src/orchestrator.py</span>, price BUY limits slightly above last close (e.g. <span class="strat-upgrade-code">last_close * 1.002</span>) to ensure immediate execution on market open.<br>
-              • <strong>Switch to Native OCA Orders:</strong> For accounts with margin shorting, attach native one-cancels-all (OCA) stop/target brackets directly to the primary entry order.<br>
-              • <strong>Add TWAP/VWAP:</strong> Slice large orders across multiple intervals to minimize market impact.
-            </div>
+            <div class="strat-upgrade-title">How to tune it</div>
+            <div class="strat-upgrade-body"><span class="strat-upgrade-code">mode: log</span> records the verdict without rejecting, so you can see what it would have stopped. Raise <span class="strat-upgrade-code">min_alignment</span> (e.g. 20) to demand clearer agreement.</div>
           </div>
-        </div>
+        </article>
 
-        <!-- Card 5: Risk Logic -->
-        <div class="strat-card">
+        <article class="strat-card st-card-kronos" id="st-kronos" aria-labelledby="st-kronos-h">
           <div class="strat-card-header">
-            <div>
-              <div class="strat-card-title">
-                <span>5. Capital Guard & Position Limits</span>
-              </div>
-              <div style="font-size:12px; color:var(--accent-red); margin-top:2px;">Hard Pre-Trade Portfolio Risk Checks</div>
-            </div>
-            <span class="strat-tag amber">Risk Logic</span>
+            <div><h3 class="strat-card-title" id="st-kronos-h">5. Kronos confirmation</h3>
+              <div class="st-sub">The offline forecasting model</div></div>
+            <span class="strat-tag purple">Step 5</span>
           </div>
-
-          <div class="strat-desc">
-            Acts as the primary protective firewall before any order can be dispatched. Restricts portfolio exposure, halts trading if daily drawdown thresholds are reached, and enforces cooling intervals.
-          </div>
-
-          <div class="strat-section-title">Risk Enforcement Checks</div>
+          <p class="strat-desc">Kronos is a model trained on candlestick charts. It runs on this computer with no internet. It forecasts the next few candles, and the trade goes ahead only if enough of them move the signal's way.</p>
+          <div class="strat-section-title">How it works</div>
           <ul class="strat-logic-list">
-            <li><strong>Daily Cumulative Loss Cap:</strong> Tracks both realized P&L and floating unrealized loss. If cumulative daily loss exceeds <span class="strat-upgrade-code">max_daily_loss</span>, all new entries are blocked.</li>
-            <li><strong>Max Concurrent Open Positions:</strong> Limits total active swing positions across all symbols to prevent capital overcommitment.</li>
-            <li><strong>Symbol Trade Cooldown:</strong> Enforces <span class="strat-upgrade-code">min_minutes_between_trades</span> (e.g. 240m / 4h) on any individual ticker to avoid chasing consecutive whipsaws.</li>
-            <li><strong>Asymmetric Bracket Distances:</strong> Defines predefined stop-loss and take-profit distances ensuring positive risk-to-reward ratios (e.g. 1:2 R:R).</li>
+            <li>Reads the latest closed candles (up to the model's context length) and forecasts the next <em>horizon</em> candles.</li>
+            <li>It samples several forecasts and averages them into one path.</li>
+            <li>Confidence is the share of forecast candles that close above the signal candle for a buy, or below it for a sell.</li>
+            <li>The signal passes only above 50% <em>and</em> at or above your threshold.</li>
+            <li>A shadow model, if set, is asked the same question in the background. Only its answer is recorded (card 10).</li>
           </ul>
-
-          <div class="strat-section-title">Active Running Configuration</div>
+          <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Max Daily Loss Limit:</span>
-              <span class="strat-meta-val" id="strat-val-risk-loss">—</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Max Concurrent Positions:</span>
-              <span class="strat-meta-val" id="strat-val-risk-maxpos">3 positions</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Stop-Loss Distance:</span>
-              <span class="strat-meta-val" id="strat-val-risk-stop">0.15 / share</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Take-Profit Distance:</span>
-              <span class="strat-meta-val" id="strat-val-risk-target">0.30 (2.0 R:R)</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Trade Cooldown:</span>
-              <span class="strat-meta-val">240 minutes</span>
-            </div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Model trading now</span><span class="strat-meta-val" data-sv="k_model">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Tokenizer</span><span class="strat-meta-val" data-sv="k_tok">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Runs on</span><span class="strat-meta-val" data-sv="k_device">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Forecast horizon</span><span class="strat-meta-val" data-sv="k_horizon">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Threshold</span><span class="strat-meta-val" data-sv="k_conf">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Sampling</span><span class="strat-meta-val" data-sv="k_samples">—</span></div>
           </div>
-
-          <div class="strat-section-title" style="color:var(--accent-red);">File Locations</div>
-          <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
-            Config: <span style="color:var(--text-strong);">config/config.yaml</span> ➔ <span style="color:var(--accent-red);">risk:</span><br>
-            Code: <span style="color:var(--text-strong);">src/risk.py</span> (class <span style="color:var(--accent-cyan);">RiskManager</span>)
-          </div>
-
+          <div class="strat-section-title">Where it lives</div>
+          <div class="st-files">config.yaml: <b>kronos:</b>, <b>forecast_horizon</b>, <b>kronos_confidence_threshold</b><br>Code: src/kronos_agent.py · Kronos source: vendor/Kronos · Try it: Kronos Model Lab, Live Terminal</div>
           <div class="strat-upgrade-box">
-            <div class="strat-upgrade-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
-              How to Upgrade & Customize Risk Rules
-            </div>
-            <div class="strat-upgrade-body">
-              • <strong>Percentage Equity Sizing:</strong> In <span class="strat-upgrade-code">src/risk.py</span>, calculate trade quantity dynamically: <span class="strat-upgrade-code">quantity = (AccountEquity * 0.015) / StopDistance</span>.<br>
-              • <strong>ATR-based Risk Brackets:</strong> Set <span class="strat-upgrade-code">risk.use_atr: true</span> in config so stop and target scale automatically with the instrument's current volatility.<br>
-              • <strong>Sector Exposure Cap:</strong> Limit maximum open positions in a single sector (e.g. maximum 1 bank or 1 tech stock at a time).
-            </div>
+            <div class="strat-upgrade-title">How to tune it</div>
+            <div class="strat-upgrade-body">A higher threshold (e.g. 0.70) means fewer, more confident trades. Performance → "Does Kronos confidence pay?" shows whether higher confidence has actually won more often. To change the model itself, use self-learning (card 9) rather than editing <span class="strat-upgrade-code">model_name</span> by hand.</div>
           </div>
-        </div>
+        </article>
 
-        <!-- Card 6: Exit Logic -->
-        <div class="strat-card">
+        <article class="strat-card" id="st-risk" aria-labelledby="st-risk-h">
           <div class="strat-card-header">
-            <div>
-              <div class="strat-card-title">
-                <span>6. Chandelier Trailing Stop & Exits</span>
-              </div>
-              <div style="font-size:12px; color:var(--accent-amber); margin-top:2px;">Dynamic Profit Locking & High-Water Ratchet</div>
-            </div>
-            <span class="strat-tag amber">Exit Logic</span>
+            <div><h3 class="strat-card-title" id="st-risk-h">6. Risk rules</h3>
+              <div class="st-sub">The last word before an order</div></div>
+            <span class="strat-tag amber">Step 6</span>
           </div>
-
-          <div class="strat-desc">
-            Independent fast-cadence monitoring engine running every 20 seconds. Tracks favorable price excursions and locks in profits by ratcheting the protective stop behind price peaks.
-          </div>
-
-          <div class="strat-section-title">Trailing Stop Mechanics</div>
+          <p class="strat-desc">Sets the stop, the target and the size, then checks the account limits. If any rule fails, no order is sent. Exits are never blocked.</p>
+          <div class="strat-section-title">How it works</div>
           <ul class="strat-logic-list">
-            <li><strong>High-Water / Low-Water Tracking:</strong> Maintains the peak favorable price achieved since position entry (<span class="strat-upgrade-code">high_water</span> for BUYs, <span class="strat-upgrade-code">low_water</span> for SELLs).</li>
-            <li><strong>Profit Trigger Delay:</strong> Trailing does not ratchet on initial entry wiggles; only activates after price moves at least <span class="strat-upgrade-code">trigger_points</span> (e.g. 0.10) in profit.</li>
-            <li><strong>One-Way Ratchet:</strong> The stop trails <span class="strat-upgrade-code">trail_distance</span> behind peak price and only ratchets in the favorable direction—never loosening.</li>
-            <li><strong>Automated Market Close:</strong> As soon as current price breaches the ratcheted stop or reaches the profit target, dispatches an automated market close order.</li>
+            <li>Stop and target: fixed price distance, % of price, or a multiple of ATR (target as a multiple of the stop, R).</li>
+            <li>Size: fixed quantity, or what risks a set amount at the stop, capped by the account limits and rounded to the lot size.</li>
+            <li>Blocks the trade at the daily loss cap, at the open-position limit, during a symbol's cooldown, past the daily trade limit, outside the entry window, below the minimum reward:risk, or for blocked symbols.</li>
+            <li>Never trades a symbol you already hold yourself.</li>
           </ul>
-
-          <div class="strat-section-title">Active Running Configuration</div>
+          <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Trailing Engine Status:</span>
-              <span class="strat-meta-val" id="strat-val-trail-status">Disabled (Fixed Brackets)</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Monitor Check Cadence:</span>
-              <span class="strat-meta-val" id="strat-val-trail-cadence">Every 20 seconds</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Profit Trigger Distance:</span>
-              <span class="strat-meta-val" id="strat-val-trail-trigger">0.10</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Trailing Distance:</span>
-              <span class="strat-meta-val" id="strat-val-trail-dist">0.15 behind peak</span>
-            </div>
-            <div class="strat-meta-row">
-              <span class="strat-meta-label">Volatility Adaptation:</span>
-              <span class="strat-meta-val" id="strat-val-trail-atr">Fixed (ATR Mode Available)</span>
-            </div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Stop</span><span class="strat-meta-val" data-sv="r_stop">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Target</span><span class="strat-meta-val" data-sv="r_target">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Size</span><span class="strat-meta-val" data-sv="r_size">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Daily loss cap</span><span class="strat-meta-val" data-sv="r_cap">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Open positions</span><span class="strat-meta-val" data-sv="r_pos">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Per symbol</span><span class="strat-meta-val" data-sv="r_cool">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Day-trader rules</span><span class="strat-meta-val" data-sv="r_day">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Short selling</span><span class="strat-meta-val" data-sv="r_short">—</span></div>
           </div>
-
-          <div class="strat-section-title" style="color:var(--accent-amber);">File Locations</div>
-          <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary); margin-bottom:12px;">
-            Config: <span style="color:var(--text-strong);">config/config.yaml</span> ➔ <span style="color:var(--accent-amber);">trailing_stop:</span><br>
-            Code: <span style="color:var(--text-strong);">src/trailing_stop.py</span> & <span style="color:var(--text-strong);">src/orchestrator.py</span>
-          </div>
-
+          <div class="strat-section-title">Where it lives</div>
+          <div class="st-files">config.yaml: <b>risk:</b> · Edit on: Risk Model, Config &amp; Risk<br>Code: src/risk.py (<b>RiskManager.plan_entry</b>)</div>
           <div class="strat-upgrade-box">
-            <div class="strat-upgrade-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
-              How to Upgrade & Customize Exit Tactics
-            </div>
-            <div class="strat-upgrade-body">
-              • <strong>Enable ATR Trailing:</strong> In <span class="strat-upgrade-code">config/config.yaml</span> set <span class="strat-upgrade-code">trailing_stop.use_atr: true</span> and <span class="strat-upgrade-code">atr_multiplier: 3.0</span> for volatility-adaptive trailing.<br>
-              • <strong>Partial Scale-Out (50% at 1R):</strong> In <span class="strat-upgrade-code">src/orchestrator.py</span>, close half the position size when price reaches 1R profit, and move the remaining stop to breakeven.<br>
-              • <strong>Time-Based Exit:</strong> Close positions that have remained stagnant after N bars (e.g. 12 bars) to free up buying power for fresh setups.
-            </div>
+            <div class="strat-upgrade-title">How to tune it</div>
+            <div class="strat-upgrade-body">The Risk Model tab shows what each rule would do to a trade before you save it. A common setup: <span class="strat-upgrade-code">max_loss_per_trade</span> for sizing, <span class="strat-upgrade-code">stop_atr_multiple: 1.5</span> with <span class="strat-upgrade-code">target_r_multiple: 2</span>, and <span class="strat-upgrade-code">min_reward_risk: 1.5</span>.</div>
           </div>
-        </div>
+        </article>
 
+        <article class="strat-card" id="st-orders" aria-labelledby="st-orders-h">
+          <div class="strat-card-header">
+            <div><h3 class="strat-card-title" id="st-orders-h">7. Orders and exits at the broker</h3>
+              <div class="st-sub">Getting in, with protection</div></div>
+            <span class="strat-tag blue">Step 7</span>
+          </div>
+          <p class="strat-desc">Sends the entry and, once it fills, places the stop and target at the broker, so they protect the position even if the agent stops.</p>
+          <div class="strat-section-title">How it works</div>
+          <ul class="strat-logic-list">
+            <li>Entries are day orders: a limit at the signal candle's close, or a market order while the session is open.</li>
+            <li>An entry still unfilled after the timeout is cancelled.</li>
+            <li>Exits: stop and target orders. These are GTC on live moomoo and Tiger accounts, re-placed daily on moomoo paper accounts, and GTT triggers on Zerodha. Angel One gets limit-priced orders, because SEBI rules don't allow market orders from algorithms.</li>
+            <li>Prices are rounded to each exchange's tick size, and quantities to its lot size.</li>
+            <li>Manual orders from the Positions tab skip steps 3 to 6 but get the same stop, target and trailing.</li>
+          </ul>
+          <div class="strat-section-title">Your settings now</div>
+          <div class="strat-meta-box">
+            <div class="strat-meta-row"><span class="strat-meta-label">Entry order</span><span class="strat-meta-val" data-sv="o_type">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Unfilled entry cancelled after</span><span class="strat-meta-val" data-sv="o_timeout">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Default quantity</span><span class="strat-meta-val" data-sv="o_qty">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Exits for this broker</span><span class="strat-meta-val" data-sv="o_exits">—</span></div>
+          </div>
+          <div class="strat-section-title">Where it lives</div>
+          <div class="st-files">config.yaml: <b>order_type</b>, <b>entry_timeout_minutes</b>, <b>default_quantity</b> · .env: exit options per broker<br>Code: src/orchestrator.py, src/moomoo_client.py, src/brokers/</div>
+          <div class="strat-upgrade-box">
+            <div class="strat-upgrade-title">How to tune it</div>
+            <div class="strat-upgrade-body">Keep <span class="strat-upgrade-code">LIMIT</span> unless fills are a problem. Zerodha and Angel One accept API orders only from the static IP registered with them.</div>
+          </div>
+        </article>
+
+        <article class="strat-card" id="st-manage" aria-labelledby="st-manage-h">
+          <div class="strat-card-header">
+            <div><h3 class="strat-card-title" id="st-manage-h">8. Managing open trades</h3>
+              <div class="st-sub">Trailing, closing, and your own holdings</div></div>
+            <span class="strat-tag amber">Step 8</span>
+          </div>
+          <p class="strat-desc">A separate, faster loop watches the agent's open trades. It moves stops up, closes trades on time and leaves your own holdings alone.</p>
+          <div class="strat-section-title">How it works</div>
+          <ul class="strat-logic-list">
+            <li>Trailing stop: once a trade is far enough in profit, the stop follows the best price at a set distance (or a multiple of ATR), and only ever tightens.</li>
+            <li>Intraday mode: every agent trade is closed a set number of minutes before the close, win or lose, and anything left from yesterday is closed at the open.</li>
+            <li>Your holdings: positions the agent didn't open are shown but never sold or traded by it.</li>
+            <li>A position the broker no longer holds is marked closed instead of being watched forever.</li>
+          </ul>
+          <div class="strat-section-title">Your settings now</div>
+          <div class="strat-meta-box">
+            <div class="strat-meta-row"><span class="strat-meta-label">Trailing stop</span><span class="strat-meta-val" data-sv="t_status">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Starts after</span><span class="strat-meta-val" data-sv="t_trigger">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Trails by</span><span class="strat-meta-val" data-sv="t_dist">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Holding style</span><span class="strat-meta-val" data-sv="t_flat">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Your own holdings</span><span class="strat-meta-val" data-sv="t_holdings">—</span></div>
+          </div>
+          <div class="strat-section-title">Where it lives</div>
+          <div class="st-files">config.yaml: <b>trailing_stop:</b>, <b>risk.flat_by_minutes_before_close</b>, <b>unmanaged_positions:</b><br>Code: src/trailing_stop.py, src/orchestrator.py · Seen on: Positions &amp; Trailing Stop</div>
+          <div class="strat-upgrade-box">
+            <div class="strat-upgrade-title">How to tune it</div>
+            <div class="strat-upgrade-body">Use <span class="strat-upgrade-code">trailing_stop.use_atr: true</span> so the trail scales with each stock's volatility. Leave <span class="strat-upgrade-code">flat_by_minutes_before_close</span> empty for overnight swing trades.</div>
+          </div>
+        </article>
+
+        <article class="strat-card st-card-learn" id="st-learn" aria-labelledby="st-learn-h">
+          <div class="strat-card-header">
+            <div><h3 class="strat-card-title" id="st-learn-h">9. Self-learning (fine-tuning Kronos)</h3>
+              <div class="st-sub">Teaching Kronos your markets</div></div>
+            <span class="strat-tag purple">After the close</span>
+          </div>
+          <p class="strat-desc">Trains a copy of Kronos on candles from your own markets, using the method from the Kronos repository. It then compares the copy with the original on recent candles neither has seen. The trading model only changes when you choose a new one.</p>
+          <div class="strat-section-title">The steps, in order</div>
+          <ol class="strat-logic-list st-steps">
+            <li><strong>Collect:</strong> at each market close, saves the candles of every symbol the agent screened, decided on or traded, on every broker.</li>
+            <li><strong>Train:</strong> starts from the original Kronos every time, so runs never stack. A share of each batch (30% by default) ends exactly where the agent asked Kronos for a verdict, winners and losers alike. Run it here on the CPU, on a schedule, or on a GPU computer with the exported kit.</li>
+            <li><strong>Compare:</strong> the newest candles (15% by default) are held back. Both models forecast them, and the run gets a verdict: better, no gain or worse. Only "better" models are kept.</li>
+            <li><strong>Shadow test</strong> (card 10), then <strong>Use this model</strong> and restart. "Back to original" undoes it.</li>
+            <li><strong>Save version</strong> (card 11) to keep it for later.</li>
+          </ol>
+          <div class="strat-section-title">Your settings now</div>
+          <div class="strat-meta-box">
+            <div class="strat-meta-row"><span class="strat-meta-label">Collect candles</span><span class="strat-meta-val" data-sv="f_collect">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Collected so far</span><span class="strat-meta-val" data-sv="f_data">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Training here</span><span class="strat-meta-val" data-sv="f_train">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Training runs</span><span class="strat-meta-val" data-sv="f_runs">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Model trading now</span><span class="strat-meta-val" data-sv="f_inuse">—</span></div>
+          </div>
+          <div class="strat-section-title">Where it lives</div>
+          <div class="st-files">config.yaml: <b>finetune:</b> · Use it on: Kronos Model Lab → Self-learning<br>Code: src/finetune/ (data, trainer, scheduler, kit) · Data: data/training/ · Models: models/kronos-ft-…</div>
+          <div class="strat-upgrade-box">
+            <div class="strat-upgrade-title">Commands</div>
+            <div class="strat-upgrade-body"><span class="strat-upgrade-code">./start.sh finetune check</span> estimates how long a run takes here. <span class="strat-upgrade-code">./start.sh finetune train</span> starts one. <span class="strat-upgrade-code">./start.sh finetune export --with-model</span> builds the GPU kit, including the model for networks that block Hugging Face. <span class="strat-upgrade-code">./start.sh finetune import &lt;zip&gt;</span> brings the result back.</div>
+          </div>
+        </article>
+
+        <article class="strat-card st-card-learn" id="st-shadow" aria-labelledby="st-shadow-h">
+          <div class="strat-card-header">
+            <div><h3 class="strat-card-title" id="st-shadow-h">10. Shadow test</h3>
+              <div class="st-sub">Try a new model on live signals, risk-free</div></div>
+            <span class="strat-tag purple">Alongside step 5</span>
+          </div>
+          <p class="strat-desc">A fine-tuned model sits next to the trading model and answers the same question on every live signal. Its answers are only recorded, so it can never place or block a trade.</p>
+          <div class="strat-section-title">How it works</div>
+          <ul class="strat-logic-list">
+            <li>Runs in the background after the trading model has answered, so it never delays a decision.</li>
+            <li>Records both confidences. Once later candles are in, it records which model was right about the direction.</li>
+            <li>The Self-learning card shows how often the two agreed and who was right when they didn't.</li>
+            <li>A shadow model that fails to load is logged and ignored.</li>
+          </ul>
+          <div class="strat-section-title">Your settings now</div>
+          <div class="strat-meta-box">
+            <div class="strat-meta-row"><span class="strat-meta-label">Shadow model</span><span class="strat-meta-val" data-sv="s_model">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Signals compared</span><span class="strat-meta-val" data-sv="s_signals">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Agreed</span><span class="strat-meta-val" data-sv="s_agree">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Direction right</span><span class="strat-meta-val" data-sv="s_right">—</span></div>
+          </div>
+          <div class="strat-section-title">Where it lives</div>
+          <div class="st-files">config.yaml: <b>finetune.shadow_model</b> (set by the Shadow test button) · Results: data/shadow.db<br>Code: src/finetune/shadow.py</div>
+          <div class="strat-upgrade-box">
+            <div class="strat-upgrade-title">When to switch</div>
+            <div class="strat-upgrade-body">Let it see a few dozen signals. If the new model is right more often, mainly where the two disagree, choose Use this model. Starting or stopping a shadow test needs an agent restart.</div>
+          </div>
+        </article>
+
+        <article class="strat-card st-card-learn" id="st-versions" aria-labelledby="st-versions-h">
+          <div class="strat-card-header">
+            <div><h3 class="strat-card-title" id="st-versions-h">11. Saved model versions</h3>
+              <div class="st-sub">Keep good models and get them back any time</div></div>
+            <span class="strat-tag purple">After the close</span>
+          </div>
+          <p class="strat-desc">Training runs on this computer are cleaned up over time. Save as version keeps a model as a GitHub Release on your private repository, with its scores and your note, and Download brings it back.</p>
+          <div class="strat-section-title">How it works</div>
+          <ul class="strat-logic-list">
+            <li>Each version is a release tagged <span class="strat-upgrade-code">model-v1</span>, <span class="strat-upgrade-code">model-v2</span>, …, holding the model's files. It is never marked as the code's latest release.</li>
+            <li>Download checks the file's checksum, then lists the model under Training runs, ready for Shadow test or Use this model.</li>
+            <li>Saving or downloading never changes the model the agent trades with.</li>
+          </ul>
+          <div class="strat-section-title">Your settings now</div>
+          <div class="strat-meta-box">
+            <div class="strat-meta-row"><span class="strat-meta-label">Saving</span><span class="strat-meta-val" data-sv="v_status">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Saved versions</span><span class="strat-meta-val" data-sv="v_count">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Trading with</span><span class="strat-meta-val" data-sv="v_inuse">—</span></div>
+          </div>
+          <div class="strat-section-title">Where it lives</div>
+          <div class="st-files">.env: <b>GITHUB_TOKEN</b> (this repository only, Contents: read and write) · config.yaml: <b>finetune.releases_repo</b><br>Code: src/finetune/releases.py</div>
+          <div class="strat-upgrade-box">
+            <div class="strat-upgrade-title">Commands</div>
+            <div class="strat-upgrade-body"><span class="strat-upgrade-code">./start.sh finetune versions</span> lists them, <span class="strat-upgrade-code">./start.sh finetune save &lt;run&gt; "note"</span> keeps one, and <span class="strat-upgrade-code">./start.sh finetune restore 3</span> brings v3 back.</div>
+          </div>
+        </article>
+
+        <article class="strat-card" id="st-watch" aria-labelledby="st-watch-h">
+          <div class="strat-card-header">
+            <div><h3 class="strat-card-title" id="st-watch-h">12. Watching it work</h3>
+              <div class="st-sub">Records, alerts and display-only tools</div></div>
+            <span class="strat-tag blue">Always on</span>
+          </div>
+          <p class="strat-desc">Everything the agent decides is written down, and you can follow it from the dashboard, your phone or Telegram. The tools marked display-only never influence a trade.</p>
+          <div class="strat-section-title">What's there</div>
+          <ul class="strat-logic-list">
+            <li><strong>Trade log:</strong> every signal, verdict, order and result, in one database per broker. See Decisions &amp; Audit Log and Performance.</li>
+            <li><strong>Telegram:</strong> trades, rejections, errors and market open/close messages.</li>
+            <li><strong>Command Center:</strong> today's P&amp;L, the latest Kronos verdict with its forecast, what the agent did today, and live activity.</li>
+            <li><strong>Display only:</strong> the market sentiment meter, support/resistance lines on the chart, and the stock score in "log" mode.</li>
+            <li><strong>Heartbeat:</strong> "Not reporting" appears when the agent hasn't checked in for 3 minutes.</li>
+          </ul>
+          <div class="strat-section-title">Where it lives</div>
+          <div class="st-files">Records: data/audit.db (moomoo), data/audit_&lt;broker&gt;.db · Telegram: TELEGRAM_* in .env<br>Code: src/audit_log.py, src/telegram_bot.py, src/sentiment.py, dashboard/</div>
+        </article>
       </div>
+
+      <section class="strat-card st-map" aria-labelledby="st-map-h">
+        <div class="strat-card-header">
+          <div><h3 class="strat-card-title" id="st-map-h">Project map</h3>
+            <div class="st-sub">Where everything lives in the moomoo-swing-agent folder</div></div>
+        </div>
+        <div class="st-map-grid">
+          <div>
+            <div class="strat-section-title">Running it</div>
+            <table class="st-map-table"><tbody>
+              <tr><td>start.sh</td><td>Start, stop, restart, status and logs for the agent and dashboard; <b>finetune</b> commands</td></tr>
+              <tr><td>main.py</td><td>The agent: runs every enabled broker</td></tr>
+              <tr><td>run_dashboard.py</td><td>This dashboard (login link printed at start)</td></tr>
+              <tr><td>kite_login.py</td><td>Daily Zerodha login (saves the day's token)</td></tr>
+              <tr><td>verify_opend.py</td><td>moomoo OpenD order test</td></tr>
+              <tr><td>config/config.yaml</td><td>Your settings (template: config.example.yaml)</td></tr>
+              <tr><td>.env</td><td>Broker logins, Telegram, GITHUB_TOKEN. Never committed.</td></tr>
+            </tbody></table>
+            <div class="strat-section-title">Data on this computer (not in git)</div>
+            <table class="st-map-table"><tbody>
+              <tr><td>data/</td><td>Trade logs, risk state, dashboard login, training candles, shadow results</td></tr>
+              <tr><td>models/</td><td>Fine-tuned Kronos runs (kronos-ft-…)</td></tr>
+              <tr><td>vendor/Kronos</td><td>Kronos source code</td></tr>
+              <tr><td>logs/</td><td>agent.log, dashboard.log, finetune.log</td></tr>
+            </tbody></table>
+          </div>
+          <div>
+            <div class="strat-section-title">The agent (src/)</div>
+            <table class="st-map-table"><tbody>
+              <tr><td>orchestrator.py</td><td>The pipeline on this page, per broker</td></tr>
+              <tr><td>multi_broker.py, broker_config.py</td><td>Several brokers in one process, per-broker settings</td></tr>
+              <tr><td>brokers/, moomoo_client.py</td><td>moomoo, Tiger, Zerodha, Angel One, IG; price routing</td></tr>
+              <tr><td>screener.py</td><td>Step 2</td></tr>
+              <tr><td>patterns.py</td><td>Step 3</td></tr>
+              <tr><td>indicator_gate.py, kronos_indicators/</td><td>Step 4</td></tr>
+              <tr><td>kronos_agent.py</td><td>Step 5</td></tr>
+              <tr><td>risk.py</td><td>Step 6</td></tr>
+              <tr><td>trailing_stop.py</td><td>Step 8</td></tr>
+              <tr><td>market.py, market_calendar.py</td><td>Sessions, holidays, ticks, closed candles</td></tr>
+              <tr><td>finetune/</td><td>Cards 9 to 11: collect, train, GPU kit, shadow, saved versions</td></tr>
+              <tr><td>audit_log.py, telegram_bot.py, sentiment.py</td><td>Card 12</td></tr>
+            </tbody></table>
+            <div class="strat-section-title">The dashboard (dashboard/)</div>
+            <table class="st-map-table"><tbody>
+              <tr><td>app.py</td><td>Web server and data for every tab</td></tr>
+              <tr><td>templates/index.html, static/</td><td>The page, its themes and fonts</td></tr>
+              <tr><td>schema.py, config_writer.py</td><td>The settings form; saves config.yaml keeping your comments</td></tr>
+              <tr><td>analytics.py, levels.py</td><td>Performance figures; support/resistance lines</td></tr>
+            </tbody></table>
+          </div>
+        </div>
+      </section>
     </div>
 
     <!-- TAB 6: CONFIG & RISK -->
@@ -1668,6 +1676,7 @@
       if (tabId === "risk-model") rmOpen();
       if (tabId === "performance") loadPerformance();
       if (tabId === "kronos-lab") loadFinetune();
+      if (tabId === "strategies") loadStrategyExtras();
       if (tabId === "command-center" && typeof KR !== "undefined") { KR.lastLoad = 0; krHeroTick(); }
       if (tabId === "decisions") loadDecisionStats();
 
@@ -1683,6 +1692,7 @@
     const CURRENCIES = {US: "USD", HK: "HKD", SG: "SGD", CN: "CNH", NSE: "INR", BSE: "INR"};
     const MARKET_NAMES = {US: "US Equities", HK: "Hong Kong HKEX", SG: "Singapore SGX", CN: "China A-shares"};
     let MARKET = "US";
+    let LAST_STATUS = null;            // the latest /api/status reply
 
     // ---- Dates and times: one unambiguous style everywhere ----
     // The browser default ("11/12/2026, 4:59:19 AM") reads as month/day in a
@@ -1755,8 +1765,7 @@
         const bLabel = broker.label || "moomoo OpenD";
         BROKER_LABEL = bLabel;
         document.querySelectorAll(".broker-name").forEach(el => { el.textContent = bLabel; });
-        const acct = document.getElementById("strat-val-broker-account");
-        if (acct) acct.textContent = bLabel;
+        LAST_STATUS = data;
         const bShort = (broker.adapter || "moomoo").toUpperCase();
         document.getElementById("broker-label").textContent =
           `BROKER: ${bShort} ${MARKET} · ${broker.sandbox ? "PAPER" : "LIVE"}`;
@@ -4823,85 +4832,141 @@
       }
     }
 
+    // ---- Strategies & Tactics: live values for the cards (data-sv="...") ----
+    const STRAT = { brokers: null, finetune: null, versions: null, at: 0 };
+
+    async function loadStrategyExtras() {
+      if (Date.now() - STRAT.at < 30000) { updateStrategiesView(currentConfig); return; }
+      STRAT.at = Date.now();
+      const get = async url => { try { return await (await fetch(url, { cache: "no-store" })).json(); } catch (e) { return null; } };
+      [STRAT.brokers, STRAT.finetune, STRAT.versions] = await Promise.all([get("/api/brokers"), get("/api/finetune"), get("/api/finetune/versions")]);
+      updateStrategiesView(currentConfig);
+    }
+
     function updateStrategiesView(cfg) {
       if (!cfg) return;
+      const v = {}, money = n => `${ccySym()}${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${CCY}`;
+      const isSet = x => x !== null && x !== undefined && x !== "";
+      const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
-      // 1. Screener card
-      const scr = cfg.screener || {};
-      const scrStatus = document.getElementById("strat-val-screener-status");
-      if (scrStatus) {
-        scrStatus.textContent = scr.enabled ? "Active (Dynamic Scanning)" : "Disabled (Static Watchlist)";
-        scrStatus.style.color = scr.enabled ? "var(--accent-green)" : "var(--accent-amber)";
-      }
-      const scrMarket = document.getElementById("strat-val-screener-market");
-      if (scrMarket) scrMarket.textContent = MARKET + " (" + (MARKET_NAMES[MARKET] || MARKET) + ")";
-      const scrPrice = document.getElementById("strat-val-screener-price");
-      if (scrPrice) scrPrice.textContent = `${ccySym()}${scr.min_price !== undefined ? scr.min_price : 0.5} – ${ccySym()}${scr.max_price !== undefined ? scr.max_price : 50.0}`;
-      const scrAtr = document.getElementById("strat-val-screener-atr");
-      if (scrAtr) scrAtr.textContent = `${scr.min_atr_pct || 0.5}% – ${scr.max_atr_pct || 8.0}%`;
-      const scrCand = document.getElementById("strat-val-screener-candidates");
-      if (scrCand) {
-        const cands = scr.candidate_symbols || [];
-        scrCand.textContent = cands.length > 0 ? `${cands.length} symbols (${cands.slice(0, 3).join(", ")}${cands.length > 3 ? '...' : ''})` : "Full market scan";
-      }
-      const scrInterval = document.getElementById("strat-val-screener-interval");
-      if (scrInterval) scrInterval.textContent = `${scr.refresh_interval_minutes || 360} min (${((scr.refresh_interval_minutes || 360) / 60).toFixed(1)} hrs)`;
+      // 1 brokers and sessions
+      const bl = (STRAT.brokers && STRAT.brokers.brokers) || [];
+      const label = b => `${b.label || b.name} (${b.market || "?"}${b.data_source ? `, prices from ${b.data_source}` : ""})`;
+      v.brokers = bl.length ? (bl.filter(b => b.enabled).map(label).join(", ") || "None enabled") : "—";
+      const cur = bl.find(b => b.name === (STRAT.brokers || {}).current);
+      v.broker = cur ? label(cur) : BROKER_LABEL;
+      const st = (LAST_STATUS && LAST_STATUS.broker) || {};
+      v.account = st.sandbox === undefined ? "—" : st.sandbox ? "Paper trading" : "Live money";
+      v.hours = cfg.trade_outside_market_hours ? "Any time, also outside the session" : "Only while the exchange is open";
+      const sch = cfg.schedule || {};
+      v.calendar = cfg.trade_outside_market_hours || sch.follow_market === false ? "Runs all day"
+        : `Exchange calendar; wakes ${sch.warmup_minutes ?? 15} min before the open`;
 
-      // 2. Pattern card
-      const patTf = document.getElementById("strat-val-pattern-tf");
-      if (patTf) patTf.textContent = `${cfg.timeframe || "HOUR_4"} (${TF_LABEL[cfg.timeframe] || cfg.timeframe || "4 hours"})`;
-      const patLb = document.getElementById("strat-val-pattern-lb");
-      if (patLb) patLb.textContent = `${cfg.lookback_bars || 200} closed bars`;
+      // 2 screener
+      const scr = cfg.screener || {}, score = scr.score || {};
+      v.scr_status = scr.enabled ? "On" : "Off: watches the fixed symbols list";
+      const cands = scr.candidate_symbols || [];
+      const srcs = (scr.sources || []).map(s => s.replace(/_/g, " "));
+      v.scr_from = scr.enabled ? [cands.length ? plural(cands.length, "candidate") : "the whole market", srcs.length ? `moomoo ${srcs.join(", ")} (${scr.per_source || 30} each)` : ""].filter(Boolean).join(" + ")
+        : `${plural((cfg.symbols || []).length, "symbol")} in symbols:`;
+      v.scr_price = `${ccySym()}${scr.min_price ?? "–"} to ${ccySym()}${scr.max_price ?? "–"}`;
+      v.scr_vol = isSet(scr.min_avg_volume) ? Number(scr.min_avg_volume).toLocaleString() + " per candle" : "—";
+      v.scr_atr = `${scr.min_atr_pct ?? 0.5}% to ${scr.max_atr_pct ?? 8}%`;
+      v.scr_rank = `${score.mode === "rank" ? "Stock score" : "ATR%"}${score.mode === "log" ? " (score shown only)" : ""}, top ${scr.top_n ?? 5}`;
+      const ri = scr.refresh_interval_minutes || 360;
+      v.scr_refresh = ri >= 60 ? `Every ${+(ri / 60).toFixed(1)} h` : `Every ${ri} min`;
 
-      // 3. Kronos card
-      const kronos = cfg.kronos || {};
-      const kModel = document.getElementById("strat-val-kronos-model");
-      if (kModel) kModel.textContent = kronos.model_name || "NeoQuasar/Kronos-base";
-      const kDevice = document.getElementById("strat-val-kronos-device");
-      if (kDevice) kDevice.textContent = `${kronos.device || "cpu"} (Offline local mode)`;
-      const kHorizon = document.getElementById("strat-val-kronos-horizon");
-      if (kHorizon) kHorizon.textContent = `${cfg.forecast_horizon || 6} bars ahead`;
-      const kConf = document.getElementById("strat-val-kronos-conf");
-      if (kConf) kConf.textContent = `${((cfg.kronos_confidence_threshold || 0.62) * 100).toFixed(1)}% required`;
-      const kSamples = document.getElementById("strat-val-kronos-samples");
-      if (kSamples) kSamples.textContent = `${kronos.sample_count || 3} paths (temp: ${kronos.temperature || 0.5})`;
+      // 3 patterns
+      v.tf = `${TF_LABEL[cfg.timeframe] || cfg.timeframe || "—"} candles (${cfg.timeframe || "—"})`;
+      v.lookback = `${cfg.lookback_bars || 200} closed candles`;
+      v.poll = `Every ${cfg.polling_interval_seconds || 60} s`;
 
-      // 4. Execution card
-      const ordType = document.getElementById("strat-val-order-type");
-      if (ordType) {
-        const oType = cfg.order_type || "LIMIT";
-        ordType.textContent = oType === "LIMIT" ? "LIMIT (Safe Off-Hours Queuing)" : "MARKET (Regular Trading Hours Only)";
-        ordType.style.color = oType === "LIMIT" ? "var(--accent-green)" : "var(--accent-amber)";
-      }
-      const ordQty = document.getElementById("strat-val-order-qty");
-      if (ordQty) ordQty.textContent = `${cfg.default_quantity || 100} shares default`;
+      // 4 indicators
+      const ind = cfg.indicators || {};
+      v.ind_status = ind.enabled === false ? "Off" : ind.mode === "log" ? "On, record only (never rejects)" : "On, may reject";
+      v.ind_align = `${(ind.min_alignment ?? 0) >= 0 ? "+" : ""}${ind.min_alignment ?? 0} toward the trade`;
+      v.ind_ma = ind.require_ma_trend ? `${(ind.ma_kind || "ema").toUpperCase()} ${ind.ma_fast || 20} must be on the trade's side of ${ind.ma_slow || 50}` : "Not required";
+      v.ind_rsi = `No buys at RSI ${ind.max_rsi_for_buy ?? "–"}+, no sells at ${ind.min_rsi_for_sell ?? "–"} or below`;
 
-      // 5. Risk card
-      const risk = cfg.risk || {};
-      const rLoss = document.getElementById("strat-val-risk-loss");
-      if (rLoss) rLoss.textContent = `-${ccySym()}${(risk.max_daily_loss || 300).toFixed(2)} ${CCY}`;
-      const rMaxPos = document.getElementById("strat-val-risk-maxpos");
-      if (rMaxPos) rMaxPos.textContent = `${risk.max_open_positions || 3} positions max`;
-      const rStop = document.getElementById("strat-val-risk-stop");
-      if (rStop) rStop.textContent = `${risk.stop_loss_points || 0.15} ${CCY} / share`;
-      const rTarget = document.getElementById("strat-val-risk-target");
-      if (rTarget) rTarget.textContent = `${risk.take_profit_points || 0.30} ${CCY} (${((risk.take_profit_points || 0.3) / (risk.stop_loss_points || 0.15)).toFixed(1)} R:R)`;
+      // 5 Kronos
+      const k = cfg.kronos || {}, ft = STRAT.finetune || {};
+      const inUse = ft.in_use || null;
+      v.k_model = inUse ? `Fine-tuned ${inUse}` : `Original ${k.model_name || "NeoQuasar/Kronos-base"}`;
+      v.k_tok = String(k.tokenizer_name || "NeoQuasar/Kronos-Tokenizer-base").split("/").slice(-2).join("/");
+      v.k_device = `${String(k.device || "cpu").toUpperCase()}, offline${k.max_context ? `, up to ${k.max_context} candles` : ""}`;
+      v.k_horizon = `${cfg.forecast_horizon || 6} candles ahead`;
+      v.k_conf = `${Math.round((cfg.kronos_confidence_threshold ?? 0.62) * 100)}% of forecast candles must agree`;
+      v.k_samples = `${k.sample_count || 3} samples averaged, temperature ${k.temperature ?? 0.5}, top-p ${k.top_p ?? 0.9}`;
 
-      // 6. Trailing stop card
-      const trail = cfg.trailing_stop || {};
-      const trStatus = document.getElementById("strat-val-trail-status");
-      if (trStatus) {
-        trStatus.textContent = trail.enabled ? "Active (High-Water Ratchet)" : "Disabled (Fixed Brackets)";
-        trStatus.style.color = trail.enabled ? "var(--accent-green)" : "var(--accent-amber)";
-      }
-      const trCadence = document.getElementById("strat-val-trail-cadence");
-      if (trCadence) trCadence.textContent = `Every ${trail.check_interval_seconds || 20}s`;
-      const trTrig = document.getElementById("strat-val-trail-trigger");
-      if (trTrig) trTrig.textContent = `${trail.trigger_points || 0.10} ${CCY} profit`;
-      const trDist = document.getElementById("strat-val-trail-dist");
-      if (trDist) trDist.textContent = `${trail.trail_distance || 0.15} ${CCY} behind peak`;
-      const trAtr = document.getElementById("strat-val-trail-atr");
-      if (trAtr) trAtr.textContent = trail.use_atr ? `Dynamic ATR (${trail.atr_multiplier || 3.0}x)` : "Fixed Distance";
+      // 6 risk
+      const r = cfg.risk || {};
+      v.r_stop = isSet(r.stop_atr_multiple) ? `${r.stop_atr_multiple} × ATR(${r.atr_period || 14})`
+        : isSet(r.stop_loss_pct) ? `${r.stop_loss_pct}% from entry` : `${r.stop_loss_points ?? "–"} ${CCY} from entry`;
+      v.r_target = isSet(r.target_r_multiple) ? `${r.target_r_multiple} × the stop distance (${r.target_r_multiple}R)`
+        : isSet(r.take_profit_pct) ? `${r.take_profit_pct}% from entry` : `${r.take_profit_points ?? "–"} ${CCY} from entry`;
+      v.r_size = isSet(r.max_loss_per_trade) ? `Lose at most ${money(r.max_loss_per_trade)} at the stop (max ${r.max_stake_per_point} shares)`
+        : `${cfg.default_quantity || 1} shares (max ${r.max_stake_per_point ?? "–"})${(r.lot_size || 1) > 1 ? `, lots of ${r.lot_size}` : ""}`;
+      v.r_cap = isSet(r.max_daily_loss) ? `${money(r.max_daily_loss)}${r.daily_loss_includes_open_risk ? ", counting open risk" : ", closed trades"}` : "—";
+      v.r_pos = `Up to ${r.max_open_positions ?? "–"} at once`;
+      v.r_cool = `${r.min_minutes_between_trades ?? 0} min between trades${(r.blocked_symbols || []).length ? `; ${r.blocked_symbols.length} blocked` : ""}`;
+      const day = [];
+      if (isSet(r.max_trades_per_day)) day.push(`${r.max_trades_per_day} trades a day`);
+      if (isSet(r.min_reward_risk)) day.push(`reward:risk ≥ ${r.min_reward_risk}`);
+      if (isSet(r.no_entries_first_minutes) || isSet(r.no_entries_last_minutes)) day.push(`no entries first ${r.no_entries_first_minutes || 0} / last ${r.no_entries_last_minutes || 0} min`);
+      if (isSet(r.min_stop_pct)) day.push(`stop ≥ ${r.min_stop_pct}%`);
+      if (isSet(r.max_position_pct)) day.push(`≤ ${r.max_position_pct}% per position`);
+      if (isSet(r.cash_buffer_pct)) day.push(`${r.cash_buffer_pct}% cash kept`);
+      v.r_day = day.length ? day.join(", ") : "None set";
+      v.r_short = r.allow_short ? "Allowed" : "Off: sell signals don't open shorts";
+
+      // 7 orders
+      v.o_type = (cfg.order_type || "LIMIT") === "LIMIT" ? "Limit at the signal candle's close" : "Market while the session is open";
+      v.o_timeout = cfg.entry_timeout_minutes ? `${cfg.entry_timeout_minutes} min` : "Never";
+      v.o_qty = `${cfg.default_quantity || 1}`;
+      const ad = cur ? cur.adapter : (st.adapter || "moomoo");
+      v.o_exits = { zerodha: "GTT stop and target triggers", angel: "Stop-loss limit and target limit orders",
+                    ig: "Stop and limit attached to the IG position", tiger: "Stop and target orders (GTC by default)" }[ad]
+        || (st.sandbox ? "Stop and target, re-placed each session (paper)" : "Stop and target, GTC");
+
+      // 8 managing
+      const tr = cfg.trailing_stop || {};
+      v.t_status = tr.enabled ? `On, checked every ${tr.check_interval_seconds || 20} s` : "Off: stop stays where it was set";
+      v.t_trigger = tr.enabled ? `${tr.trigger_points ?? "–"} ${CCY} in profit` : "—";
+      v.t_dist = tr.enabled ? (tr.use_atr ? `${tr.atr_multiplier || 3} × ATR behind the best price` : `${tr.trail_distance ?? "–"} ${CCY} behind the best price`) : "—";
+      v.t_flat = isSet(r.flat_by_minutes_before_close) ? `Intraday: everything closed ${r.flat_by_minutes_before_close} min before the close` : "Swing: trades can stay open overnight";
+      const um = cfg.unmanaged_positions || {};
+      v.t_holdings = `Never sold by the agent${um.mode === "off" ? "" : "; alerts on new ones"}${um.allow_manual_close ? "; Close button shown" : ""}`;
+
+      // 9 self-learning
+      const inv = ft.inventory || [];
+      v.f_collect = ft.enabled === undefined ? "—" : ft.enabled ? "On, at each market close" : "Off (Collect candles now still works)";
+      const syms = inv.reduce((a, x) => a + x.symbols, 0), bars = inv.reduce((a, x) => a + x.bars, 0);
+      v.f_data = inv.length ? `${bars.toLocaleString()} candles, ${plural(syms, "symbol")}, ${[...new Set(inv.map(x => x.broker))].join(", ")}` : "Nothing yet";
+      v.f_train = ft.enabled === undefined ? "—" : ft.train_time ? `Scheduled ${(ft.train_days || []).join("/")} at ${ft.train_time}, up to ${ft.max_minutes} min` : "When you start it";
+      const runs = ft.runs || [];
+      v.f_runs = runs.length ? `${runs.length} (${runs.filter(x => x.verdict === "better").length} better, ${runs.filter(x => x.has_weights).length} kept)` : "None yet";
+      v.f_inuse = ft.enabled === undefined ? "—" : inUse ? `Fine-tuned ${inUse}` : "The original model";
+
+      // 10 shadow
+      const sh = ft.shadow || {}, rep = sh.report || {};
+      v.s_model = sh.model ? sh.model : "Off";
+      v.s_signals = rep.signals ? `${rep.signals}${rep.scored ? `, ${rep.scored} with the outcome known` : ""}` : "None yet";
+      v.s_agree = rep.signals && rep.agree_pct != null ? `${rep.agree_pct}% of signals` : "—";
+      const o = rep.original || {}, s = rep.shadow || {};
+      v.s_right = o.right_pct != null || s.right_pct != null ? `trading model ${o.right_pct ?? "–"}%, shadow ${s.right_pct ?? "–"}%` : "—";
+
+      // 11 versions
+      const vs = STRAT.versions || {};
+      v.v_status = vs.configured ? `On, github.com/${vs.repo}` : vs.has_token === false ? "Off: add GITHUB_TOKEN to .env" : "—";
+      const list = vs.versions || [];
+      v.v_count = vs.error ? vs.error : list.length ? `${list.length} (latest v${list[0].version})` : vs.configured ? "None yet" : "—";
+      const usedV = list.find(x => x.in_use);
+      v.v_inuse = usedV ? `v${usedV.version} (${usedV.run_id})` : inUse ? `${inUse} (not saved as a version)` : "The original model";
+
+      document.querySelectorAll("#tab-strategies [data-sv]").forEach(el => {
+        const val = v[el.dataset.sv];
+        if (val !== undefined) el.textContent = val;
+      });
     }
 
     // ---- Settings tab: built from /api/settings (dashboard/schema.py) ----
