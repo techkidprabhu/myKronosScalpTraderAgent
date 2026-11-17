@@ -16,6 +16,22 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Chronos look for the dashboard, now the default.** Deep ocean-blue
+  surfaces, amber reserved for Kronos, Unbounded for headings and figures and
+  Instrument Sans for text (both bundled under `dashboard/static/fonts`, SIL
+  Open Font License, so no internet is needed). On wide screens the tabs
+  become an icon rail on the left. The theme button now cycles Chronos ->
+  Classic (the previous dark look) -> Light, and the choice is remembered.
+- **Kronos verdict card** at the top of the Command Center: the latest signal
+  the agent asked Kronos about, with its recorded confidence against your
+  threshold, the five gates it went through (pattern, indicators, Kronos,
+  risk, order) and why it stopped where it did, plus recent candles and a
+  Kronos forecast drawn from the latest closed candle (line = forecast close,
+  band = forecast high-to-low). The forecast is drawn once per new signal, at
+  most every 3 minutes, or on "Draw forecast again"; the agent's own verdict
+  is shown as recorded, never re-run.
+
+### Added
 - **Train Kronos on another computer with an NVIDIA GPU.** Kronos Model Lab
   -> Self-learning has two new buttons:
   - *Export for GPU training* downloads one zip: the collected candles, the
