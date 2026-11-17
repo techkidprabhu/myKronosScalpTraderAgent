@@ -83,3 +83,11 @@ when you add a new setting, add it there too.
 
 Check before committing if unsure: `git status` should never list any of
 those files.
+
+## Which version is running?
+
+The dashboard shows it: the chip under the title (e.g. "PR #32") and the
+line at the bottom of every page. Click the chip for the dashboard's
+version, the agent's (recorded when it starts) and what is on disk. If you
+`git pull` without restarting, the chip turns amber and says which one to
+restart (`./start.sh restart`). From a script: `GET /api/version`.

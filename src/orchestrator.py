@@ -23,6 +23,7 @@ connection (bounded connect, health ping, automatic reconnect) and
 reports broker positions the agent doesn't manage.
 """
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -33,6 +34,7 @@ from src import market_calendar as cal
 from src.audit_log import AuditLog
 from src import indicator_gate
 from src import rules as rules_gate
+from src import version as code_version
 from src.kronos_agent import KronosAgent
 from src.market import drop_unclosed_bar, is_market_open, market_timezone
 from src.patterns import scan
@@ -887,6 +889,9 @@ class Orchestrator:
 
         self.reporter = reporter if reporter is not None else TelegramReporter()
         self.audit_log = audit_log if audit_log is not None else AuditLog()
+        # which code this agent process is running (shown on the dashboard)
+        self.audit_log.set_kv(code_version.AGENT_VERSION_KEY, {**code_version.RUNNING, "started": time.time(),
+                                                              "pid": os.getpid()})
         self.broker_ok = False
         self._ping_failures = 0
         self._last_ping = 0.0
