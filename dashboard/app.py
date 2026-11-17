@@ -33,6 +33,7 @@ from src.orchestrator import (SCREENER_REPORT_KEY, ACTIVE_SYMBOLS_KEY, BROKER_HE
 from src.patterns import scan
 from src import indicator_gate
 from src import rules as rules_gate
+from src import version as code_version
 from src.kronos_indicators import indicators as ind_lib
 from src.market import drop_unclosed_bar, market_timezone
 from src import sentiment
@@ -2144,6 +2145,37 @@ def get_decision_stats():
         return jsonify({"error": f"audit database unavailable: {exc}"}), 500
     data["since"] = since
     return jsonify(data)
+
+
+_disk_version = {"ts": 0.0, "data": None}
+
+
+@app.route("/api/version", methods=["GET"])
+def get_version():
+    """Which code is running: this dashboard (loaded at its start), the agent
+    (as recorded in the selected broker's DB when it started) and what is on
+    disk now - so a git pull without a restart shows up."""
+    if time.time() - _disk_version["ts"] > 60:
+        _disk_version.update(ts=time.time(), data=code_version.read())
+    disk = _disk_version["data"]
+    agent = None
+    try:
+        conn = get_db()
+        row = conn.execute("SELECT value FROM kv WHERE key = ?", (code_version.AGENT_VERSION_KEY,)).fetchone()
+        conn.close()
+        agent = json.loads(row[0]) if row else None
+    except (sqlite3.Error, ValueError):
+        agent = None
+    dash = code_version.RUNNING
+    newer = lambda v: bool(v and v.get("commit") and disk.get("commit") and v["commit"] != disk["commit"])  # noqa: E731
+    notes = []
+    if newer(dash) or newer(agent):
+        who = " and ".join(n for n, v in (("the dashboard", dash), ("the agent", agent)) if newer(v))
+        notes.append(f"Newer code is on disk ({disk['label']}). Restart {who} to run it: ./start.sh restart")
+    if disk.get("modified"):
+        notes.append("This folder has local changes that aren't committed.")
+    return jsonify({"dashboard": dash, "agent": agent, "on_disk": disk, "notes": notes,
+                    "restart_needed": newer(dash) or newer(agent)})
 
 
 @app.route("/api/overview", methods=["GET"])

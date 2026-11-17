@@ -26,6 +26,12 @@
       <div>
         <div class="brand-title">Kronos Swing Agent <span style="color:var(--accent-cyan); font-weight:400; font-size:14px;">Terminal</span></div>
         <div class="brand-sub">Powered by Kronos Offline K-Line Foundation Model (AAAI 2026)</div>
+        <div class="ver-wrap">
+          <button type="button" class="ver-chip" id="ver-chip" aria-expanded="false" aria-controls="ver-pop" onclick="toggleVersion()" title="Which version is running">
+            <span class="ver-dot" aria-hidden="true"></span><span id="ver-chip-text">version…</span>
+          </button>
+          <div class="ver-pop" id="ver-pop" role="dialog" aria-label="Running version" hidden></div>
+        </div>
       </div>
     </div>
 
@@ -1496,6 +1502,7 @@
       </div>
     </div>
 
+    <footer class="app-version" id="app-version" aria-label="Running version"></footer>
   </main>
 
   <div id="toast" role="status" aria-live="polite">Notification message</div>
@@ -3857,6 +3864,44 @@
       box.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Kronos confidence histogram">${bars}</svg>
         <div class="ds-legend"><span><i style="background:#38bdf8"></i>confirmed</span><span><i style="background:#475569"></i>not confirmed</span></div>`;
     }
+
+
+    // ================= Running version (src/version.py) =================
+    let VERSION = null;
+    async function loadVersion() {
+      try { VERSION = await (await fetch("/api/version", { cache: "no-store" })).json(); } catch (e) { return; }
+      const v = VERSION, d = v.dashboard || {}, a = v.agent, disk = v.on_disk || {};
+      const short = x => x ? (x.pr ? `PR #${x.pr}` : x.short || "?") : "–";
+      const chip = document.getElementById("ver-chip");
+      document.getElementById("ver-chip-text").textContent = d.pr ? `PR #${d.pr}` : (d.short || "version");
+      chip.classList.toggle("warn", !!v.restart_needed);
+      chip.title = v.restart_needed ? "Newer code is on disk - restart to run it" : `Dashboard and agent: ${d.label || ""}`;
+      const when = s => s ? fmtDateTime(new Date(s)) : "";
+      const row = (name, x, extra) => `<tr><th scope="row">${name}</th><td>${x ? `<b>${esc(short(x))}</b> <span class="mono">${esc(x.short || "")}</span>${x.tag ? ` · ${esc(x.tag)}${x.ahead ? `+${x.ahead}` : ""}` : ""}<br><span class="cc-muted">${esc(extra || "")}</span>` : `<span class="cc-muted">${esc(extra || "not reported yet")}</span>`}</td></tr>`;
+      const agentExtra = a ? `started ${fmtDateTime(a.started)}${a.commit && disk.commit && a.commit !== disk.commit ? " · older than the code on disk" : ""}` : "The agent records its version when it starts (this broker hasn't run since this feature was added).";
+      const dashExtra = `${d.commit && disk.commit && d.commit !== disk.commit ? "older than the code on disk · " : ""}commit from ${when(d.date)}`;
+      document.getElementById("ver-pop").innerHTML = `
+        <table class="ver-table"><tbody>
+          ${row("Dashboard", d, dashExtra)}
+          ${row("Agent", a, agentExtra)}
+          ${row("On disk", disk, `${disk.branch ? `branch ${disk.branch}, ` : ""}commit from ${when(disk.date)}`)}
+        </tbody></table>
+        ${(v.notes || []).map(n => `<div class="ver-note">${esc(n)}</div>`).join("")}
+        ${disk.pr && disk.repo ? `<a href="https://github.com/${esc(disk.repo)}/pull/${disk.pr}" target="_blank" rel="noopener">Pull request #${disk.pr} on GitHub</a>` : ""}`;
+      document.getElementById("app-version").innerHTML =
+        `Dashboard ${esc(d.label || "?")} · Agent ${esc(a ? a.label : "not reported yet")}` +
+        (v.restart_needed ? ` · <b class="ver-warn-text">newer code on disk, restart to run it</b>` : "");
+    }
+    function toggleVersion(force) {
+      const pop = document.getElementById("ver-pop"), chip = document.getElementById("ver-chip");
+      const open = force !== undefined ? force : pop.hidden;
+      pop.hidden = !open; chip.setAttribute("aria-expanded", String(open));
+      if (open) loadVersion();
+    }
+    document.addEventListener("click", e => { if (!e.target.closest(".ver-wrap")) toggleVersion(false); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape") toggleVersion(false); });
+    loadVersion();
+    setInterval(loadVersion, 300000);
 
     // ================= Theme =================
     const THEMES = ["chronos", "dark", "light"];

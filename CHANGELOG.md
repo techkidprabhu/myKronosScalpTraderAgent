@@ -15,6 +15,17 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added
+- **Running version on the dashboard.** A chip under the title shows the last
+  merged pull request (e.g. "PR #32"). Clicking it lists the dashboard's
+  version, the agent's version and what is on disk, each with release tag,
+  commit and date, plus a link to the pull request. The agent records the
+  version it started with in each broker's audit DB, so a `git pull` without
+  a restart shows up: the chip turns amber and says which one to restart.
+  The same summary is in a line at the bottom of every page, and
+  `/api/version` returns it. Read from git (`src/version.py`); local
+  uncommitted changes are flagged too.
+
 ### Fixed
 - **Command Center's Kronos card didn't update and the forecast looked
   wrong.** The candles were loaded once per signal and never refreshed, and
