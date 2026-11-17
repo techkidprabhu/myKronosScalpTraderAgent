@@ -58,11 +58,31 @@ DEFAULTS = {
     "train_tokenizer": False,    # also fine-tune the tokenizer first (official step 1) - needs far more data
     "tokenizer_steps": 300,
     "threads": None,             # CPU threads; None = all cores
+    "device": "auto",            # auto = NVIDIA GPU if PyTorch can use one, else CPU
     "shadow_model": None,        # model folder checked alongside the trading model; never affects trades
     "shadow_tokenizer": None,
     "keep_runs": 3,              # model folders kept (the one in use is always kept)
     "seed": 7,
 }
+
+
+def ensure_kronos() -> bool:
+    """Put the Kronos source (github.com/shiyu-coder/Kronos) on sys.path.
+    Looks at KRONOS_PATH, then next to this code, the project and the
+    current folder - so it works inside the agent and in the exported
+    training kit alike."""
+    import os
+    import sys
+    here = Path(__file__).resolve().parent
+    candidates = [os.environ.get("KRONOS_PATH"), here.parent / "Kronos", ROOT / "vendor" / "Kronos",
+                  ROOT.parent / "vendor" / "Kronos", Path.cwd() / "Kronos", Path.cwd() / "vendor" / "Kronos",
+                  Path.cwd().parent / "vendor" / "Kronos"]
+    for c in candidates:
+        if c and (Path(c) / "model").is_dir():
+            if str(c) not in sys.path:
+                sys.path.insert(0, str(c))
+            return True
+    return False
 
 
 def settings(config: dict) -> dict:

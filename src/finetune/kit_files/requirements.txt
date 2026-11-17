@@ -1,0 +1,7 @@
+# PyTorch itself is installed by train.bat / train.sh (the NVIDIA GPU build).
+numpy
+pandas
+einops
+huggingface_hub
+safetensors
+tqdm

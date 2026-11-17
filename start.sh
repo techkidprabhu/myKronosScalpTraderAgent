@@ -12,6 +12,8 @@
 #   ./start.sh finetune check    can this computer fine-tune Kronos, and how long does a run take?
 #   ./start.sh finetune status   candles collected and training runs so far
 #   ./start.sh finetune train    start a fine-tuning run in the background (logs/finetune.log)
+#   ./start.sh finetune export   write the training kit for a computer with a GPU (data/exports/)
+#   ./start.sh finetune import <zip>   bring a model trained on that computer back
 #
 # Works from any folder. Uses the virtualenv that is active, or venv/ or
 # .venv/ in this folder or the one above it.
@@ -21,6 +23,9 @@
 #   DASHBOARD_PORT=5001   ./start.sh dashboard
 set -u
 
+# a file argument (./start.sh finetune import <zip>) is relative to where you ran the script
+FT_FILE="${3:-}"
+case "$FT_FILE" in ""|/*) ;; *) FT_FILE="$PWD/$FT_FILE" ;; esac
 ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")" && pwd)"
 cd "$ROOT" || exit 1
 
@@ -157,10 +162,11 @@ case "${1:-start}" in
   finetune)
     case "$target" in
       check|status) exec "$PY" -m src.finetune "$target" ;;
+      export|import) exec "$PY" -m src.finetune "$target" ${FT_FILE:+"$FT_FILE"} ;;
       train)
         nohup "$PY" -u -m src.finetune train >> "$(log_file finetune)" 2>&1 &
         echo "  fine-tuning started (PID $!) - follow it with: tail -f logs/finetune.log" ;;
-      *) echo "Usage: ./start.sh finetune check|status|train" >&2; exit 2 ;;
+      *) echo "Usage: ./start.sh finetune check|status|train|export|import <zip>" >&2; exit 2 ;;
     esac ;;
   logs)
     case "$target" in

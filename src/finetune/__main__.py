@@ -1,9 +1,10 @@
-"""python -m src.finetune check | status | train"""
+"""python -m src.finetune check | status | train | export [file] | import <file>"""
 import argparse
 import json
 import logging
 import sys
 from datetime import datetime
+from pathlib import Path
 
 import yaml
 
@@ -14,7 +15,8 @@ from .trainer import hardware_check, list_runs, read_status, run_training, windo
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python -m src.finetune", description=__doc__)
-    ap.add_argument("command", choices=["check", "status", "train"])
+    ap.add_argument("command", choices=["check", "status", "train", "export", "import"])
+    ap.add_argument("file", nargs="?", help="export: where to write the kit; import: the trainer's result zip")
     ap.add_argument("--config", default=str(ROOT / "config" / "config.yaml"))
     ap.add_argument("--max-steps", type=int)
     ap.add_argument("--max-minutes", type=float)
@@ -26,6 +28,34 @@ def main(argv=None):
         ft["max_steps"] = args.max_steps
     if args.max_minutes:
         ft["max_minutes"] = args.max_minutes
+
+    if args.command == "export":
+        from . import kit
+        out = args.file or str(ROOT / "data" / "exports" / kit.export_name())
+        Path(out).parent.mkdir(parents=True, exist_ok=True)
+        try:
+            info = kit.build_export(config, out)
+        except RuntimeError as exc:
+            print(exc)
+            return 1
+        print(f"Wrote {out}\n  {info['files']} candle files ({', '.join(info['brokers'])}), {info['signals']} signal times.\n"
+              "  Unzip it on the computer with the GPU and start train.bat / train.sh.")
+        return 0
+
+    if args.command == "import":
+        from . import kit
+        if not args.file:
+            print("Usage: python -m src.finetune import <kronos-ft-...-result.zip>")
+            return 2
+        try:
+            rep = kit.import_run(args.file)
+        except ValueError as exc:
+            print(f"Not imported: {exc}")
+            return 1
+        print(f"Imported {rep['run_id']}: {rep['verdict']} - {rep['reason']}")
+        print("  It is listed on the dashboard (Kronos Model Lab -> Self-learning): Shadow test, or Use this model."
+              if rep["has_weights"] else "  The zip held no model (it was not better than the original).")
+        return 0
 
     if args.command == "check":
         print("Timing a few training steps on this computer (about a minute)...")

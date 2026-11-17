@@ -15,6 +15,24 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added
+- **Train Kronos on another computer with an NVIDIA GPU.** Kronos Model Lab
+  -> Self-learning has two new buttons:
+  - *Export for GPU training* downloads one zip: the collected candles, the
+    times of the agent's signals, the window settings Kronos is asked with,
+    and a self-contained trainer (`train.bat` / `train.sh`). It holds no
+    credentials, no `config.yaml` and no audit databases.
+  - On the GPU computer the trainer sets up PyTorch once (shared by later
+    exports), fine-tunes from the original model, compares the result with
+    the original on held-out candles and writes `kronos-ft-...-result.zip`.
+  - *Import trained model* takes that file (checked: one run folder, only
+    the expected files) and lists the run under Training runs like a local
+    one, with Shadow test and Use this model. Nothing is used for trading
+    until chosen there.
+  Also `./start.sh finetune export` and `./start.sh finetune import <zip>`.
+  The local trainer now uses a GPU too when PyTorch can (`finetune.device`,
+  default `auto`); on a computer without one nothing changes.
+
 ### Fixed
 - **Raising the daily loss cap did not lift a halt.** Once the cap was
   breached, the "halted" flag was stored and trusted until the next trading

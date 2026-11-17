@@ -15,7 +15,8 @@ import numpy as np
 import pandas as pd
 import yaml
 from dotenv import load_dotenv
-from flask import Flask, Response, has_request_context, jsonify, render_template, request, stream_with_context
+from flask import (Flask, Response, has_request_context, jsonify, render_template, request, send_file,
+                   stream_with_context)
 
 # Add root directory to sys.path so 'src' can be imported
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -1381,7 +1382,8 @@ def finetune_overview():
     base_model, _ = trainer.original_names(cfg)
     runs = [{k: r.get(k) for k in ("run_id", "created", "minutes", "steps", "stopped", "symbols", "symbols_by_broker",
                                    "train_windows", "signal_windows", "original", "fine_tuned", "verdict", "reason",
-                                   "has_weights", "base_model")} for r in trainer.list_runs()[:12]]
+                                   "has_weights", "base_model", "device", "imported")}
+            for r in trainer.list_runs()[:12]]
     return jsonify({
         "enabled": bool(ft["enabled"]), "train_time": ft["train_time"], "train_days": ft["train_days"],
         "max_steps": ft["max_steps"], "max_minutes": ft["max_minutes"], "min_train_windows": ft["min_train_windows"],
@@ -1403,10 +1405,48 @@ def _shadow_summary(ft: dict) -> dict:
     return {"model": name, "report": rep}
 
 
+@app.route("/api/finetune/export", methods=["GET"])
+def finetune_export():
+    """The training kit for a computer with a GPU: collected candles, signal
+    times, window settings and the trainer. No credentials or trade records."""
+    import tempfile
+    from src.finetune import kit
+    tmp = tempfile.TemporaryFile()
+    try:
+        info = kit.build_export(load_config(), tmp)
+    except RuntimeError as exc:
+        tmp.close()
+        return jsonify({"error": str(exc)}), 409
+    tmp.seek(0)
+    logger.info("Dashboard exported the training kit (%s candle files)", info["files"])
+    return send_file(tmp, mimetype="application/zip", as_attachment=True, download_name=kit.export_name())
+
+
+def _finetune_import():
+    import tempfile
+    from src.finetune import kit
+    upload = request.files.get("file")
+    if upload is None:
+        return jsonify({"error": "Choose the result zip the GPU trainer wrote"}), 400
+    with tempfile.NamedTemporaryFile(suffix=".zip") as tmp:
+        upload.save(tmp)
+        tmp.flush()
+        try:
+            rep = kit.import_run(tmp.name)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+    logger.info("Dashboard imported training run %s (%s)", rep["run_id"], rep["verdict"])
+    msg = (f"Imported {rep['run_id']}. Try it with Shadow test, or choose Use this model." if rep["has_weights"]
+           else f"Imported the report of {rep['run_id']} (no model in the zip: it was not better than the original).")
+    return jsonify({"success": True, "run_id": rep["run_id"], "message": msg})
+
+
 @app.route("/api/finetune/<action>", methods=["POST"])
 def finetune_action(action):
     from src import finetune
     from src.finetune import scheduler as ft_scheduler, trainer
+    if action == "import":
+        return _finetune_import()
     if action == "collect":
         finetune.COLLECT_REQUEST.parent.mkdir(parents=True, exist_ok=True)
         finetune.COLLECT_REQUEST.write_text(str(time.time()))

@@ -218,8 +218,14 @@ class WindowSet:
         return items
 
 
+def all_signals(audit_dbs: dict[str, Path] | None) -> dict[str, dict[str, list[float]]]:
+    """{broker: {symbol: [signal times]}} from every broker's audit log."""
+    return {broker: signal_times(db) for broker, db in (audit_dbs or {}).items()}
+
+
 def load_window_set(lookback: int, predict: int, val_fraction: float, audit_dbs: dict[str, Path] | None = None,
-                    root: Path | None = None, seed: int = 7) -> WindowSet:
+                    root: Path | None = None, seed: int = 7,
+                    signals_by_broker: dict[str, dict[str, list[float]]] | None = None) -> WindowSet:
     root = root or TRAINING_DIR
     series = []
     for f in sorted(root.glob("*/*.csv")):
@@ -228,7 +234,8 @@ def load_window_set(lookback: int, predict: int, val_fraction: float, audit_dbs:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Skipping training file %s: %s", f, exc)
     signals = {}
-    for broker, db in (audit_dbs or {}).items():
-        for sym, ts in signal_times(db).items():
+    by_broker = signals_by_broker if signals_by_broker is not None else all_signals(audit_dbs)
+    for broker, per_symbol in by_broker.items():
+        for sym, ts in per_symbol.items():
             signals[(_safe(broker), _safe(sym))] = ts
     return WindowSet(series, lookback, predict, val_fraction, signals, seed)
