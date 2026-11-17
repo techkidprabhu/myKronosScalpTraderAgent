@@ -67,23 +67,30 @@ DEFAULTS = {
 }
 
 
-def ensure_kronos() -> bool:
-    """Put the Kronos source (github.com/shiyu-coder/Kronos) on sys.path.
-    Looks at KRONOS_PATH, then next to this code, the project and the
-    current folder - so it works inside the agent and in the exported
-    training kit alike."""
+def kronos_dir() -> Path | None:
+    """The folder holding the Kronos source (github.com/shiyu-coder/Kronos):
+    KRONOS_PATH, then next to this code, the project and the current folder -
+    so it is found inside the agent and in the exported training kit alike."""
     import os
-    import sys
     here = Path(__file__).resolve().parent
     candidates = [os.environ.get("KRONOS_PATH"), here.parent / "Kronos", ROOT / "vendor" / "Kronos",
                   ROOT.parent / "vendor" / "Kronos", Path.cwd() / "Kronos", Path.cwd() / "vendor" / "Kronos",
                   Path.cwd().parent / "vendor" / "Kronos"]
     for c in candidates:
         if c and (Path(c) / "model").is_dir():
-            if str(c) not in sys.path:
-                sys.path.insert(0, str(c))
-            return True
-    return False
+            return Path(c)
+    return None
+
+
+def ensure_kronos() -> bool:
+    """Put the Kronos source on sys.path (see kronos_dir)."""
+    import sys
+    d = kronos_dir()
+    if d is None:
+        return False
+    if str(d) not in sys.path:
+        sys.path.insert(0, str(d))
+    return True
 
 
 def settings(config: dict) -> dict:

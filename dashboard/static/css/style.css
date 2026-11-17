@@ -1677,3 +1677,5 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .brand-orb { display: none; }
 :root[data-theme="light"] .kr-gate.ok .kr-gate-n, :root[data-theme="light"] .kr-gate.kr .kr-gate-n,
 :root[data-theme="light"] .kr-gate.no .kr-gate-n { color: #ffffff; }
+.ft-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); cursor: pointer; min-height: 32px; }
+.ft-check input { width: 16px; height: 16px; accent-color: var(--accent-amber); }

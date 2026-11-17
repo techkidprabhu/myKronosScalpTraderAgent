@@ -26,10 +26,13 @@ KRONOS_ZIP = "https://github.com/shiyu-coder/Kronos/archive/refs/heads/master.zi
 
 
 def kronos_source() -> Path:
-    """The Kronos model code, downloaded once and shared by every kit."""
+    """The Kronos model code: in the kit, else downloaded once from GitHub
+    and shared by every kit."""
     env = os.environ.get("KRONOS_PATH")
     if env and (Path(env) / "model").is_dir():
         return Path(env)
+    if (KIT / "Kronos" / "model").is_dir():
+        return KIT / "Kronos"
     dest = HOME / "Kronos"
     if (dest / "model").is_dir():
         return dest
@@ -44,6 +47,20 @@ def kronos_source() -> Path:
     inner.rename(dest)
     shutil.rmtree(tmp, ignore_errors=True)
     return dest
+
+
+def local_model(name: str, sub: str) -> Path | None:
+    """The original model or tokenizer without Hugging Face: from this kit
+    (exported with "Include the Kronos model"), kept in ~/.kronos-trainer so
+    later kits without it work too."""
+    kept = HOME / "models" / name.replace("/", "--")
+    bundled = KIT / "base" / sub
+    if (bundled / "config.json").exists() and not (kept / "config.json").exists():
+        tmp = kept.with_name(kept.name + ".tmp")
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.copytree(bundled, tmp)
+        tmp.rename(kept)
+    return kept if (kept / "config.json").exists() else None
 
 
 def main() -> int:
@@ -94,18 +111,40 @@ def main() -> int:
     if args.tokenizer:
         ft["base_tokenizer"] = config["kronos"]["tokenizer_name"] = args.tokenizer
 
+    # the names the agent knows; the report keeps these, whatever folder we load from
+    names = {"base_model": ft["base_model"], "base_tokenizer": ft["base_tokenizer"]}
+    have = {"model": None if args.model else local_model(names["base_model"], "model"),
+            "tokenizer": None if args.tokenizer else local_model(names["base_tokenizer"], "tokenizer")}
+    if have["model"] and have["tokenizer"]:
+        os.environ["HF_HUB_OFFLINE"] = "1"                 # never reach for Hugging Face
+        ft["base_model"] = config["kronos"]["model_name"] = str(have["model"])
+        ft["base_tokenizer"] = config["kronos"]["tokenizer_name"] = str(have["tokenizer"])
+        config["kronos"]["local_files_only"] = True
+        where = "in this kit" if (KIT / "base" / "model" / "config.json").exists() else "kept from an earlier kit"
+        print(f"Starting from {names['base_model']} (model files {where}; nothing is downloaded from Hugging Face)")
+    else:
+        print(f"Starting from {names['base_model']} (downloaded from Hugging Face the first time, about 400 MB).\n"
+              "  If Hugging Face is blocked on this network, export again on the dashboard with\n"
+              "  'Include the Kronos model' ticked.")
+
     out = KIT / "output"
-    print(f"Starting from {ft['base_model']} (downloaded from Hugging Face the first time, about 400 MB)")
     try:
         report = run_training(config, models_dir=out, status_path=out / "status.json", training_root=KIT / "training",
                               log=lambda m: print(m, flush=True), signals_by_broker=signals, keep_always=True)
-    except RuntimeError as exc:
+    except (RuntimeError, OSError) as exc:
         print(f"\nStopped: {exc}")
+        if "huggingface" in str(exc).lower() or "hf.co" in str(exc).lower() or "connection" in str(exc).lower():
+            print("Could not download the Kronos model. Export again with 'Include the Kronos model' ticked.")
         if "out of memory" in str(exc).lower():
             print("The GPU ran out of memory - try again with a smaller batch, e.g. --batch 16")
         return 1
 
     run_dir = out / report["run_id"]
+    if have["model"] and have["tokenizer"]:     # name the original as the agent knows it, not this PC's folder
+        report.update(names)
+        if not report.get("tokenizer_tuned"):
+            report["tokenizer"] = names["base_tokenizer"]
+        (run_dir / "report.json").write_text(json.dumps(report, indent=2))
     better = report["verdict"] == "better"
     result = KIT / f"{report['run_id']}-result.zip"
     with zipfile.ZipFile(result, "w", zipfile.ZIP_STORED) as z:

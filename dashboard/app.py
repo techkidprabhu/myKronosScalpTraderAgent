@@ -1408,17 +1408,24 @@ def _shadow_summary(ft: dict) -> dict:
 @app.route("/api/finetune/export", methods=["GET"])
 def finetune_export():
     """The training kit for a computer with a GPU: collected candles, signal
-    times, window settings and the trainer. No credentials or trade records."""
+    times, window settings, the trainer and the Kronos code; with ?model=1
+    also the original Kronos model and tokenizer (for networks that block
+    Hugging Face). No credentials or trade records. ?check=1 only reports
+    what the export would hold."""
     import tempfile
     from src.finetune import kit
+    cfg = load_config()
+    with_model = request.args.get("model") == "1"
+    if request.args.get("check") == "1":
+        return jsonify(kit.export_check(cfg, with_model))
     tmp = tempfile.TemporaryFile()
     try:
-        info = kit.build_export(load_config(), tmp)
+        info = kit.build_export(cfg, tmp, include_model=with_model)
     except RuntimeError as exc:
         tmp.close()
         return jsonify({"error": str(exc)}), 409
     tmp.seek(0)
-    logger.info("Dashboard exported the training kit (%s candle files)", info["files"])
+    logger.info("Dashboard exported the training kit (%s candle files, model %s MB)", info["files"], info["model_mb"])
     return send_file(tmp, mimetype="application/zip", as_attachment=True, download_name=kit.export_name())
 
 
