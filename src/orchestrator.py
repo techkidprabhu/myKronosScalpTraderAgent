@@ -32,6 +32,7 @@ import pandas as pd
 from src import market_calendar as cal
 from src.audit_log import AuditLog
 from src import indicator_gate
+from src import rules as rules_gate
 from src.kronos_agent import KronosAgent
 from src.market import drop_unclosed_bar, is_market_open, market_timezone
 from src.patterns import scan
@@ -132,6 +133,10 @@ class SymbolWorker:
         # Indicator confirmation between pattern and Kronos (off unless
         # config has `indicators: {enabled: true}`).
         self.indicator_cfg = indicator_gate.IndicatorConfig.from_dict(global_cfg.get("indicators"))
+        # Your own rules from config/skills.md, after the indicators (off
+        # unless `skills: {enabled: true}`); they can only stop a signal.
+        self.rules_cfg = rules_gate.settings(global_cfg)
+        self.rulebook = rules_gate.RuleBook(global_cfg) if self.rules_cfg["enabled"] else None
 
         # Persisted so a restart doesn't re-evaluate (and re-trade) a bar
         # that was already processed.
@@ -192,6 +197,10 @@ class SymbolWorker:
 
         ind_verdict = self._indicator_check(df, signal, float(last_close))
         if ind_verdict is not None and not ind_verdict.passed:
+            return
+
+        rules_verdict = self._rules_check(df, signal, float(last_close))
+        if rules_verdict is not None and not rules_verdict.passed:
             return
 
         try:
@@ -344,6 +353,37 @@ class SymbolWorker:
             self.audit_log.log_decision(
                 self.symbol, signal.name, signal.direction, signal.strength,
                 None, None, None, reason, "rejected", details={"indicators": verdict.summary},
+            )
+            self.reporter.report_rejected(self.symbol, signal.name, reason)
+        return verdict
+
+    def _rules_check(self, df: pd.DataFrame, signal, last_close: float):
+        """Your rules (config/skills.md). Returns None when off, else the
+        verdict (already logged; a stopped signal is already reported)."""
+        if self.rulebook is None:
+            return None
+        try:
+            tz = market_timezone(self.market)
+        except Exception:
+            tz = None
+        try:
+            verdict = self.rulebook.check(df, signal.direction, signal.name, signal.strength, self.timeframe, tz,
+                                          self._session_minutes())
+        except Exception as exc:
+            # A broken rule must never stop trading on patterns + Kronos.
+            logger.exception("Rules check failed for %s - passing signal through", self.symbol)
+            self.audit_log.log_snapshot(self.symbol, last_close, "rules_check", {"error": str(exc), "passed": True})
+            return None
+        self.audit_log.log_snapshot(self.symbol, last_close, "rules_check",
+                                    {"passed": verdict.passed, **verdict.record()})
+        if verdict.hits and verdict.passed:      # log mode: record, don't stop
+            logger.info("%s: your rules would stop this (log mode): %s", self.symbol, verdict.reason())
+        if not verdict.passed:
+            reason = verdict.reason()
+            logger.info("%s: %s", self.symbol, reason)
+            self.audit_log.log_decision(
+                self.symbol, signal.name, signal.direction, signal.strength,
+                None, None, None, reason, "rejected", details={"rules": verdict.record()},
             )
             self.reporter.report_rejected(self.symbol, signal.name, reason)
         return verdict

@@ -78,6 +78,17 @@ indicators:
   min_rsi_for_sell: 25     # skip SELLs when RSI is this low (null = off)
   min_bars: 60             # fewer closed bars -> check is skipped, signal passes
 
+# Your own rules, written in plain Markdown in config/skills.md (until that
+# file exists, config/skills.example.md is read - a set of common
+# price-action rules to start from). Runs after the indicator check and
+# before Kronos; a rule can only stop a signal, never create one. Edit the
+# rules on the dashboard (Strategies & Tactics -> Your rules) or in any
+# editor - changes are picked up without a restart.
+skills:
+  enabled: false
+  mode: log                # log = record what a rule would stop; filter = stop the signal
+  file: config/skills.md
+
 # Order execution type: "LIMIT" (recommended) or "MARKET". Entries are
 # DAY orders. MARKET is only used while the session is open - outside
 # it a LIMIT at the last close is placed instead. Exit orders (stop and

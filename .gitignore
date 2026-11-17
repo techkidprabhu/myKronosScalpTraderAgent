@@ -17,6 +17,7 @@ data/
 
 # --- Your live settings (config.example.yaml is the tracked template) ---
 config/config.yaml
+config/skills.md
 config/backups/
 config/*.bak
 config/*.tmp

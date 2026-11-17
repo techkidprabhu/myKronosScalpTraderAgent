@@ -19,7 +19,7 @@ from src.brokers.base import base_symbol
 
 R_BINS = [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
 CONF_BUCKETS = [(0.0, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.01)]
-STAGES = ("opened", "indicators", "kronos", "risk", "error")
+STAGES = ("opened", "indicators", "rules", "kronos", "risk", "error")
 
 
 def _js(text) -> dict:
@@ -36,6 +36,10 @@ def decision_stage(row: dict) -> str:
     if action in ("opened", "error"):
         return action
     details = row.get("details") or ""
+    if row["kronos_confirmed"] is None:
+        has_rules = ("rules" in details) if isinstance(details, dict) else ('"rules": {' in details)
+        if has_rules:
+            return "rules"
     has_ind = ("indicators" in details) if isinstance(details, dict) else ('"indicators"' in details)
     if row["kronos_confirmed"] is None and has_ind:
         return "indicators"
@@ -194,18 +198,20 @@ def decision_stats(conn, since: float, tz: str) -> dict:
         p = patterns[d["pattern"] or "unknown"]
         p["signals"] += 1
         p["opened"] += stage == "opened"
-        if stage in ("indicators", "kronos", "risk"):
+        if stage in ("indicators", "rules", "kronos", "risk"):
             reasons[(stage, (d["risk_reason"] or "no reason given").split(" (")[0][:90])] += 1
         c = d["kronos_confidence"]
         if c is not None and stage != "indicators":
             conf["confirmed" if d["kronos_confirmed"] else "rejected"][min(9, max(0, int(float(c) * 10)))] += 1
     after_ind = signals - totals["indicators"]
-    after_kr = after_ind - totals["kronos"]
+    after_rules = after_ind - totals["rules"]
+    after_kr = after_rules - totals["kronos"]
     return {
         "signals": signals, "totals": totals,
         "funnel": [
             {"name": "Signals found", "count": signals},
             {"name": "Passed indicators", "count": after_ind},
+            *([{"name": "Passed your rules", "count": after_rules}] if totals["rules"] else []),
             {"name": "Confirmed by Kronos", "count": after_kr},
             {"name": "Passed risk", "count": after_kr - totals["risk"]},
             {"name": "Orders sent", "count": totals["opened"]},

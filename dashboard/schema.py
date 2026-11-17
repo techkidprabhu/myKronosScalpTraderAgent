@@ -69,6 +69,13 @@ SECTIONS = [
         ("indicators.min_rsi_for_sell", "No SELL below RSI", "float", {"min": 0, "max": 50, "nullable": True}),
         ("indicators.min_bars", "Min closed bars for the filter", "int", {"min": 20, "max": 500}),
     ]},
+    {"id": "skills", "title": "Your rules (skills.md)", "fields": [
+        ("skills.enabled", "Check signals against your rules", "bool", {
+            "help": "Runs after the indicator filter, before Kronos. Rules can only stop a signal. "
+                    "Edit them on Strategies & Tactics -> Your rules. Restart the agent after switching on or off"}),
+        ("skills.mode", "Mode", "select", {"options": ["log", "filter"],
+         "help": "log = record what a rule would stop, never stops anything; filter = stops the signal"}),
+    ]},
     {"id": "screener", "title": "Universe & screener", "fields": [
         ("screener.enabled", "Dynamic screener", "bool", {"help": "Off = the static symbols: list in config.yaml"}),
         ("screener.candidate_symbols", "Candidate symbols", "list", {"help": "e.g. US.AAPL, SG.D05 - IG uses epics"}),
