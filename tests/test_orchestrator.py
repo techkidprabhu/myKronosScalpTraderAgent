@@ -478,3 +478,79 @@ def test_percent_bracket_from_fill(tmp_path, market_open):
     worker.monitor_position()
     pos = audit.get_active_position(SYMBOL)
     assert pos["current_stop"] == 69.3 and pos["target"] == 71.4
+
+
+class SlowCancelBroker(FakeBroker):
+    """moomoo-like cancel: the order reports 'cancelling' (still active)
+    for `lag` more state checks before it is really cancelled."""
+
+    def __init__(self, lag):
+        super().__init__()
+        self.lag = lag
+        self.pending = {}
+
+    def cancel_order(self, order_id):
+        o = self.orders[int(order_id)]
+        self.cancelled.append(int(order_id))
+        if o["active"]:
+            self.pending[int(order_id)] = self.lag
+            o["status"] = "CANCELLING_ALL"
+
+    def get_order_state(self, order_id):
+        oid = int(order_id)
+        if oid in self.pending:
+            if self.pending[oid] <= 0:
+                del self.pending[oid]
+                self.orders[oid].update(active=False, status="CANCELLED")
+            else:
+                self.pending[oid] -= 1
+        return dict(self.orders[oid])
+
+
+def _closed_by_flat(broker, worker, audit, reason="flat_by_close"):
+    worker._software_exit(audit.get_active_position(SYMBOL), reason, broker.price)
+
+
+def test_software_exit_waits_for_a_slow_cancel(tmp_path, market_open, monkeypatch):
+    monkeypatch.setattr(orch.time, "sleep", lambda s: None)
+    broker = SlowCancelBroker(lag=2)
+    worker, audit, _, _, _ = open_position(tmp_path, broker)
+    broker.placed.clear()
+
+    _closed_by_flat(broker, worker, audit)
+
+    assert broker.kinds() == ["close"]
+    assert audit.get_active_position(SYMBOL) is None
+
+
+def test_deferred_close_is_finished_not_undone(tmp_path, market_open, monkeypatch):
+    """Live bug (TSLA, 17 Nov): flat-by-close cancelled the target, the
+    cancel was still pending, the monitor saw the cancelled target and
+    re-placed it, flat-by-close cancelled that one... until the close, and
+    the short was held overnight into a gap."""
+    monkeypatch.setattr(orch.time, "sleep", lambda s: None)
+    broker = SlowCancelBroker(lag=50)       # longer than the settle wait
+    worker, audit, _, _, _ = open_position(tmp_path, broker)
+    broker.price = 71.5                     # between stop and target: no exit of its own
+    broker.placed.clear()
+
+    _closed_by_flat(broker, worker, audit)
+    assert audit.get_active_position(SYMBOL)["status"] == "open"   # deferred
+    assert broker.kinds() == []
+
+    broker.lag = 0
+    for oid in broker.pending:
+        broker.pending[oid] = 0             # the broker finishes cancelling
+    worker.monitor_position()
+
+    assert broker.kinds() == ["close"]      # finished the close; nothing re-placed
+    assert audit.get_active_position(SYMBOL) is None
+    assert audit.get_kv("closing:" + SYMBOL, None) is None
+
+
+def test_interrupted_exit_without_a_pending_close_is_still_rearmed(tmp_path, market_open):
+    broker = FakeBroker()
+    worker, audit, _, _ = interrupted_exit(tmp_path, broker)
+    broker.price = 71.5
+    worker.monitor_position()
+    assert broker.kinds() == ["stop", "target"]

@@ -65,6 +65,15 @@ MISSING_CONFIRM_SECONDS = 240
 # Minimum gap between attempts to re-arm a stop/target leg the broker
 # rejected, so a persistent rejection doesn't spam orders.
 REARM_RETRY_SECONDS = 15 * 60
+# A cancel is asynchronous at the broker (moomoo reports CANCELLING for a
+# moment). Wait this long for it to settle before deferring a close.
+CANCEL_SETTLE_SECONDS = 3.0
+CANCEL_SETTLE_STEP = 0.5
+# A close the agent started (stop, target, flat-by-close) and had to defer
+# because a cancel was still pending. While this is set the cancelled exit
+# orders are NOT re-placed - re-placing them is what blocked the close.
+CLOSING_KEY = "closing:{symbol}"
+CLOSING_MAX_AGE = 30 * 60
 
 # Used when trailing is disabled: never engages, so compute_update only
 # reports fixed stop / target crossings.
@@ -657,6 +666,14 @@ class SymbolWorker:
         )
         exiting = update.exit_triggered or update.target_hit
 
+        # A close the agent already started (its exit orders were cancelled
+        # for it) is finished now - never re-place those orders, which is
+        # what kept flat-by-close from ever closing.
+        pending = self._closing_reason()
+        if pending and not exiting:
+            self._software_exit(pos, pending, current_price)
+            return
+
         # 3) An exit order that died unfilled (an interrupted software exit,
         # a manual cancel, broker/DAY expiry) leaves the position unprotected
         # at the broker - put it back, at the up-to-date stop. A leg with no
@@ -711,12 +728,14 @@ class SymbolWorker:
                 continue
             self._cancel_quietly(order_id)
             try:
-                state = self.broker.get_order_state(order_id)
+                state = self._settled_state(order_id)
             except Exception:
                 logger.exception("Could not re-check order %s for %s", order_id, self.symbol)
+                self._mark_closing(reason)
                 return  # unknown state - try again next cycle rather than risk a double sell
             if state["active"]:
                 logger.warning("Order %s for %s still active after cancel - retrying next cycle", order_id, self.symbol)
+                self._mark_closing(reason)
                 return
             if state["filled"] > 0:
                 fills.append((state["filled"], state["avg_fill_price"]))
@@ -740,6 +759,7 @@ class SymbolWorker:
                 except Exception as exc:
                     logger.exception("Software close failed for %s (%s) - re-arming broker orders", self.symbol, reason)
                     self.reporter.report_error(f"closing {self.symbol}", str(exc))
+                    self._clear_closing()
                     self._rearm_exit_orders(pos, remaining)
                     return
                 fill_price = current_price
@@ -751,6 +771,31 @@ class SymbolWorker:
                 fills.append((to_close, fill_price))
 
         self._finish_exit(pos, reason, fills or [(int(pos["quantity"]), current_price)])
+
+    def _settled_state(self, order_id) -> dict:
+        """Order state after a cancel, waiting up to CANCEL_SETTLE_SECONDS
+        for the broker to finish cancelling (or report a fill)."""
+        state = self.broker.get_order_state(order_id)
+        waited = 0.0
+        while state["active"] and waited < CANCEL_SETTLE_SECONDS:
+            time.sleep(CANCEL_SETTLE_STEP)
+            waited += CANCEL_SETTLE_STEP
+            state = self.broker.get_order_state(order_id)
+        return state
+
+    def _mark_closing(self, reason: str):
+        self.audit_log.set_kv(CLOSING_KEY.format(symbol=self.symbol), {"reason": reason, "ts": time.time()})
+
+    def _closing_reason(self) -> str | None:
+        """The reason of a close the agent started and is still finishing."""
+        mark = self.audit_log.get_kv(CLOSING_KEY.format(symbol=self.symbol), None)
+        if isinstance(mark, dict) and time.time() - float(mark.get("ts") or 0) < CLOSING_MAX_AGE:
+            return str(mark.get("reason") or "close")
+        return None
+
+    def _clear_closing(self):
+        if self.audit_log.get_kv(CLOSING_KEY.format(symbol=self.symbol), None) is not None:
+            self.audit_log.set_kv(CLOSING_KEY.format(symbol=self.symbol), None)
 
     def _rearm_exit_orders(self, pos: dict, quantity: int):
         stop_id, target_id = self.broker.place_exit_orders(
@@ -834,6 +879,7 @@ class SymbolWorker:
             if order_id:
                 self._cancel_quietly(order_id)
         self.audit_log.close_position(self.symbol)
+        self._clear_closing()
         self.audit_log.log_snapshot(self.symbol, None, "position_closed_externally",
                                     {"quantity": pos["quantity"], "entry": pos["entry_price"]})
         msg = (f"{self.symbol}: the broker no longer holds this {pos['direction']} {pos['quantity']:g} "
@@ -859,6 +905,7 @@ class SymbolWorker:
         avg_exit = (sum(q * (p or pos["entry_price"]) for q, p in fills) / exit_qty) if exit_qty else None
 
         self.audit_log.close_position(self.symbol)
+        self._clear_closing()
         recent = self.audit_log.get_kv(RECENT_CLOSES_KEY, {}) or {}
         recent = {k: v for k, v in recent.items() if time.time() - v < 3600}
         recent[base_symbol(self.symbol)] = time.time()
