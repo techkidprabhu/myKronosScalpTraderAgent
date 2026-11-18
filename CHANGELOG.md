@@ -15,6 +15,17 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Fixed
+- **Flat-by-close could never close a position (held overnight into a gap).**
+  Closing cancels the resting target, and moomoo reports a cancel as
+  "cancelling" for a moment, so the close waited for the next cycle. The
+  position monitor then saw the cancelled target and re-placed it, the next
+  close attempt cancelled that one, and so on until the market closed - so
+  TSLA, NFLX and UBER shorts were held overnight on 17 Nov (TSLA opened 2.2%
+  higher: -$440 against a $100 max loss). The close now waits up to 3 s for a
+  cancel to settle, and a close the agent has started is finished on the next
+  cycle instead of its exit orders being re-placed.
+
 ### Added
 - **Config & Risk: every recent setting in one clear place.** A new *Daily
   limits* section groups the daily loss cap, the daily profit target (% and
