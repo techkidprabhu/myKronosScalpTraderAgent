@@ -15,6 +15,13 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Changed
+- **Strategies & Tactics covers skill-file trading.** New card 6b explains
+  the Who-decides-trades switch and the Praga engine (setup, retest entry,
+  stop, target, exits) with your live settings from the skill file; a third
+  flow line shows the skill pipeline (dimmed while Kronos decides). Cards 5,
+  6, 8 and 9 and the project map note what changes in skill mode.
+
 ### Added
 - **Who decides trades: Kronos or a skill file.** A switch on the Command
   Center (one for every broker, no restart) hands new trades to a skill file
