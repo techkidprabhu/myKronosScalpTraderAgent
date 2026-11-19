@@ -1215,6 +1215,80 @@ def _rules_payload(cfg: dict, text: str | None = None) -> dict:
             "metrics": [{"name": k, "kind": v[0], "help": v[1]} for k, v in rules_gate.METRICS.items()]}
 
 
+def _skill_files() -> list[dict]:
+    """The .md files in config/ that can drive trading (have a settings block)."""
+    from src import skill_strategy, trading_mode
+    out = []
+    for f in sorted((trading_mode.ROOT / "config").glob("*.md")):
+        if f.name.endswith(".example.md"):
+            continue
+        s, problems = skill_strategy.load(f)
+        if s is None and problems and problems[0].startswith("No settings block"):
+            continue                     # a plain notes / rules file, not a strategy
+        out.append({"file": f"config/{f.name}", "ok": s is not None,
+                    "strategy": s.strategy if s else None, "problems": problems})
+    return out
+
+
+def _trading_mode_payload() -> dict:
+    from src import skill_strategy, trading_mode
+    sw = trading_mode.read()
+    out = {**sw, "files": _skill_files(), "settings": None, "problems": [], "setups": [], "skill_trades": []}
+    try:
+        s, problems = skill_strategy.load(trading_mode.resolve_file(sw["file"]))
+        out["settings"], out["problems"] = (s.summary() if s else None), problems
+    except ValueError as exc:
+        out["problems"] = [str(exc)]
+    try:
+        conn = get_db()
+        try:
+            rows = conn.execute(
+                "SELECT symbol, ts, price, stage, details FROM snapshots WHERE id IN ("
+                "SELECT MAX(id) FROM snapshots WHERE stage IN ('skill_scan','skill_error') AND ts >= ? GROUP BY symbol)"
+                " ORDER BY ts DESC LIMIT 40", (time.time() - 6 * 3600,)).fetchall()
+            for r in rows:
+                d = json.loads(r["details"] or "{}")
+                out["setups"].append({"symbol": r["symbol"], "ts": r["ts"], "price": r["price"],
+                                      "status": d.get("status") or ("error" if r["stage"] == "skill_error" else None),
+                                      "reason": d.get("reason") or "; ".join(d.get("problems") or []),
+                                      "entry": d.get("entry"), "stop": d.get("stop"), "target": d.get("target"),
+                                      "quality": d.get("quality")})
+            for r in conn.execute("SELECT key, value FROM kv WHERE key LIKE 'skill_trade:%'").fetchall():
+                v = json.loads(r["value"] or "null")
+                if isinstance(v, dict):
+                    out["skill_trades"].append({"symbol": r["key"].split(":", 1)[1], **v})
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        pass
+    return out
+
+
+@app.route("/api/trading_mode", methods=["GET", "POST"])
+def api_trading_mode():
+    """Who decides trades: Kronos (default) or a skill file. One switch for
+    every broker; the agent picks it up within a cycle, no restart."""
+    from src import skill_strategy, trading_mode
+    if request.method == "GET":
+        return jsonify(_trading_mode_payload())
+    data = request.get_json(silent=True) or {}
+    mode = str(data.get("mode") or "").lower()
+    if mode not in trading_mode.MODES:
+        return jsonify({"error": "mode must be kronos or skill"}), 400
+    file = data.get("file") or trading_mode.read()["file"]
+    if mode == "skill":
+        try:
+            path = trading_mode.resolve_file(str(file))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        s, problems = skill_strategy.load(path)
+        if s is None:
+            return jsonify({"error": f"{file} can't drive trading: {'; '.join(problems)}"}), 400
+    trading_mode.write(mode, str(file))
+    logger.info("Trading mode set to %s (%s) from the dashboard", mode, file)
+    return jsonify(_trading_mode_payload())
+
+
 @app.route("/api/rules", methods=["GET", "POST"])
 def api_rules():
     """GET: your rules file, parsed, with today's counts. POST {text}: save it

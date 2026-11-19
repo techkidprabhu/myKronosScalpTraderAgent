@@ -34,6 +34,8 @@ from src import market_calendar as cal
 from src.audit_log import AuditLog
 from src import indicator_gate
 from src import rules as rules_gate
+from src import skill_strategy
+from src import trading_mode
 from src import version as code_version
 from src.kronos_agent import KronosAgent
 from src.market import drop_unclosed_bar, is_market_open, market_timezone
@@ -78,6 +80,26 @@ CLOSING_MAX_AGE = 30 * 60
 # Used when trailing is disabled: never engages, so compute_update only
 # reports fixed stop / target crossings.
 NO_TRAIL = TrailConfig(trigger_points=float("inf"), trail_distance=0.0)
+# A trade opened by skill-file trading (trading_mode "skill"): its setup,
+# so it keeps the skill's exits even if the switch is flipped back.
+SKILL_TRADE_KEY = "skill_trade:{symbol}"
+SKILL_DONE_KEY = "skill_done:{symbol}"
+_skill_cache: dict = {}
+
+
+def load_skill(rel_path: str):
+    """(settings | None, problems) of a skill file, re-read when it changes."""
+    try:
+        path = trading_mode.resolve_file(rel_path)
+        mtime = path.stat().st_mtime
+    except (ValueError, OSError) as exc:
+        return None, [str(exc)]
+    hit = _skill_cache.get(str(path))
+    if hit and hit[0] == mtime:
+        return hit[1], hit[2]
+    s, problems = skill_strategy.load(path)
+    _skill_cache[str(path)] = (mtime, s, problems)
+    return s, problems
 
 
 def bars_to_df(bars_response) -> pd.DataFrame:
@@ -202,6 +224,13 @@ class SymbolWorker:
 
         last_close = df["close"].iloc[-1]
         self.audit_log.log_snapshot(self.symbol, float(last_close), "scanning")
+
+        trade = self._skill_trade()
+        if trade is not None:
+            self._skill_manage(df, trade, float(last_close))
+        if trading_mode.read()["mode"] == "skill":
+            self._skill_entry(df, float(last_close))   # Kronos is not called in this mode
+            return
 
         signals = scan(df)
         if not signals:
@@ -455,7 +484,7 @@ class SymbolWorker:
             logger.exception("ATR unavailable for %s", self.symbol)
             return None
 
-    def _plan(self, price: float, quantity: int, df: pd.DataFrame | None = None):
+    def _plan(self, price: float, quantity: int, df: pd.DataFrame | None = None, **fixed):
         """Size the trade and run the trade-level risk checks (risk.plan_entry)."""
         cfg = self.risk_manager.config
         account = None
@@ -466,8 +495,149 @@ class SymbolWorker:
                 logger.exception("Account summary unavailable for sizing %s", self.symbol)
         open_risk = open_risk_at_stops(self.audit_log.get_active_positions()) \
             if cfg.daily_loss_includes_open_risk else 0.0
-        return self.risk_manager.plan_entry(price, quantity, atr=self._atr(df),
-                                            account=account, open_risk=open_risk)
+        return self.risk_manager.plan_entry(price, quantity, atr=None if fixed else self._atr(df),
+                                            account=account, open_risk=open_risk, **fixed)
+
+    # ------------------------------------------------------------------
+    # Skill-file trading (trading_mode "skill"): the skill file's engine
+    # finds the setup, entry, stop, target and exits; Kronos is not called.
+    # Risk limits still apply to every entry.
+    # ------------------------------------------------------------------
+
+    def _skill_trade(self) -> dict | None:
+        trade = self.audit_log.get_kv(SKILL_TRADE_KEY.format(symbol=self.symbol), None)
+        return trade if isinstance(trade, dict) else None
+
+    def _clear_skill_trade(self):
+        if self.audit_log.get_kv(SKILL_TRADE_KEY.format(symbol=self.symbol), None) is not None:
+            self.audit_log.set_kv(SKILL_TRADE_KEY.format(symbol=self.symbol), None)
+
+    def _trailing_on(self) -> bool:
+        trade = self._skill_trade()
+        if trade is not None:
+            return self.trail_enabled and bool(trade.get("use_trailing_stop"))
+        return self.trail_enabled
+
+    def _skill_entry(self, df: pd.DataFrame, last_close: float):
+        if self.audit_log.get_active_position(self.symbol) is not None:
+            return
+        switch = trading_mode.read()
+        settings, problems = load_skill(switch["file"])
+        if settings is None:
+            self.audit_log.log_snapshot(self.symbol, last_close, "skill_error",
+                                        {"file": switch["file"], "problems": problems})
+            return
+        setup = skill_strategy.find_setup(df, settings)
+        self.audit_log.log_snapshot(self.symbol, last_close, "skill_scan", setup.summary())
+        if not setup.ready:
+            return
+        key = SKILL_DONE_KEY.format(symbol=self.symbol)
+        if self.audit_log.get_kv(key, None) == setup.details.get("breakout"):
+            return                       # this breakout was already traded or tried
+        name = "praga_setup" if settings.strategy == "praga_price_action" else settings.strategy
+
+        def reject(reason, details=None):
+            self.audit_log.set_kv(key, setup.details.get("breakout"))
+            self.audit_log.log_decision(self.symbol, name, "BUY", float(setup.quality), None, None, False,
+                                        reason, "rejected",
+                                        details={"engine": "skill", "file": switch["file"], "setup": setup.summary(),
+                                                 **(details or {})})
+            self.reporter.report_rejected(self.symbol, name, f"risk: {reason}")
+
+        allowed, risk_reason = self._risk_check("BUY")
+        if not allowed:
+            return reject(risk_reason)
+        round_price = self.broker.round_price
+        entry = round_price(setup.entry)
+        stop, target = round_price(setup.stop), round_price(setup.target)
+        plan = self._plan(entry, self.quantity, df, stop_distance=entry - stop, target_distance=target - entry)
+        if not plan.allowed:
+            return reject(plan.reason, {"risk_plan": plan.details})
+        try:
+            entry_id = self.broker.create_entry(self.symbol, "BUY", plan.quantity, entry)   # resting limit: the retest
+        except Exception as exc:
+            logger.exception("Skill entry order failed for %s", self.symbol)
+            self.audit_log.log_decision(self.symbol, name, "BUY", float(setup.quality), None, None, True,
+                                        risk_reason, "error", details={"engine": "skill", "error": str(exc)})
+            self.reporter.report_error(f"entry order ({self.symbol})", str(exc))
+            return
+        self.audit_log.record_pending_entry(self.symbol, "BUY", plan.quantity, float(entry), float(stop),
+                                            float(target), entry_order_id=str(entry_id))
+        self.risk_manager.mark_trade_opened(self.symbol)
+        self.audit_log.set_kv(key, setup.details.get("breakout"))
+        self.audit_log.set_kv(SKILL_TRADE_KEY.format(symbol=self.symbol), {
+            "file": switch["file"], "strategy": settings.strategy, "entry": float(entry), "stop": float(stop),
+            "target": float(target), "breakout": setup.details.get("breakout"),
+            "max_wait_candles": settings.max_wait_candles, "use_trailing_stop": settings.use_trailing_stop,
+            "quality": setup.quality, "opened_bar": None})
+        self.audit_log.log_decision(
+            self.symbol, name, "BUY", float(setup.quality), None, None, True, risk_reason, "opened",
+            deal_id=str(entry_id),
+            details={"engine": "skill", "file": switch["file"], "status": "entry_submitted", "entry": float(entry),
+                     "stop": float(stop), "target": float(target), "quantity": plan.quantity,
+                     "sized_by": plan.sized_by, "max_loss": round(plan.max_loss, 2),
+                     "reward_risk": round(plan.reward_risk, 2), "setup": setup.summary()})
+        self.audit_log.log_snapshot(self.symbol, last_close, "entry_submitted",
+                                    {"direction": "BUY", "entry": float(entry), "stop": float(stop),
+                                     "target": float(target), "engine": "skill"})
+        self.reporter.send(
+            f"<b>Entry submitted (skill)</b> <code>{esc(self.symbol)}</code>\n"
+            f"BUY {plan.quantity} - limit {entry} on the retest  SL: {stop}  TP: {target}\n"
+            f"Setup: {esc(name)} (quality {setup.quality}/2)")
+
+    def _skill_manage(self, df: pd.DataFrame, trade: dict, last_close: float):
+        """On each new closed candle: drop a stale retest order, or exit an
+        open skill trade by its rules."""
+        pos = self.audit_log.get_active_position(self.symbol)
+        if pos is None:
+            self._clear_skill_trade()
+            return
+        if pos["status"] == "pending_entry":
+            reason = None
+            if last_close < float(trade["stop"]):
+                reason = "a close fell below the setup's stop"
+            elif trade.get("breakout"):
+                try:
+                    since = int((df.index > pd.Timestamp(trade["breakout"])).sum())
+                except Exception:  # noqa: BLE001
+                    since = 0
+                if since > int(trade.get("max_wait_candles") or 20):
+                    reason = "no retest in time"
+            if reason:
+                logger.info("%s: cancelling the skill entry - %s", self.symbol, reason)
+                self._cancel_quietly(pos["entry_order_id"])
+                self.audit_log.log_snapshot(self.symbol, last_close, "skill_setup_cancelled", {"reason": reason})
+            return
+        settings, _ = load_skill(trade.get("file") or trading_mode.DEFAULT_FILE)
+        if settings is None:
+            return                       # the bracket still protects the trade
+        sig = skill_strategy.exit_signal(df, settings, trade.get("opened_bar"))
+        if sig is None:
+            return
+        if sig.kind == "close_now":
+            if not self._market_open():
+                return
+            try:
+                price = float(self.broker.get_current_price(self.symbol))
+            except Exception:  # noqa: BLE001
+                price = last_close
+            self._software_exit(pos, f"skill: {sig.reason}", price)
+            return
+        # exit_at: move the target order to the level the skill waits for
+        level = self.broker.round_price(float(sig.price))
+        if pos.get("target") is not None and abs(float(pos["target"]) - level) < 1e-9:
+            return
+        if pos.get("target_order_id"):
+            self._cancel_quietly(pos["target_order_id"])
+        new_id = None
+        try:
+            new_id = self.broker.place_target_order(self.symbol, _opposite(pos["direction"]),
+                                                    int(pos["quantity"]), level)
+        except Exception:
+            logger.exception("Could not move the target for %s - watched in software", self.symbol)
+        self.audit_log.set_target(self.symbol, float(level), str(new_id) if new_id else None)
+        self.audit_log.log_snapshot(self.symbol, last_close, "skill_exit_at", {"price": level, "reason": sig.reason})
+        self.reporter.send(f"<code>{esc(self.symbol)}</code>: {esc(sig.reason)} - exit set at {level}")
 
     # ------------------------------------------------------------------
     # Position monitor (fast cadence, independent of the bar scan)
@@ -558,7 +728,9 @@ class SymbolWorker:
         state = self.broker.get_order_state(pos["entry_order_id"])
 
         if state["active"]:
-            if state["filled"] == 0 and self.entry_timeout_minutes:
+            # A skill's retest order has its own expiry (max_wait_candles,
+            # checked on each candle), not the global entry timeout.
+            if state["filled"] == 0 and self.entry_timeout_minutes and self._skill_trade() is None:
                 age_min = (time.time() - float(pos["opened_ts"])) / 60
                 if age_min >= self.entry_timeout_minutes:
                     logger.info("%s entry unfilled after %.0f min - cancelling",
@@ -575,6 +747,7 @@ class SymbolWorker:
 
         if state["filled"] <= 0:
             self.audit_log.cancel_pending_entry(self.symbol)
+            self._clear_skill_trade()
             self.audit_log.log_snapshot(self.symbol, None, "entry_cancelled", {"status": state["status"]})
             self.reporter.send(f"Entry for <code>{esc(self.symbol)}</code> ended unfilled ({esc(str(state['status']))})")
             return
@@ -595,6 +768,15 @@ class SymbolWorker:
         sign = 1 if pos["direction"] == "BUY" else -1
         stop_price = self.broker.round_price(fill_price - sign * stop_points)
         target_price = self.broker.round_price(fill_price + sign * limit_points)
+        trade = self._skill_trade()
+        if trade is not None:
+            # Skill trades keep the setup's own levels (below the breakout
+            # candle, under the swing high) when the fill is between them.
+            s_stop, s_target = float(trade["stop"]), float(trade["target"])
+            if s_stop < float(fill_price) < s_target:
+                stop_price, target_price = self.broker.round_price(s_stop), self.broker.round_price(s_target)
+            trade["opened_bar"] = self._last_seen_timestamp.isoformat() if self._last_seen_timestamp is not None else None
+            self.audit_log.set_kv(SKILL_TRADE_KEY.format(symbol=self.symbol), trade)
         pos = {**pos, "initial_stop": stop_price, "target": target_price}
         stop_id, target_id = self.broker.place_exit_orders(
             self.symbol, _opposite(pos["direction"]), qty, stop_price, target_price,
@@ -661,7 +843,7 @@ class SymbolWorker:
             direction=pos["direction"], entry_price=pos["entry_price"],
             current_price=current_price, current_stop=pos["current_stop"],
             current_extreme=pos["high_water"], trail_active=bool(pos["trail_active"]),
-            target=pos["target"], config=self.trail_config if self.trail_enabled else NO_TRAIL,
+            target=pos["target"], config=self.trail_config if self._trailing_on() else NO_TRAIL,
             atr=self._trail_atr,
         )
         exiting = update.exit_triggered or update.target_hit
@@ -880,6 +1062,7 @@ class SymbolWorker:
                 self._cancel_quietly(order_id)
         self.audit_log.close_position(self.symbol)
         self._clear_closing()
+        self._clear_skill_trade()
         self.audit_log.log_snapshot(self.symbol, None, "position_closed_externally",
                                     {"quantity": pos["quantity"], "entry": pos["entry_price"]})
         msg = (f"{self.symbol}: the broker no longer holds this {pos['direction']} {pos['quantity']:g} "
@@ -906,6 +1089,7 @@ class SymbolWorker:
 
         self.audit_log.close_position(self.symbol)
         self._clear_closing()
+        self._clear_skill_trade()
         recent = self.audit_log.get_kv(RECENT_CLOSES_KEY, {}) or {}
         recent = {k: v for k, v in recent.items() if time.time() - v < 3600}
         recent[base_symbol(self.symbol)] = time.time()
