@@ -888,7 +888,7 @@
       <section class="strategy-hero" aria-labelledby="st-title">
         <div>
           <h2 class="strategy-hero-title" id="st-title">How the agent trades, and how it learns</h2>
-          <p class="strategy-hero-sub">Every broker you enable runs the same pipeline on each newly closed candle. A signal must pass every step in order; any step can stop it, and none can be skipped. After the markets close, the self-learning loop can train a new Kronos model on what the agent saw. A new model never trades until you choose it. The values on this page are your current settings for the broker selected at the top.</p>
+          <p class="strategy-hero-sub">Every broker you enable runs the same pipeline on each newly closed candle. A signal must pass every step in order; any step can stop it, and none can be skipped. The <b>Who decides trades</b> switch on the Command Center can hand steps 3 to 6 to a skill file instead of Kronos (card 6b); <span data-sv="tm_now">—</span>. After the markets close, the self-learning loop can train a new Kronos model on what the agent saw. A new model never trades until you choose it. The values on this page are your current settings for the broker selected at the top.</p>
         </div>
         <div class="st-flows">
           <div class="st-flow-label">On every closed candle</div>
@@ -902,6 +902,15 @@
             <li><a class="strategy-flow-step active" href="#st-risk">7 Risk</a></li>
             <li><a class="strategy-flow-step active" href="#st-orders">8 Order</a></li>
             <li><a class="strategy-flow-step active" href="#st-manage">9 Manage</a></li>
+          </ol>
+          <div class="st-flow-label">Switch on Skill file</div>
+          <ol class="strategy-flow-nav st-flow" aria-label="Skill-file trading pipeline" id="st-flow-skill">
+            <li><a class="strategy-flow-step active" href="#st-markets">1 Markets</a></li>
+            <li><a class="strategy-flow-step active" href="#st-screen">2 Screen</a></li>
+            <li><a class="strategy-flow-step active st-skill" href="#st-skilltrade">Skill setup</a></li>
+            <li><a class="strategy-flow-step active" href="#st-risk">7 Risk</a></li>
+            <li><a class="strategy-flow-step active st-skill" href="#st-skilltrade">Retest order</a></li>
+            <li><a class="strategy-flow-step active st-skill" href="#st-skilltrade">Skill exits</a></li>
           </ol>
           <div class="st-flow-label">After the close</div>
           <ol class="strategy-flow-nav st-flow" aria-label="Self-learning loop">
@@ -1054,6 +1063,7 @@
             <li>A rule that can't be checked right now, such as VWAP on daily candles, lets the signal pass. A rule the agent can't read is listed as an error and skipped.</li>
             <li>"Log" mode only records what the rules would have stopped, so you can try a rule safely first.</li>
             <li>Edits are picked up without a restart.</li>
+            <li>Used with Kronos trading. With the switch on <b>Skill file</b>, the skill's own engine decides (card 6b) and these rules are not used.</li>
           </ul>
           <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
@@ -1084,9 +1094,11 @@
             <li>Confidence is the share of forecast candles that close above the signal candle for a buy, or below it for a sell.</li>
             <li>The signal passes only above 50% <em>and</em> at or above your threshold.</li>
             <li>A shadow model, if set, is asked the same question in the background. Only its answer is recorded (card 11).</li>
+            <li>With the switch on <b>Skill file</b>, Kronos and the shadow model are not called at all (card 6b).</li>
           </ul>
           <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
+            <div class="strat-meta-row"><span class="strat-meta-label">Deciding trades now</span><span class="strat-meta-val" data-sv="k_deciding">—</span></div>
             <div class="strat-meta-row"><span class="strat-meta-label">Model trading now</span><span class="strat-meta-val" data-sv="k_model">—</span></div>
             <div class="strat-meta-row"><span class="strat-meta-label">Tokenizer</span><span class="strat-meta-val" data-sv="k_tok">—</span></div>
             <div class="strat-meta-row"><span class="strat-meta-label">Runs on</span><span class="strat-meta-val" data-sv="k_device">—</span></div>
@@ -1099,6 +1111,45 @@
           <div class="strat-upgrade-box">
             <div class="strat-upgrade-title">How to tune it</div>
             <div class="strat-upgrade-body">A higher threshold (e.g. 0.70) means fewer, more confident trades. Performance → "Does Kronos confidence pay?" shows whether higher confidence has actually won more often. To change the model itself, use self-learning (card 10) rather than editing <span class="strat-upgrade-code">model_name</span> by hand.</div>
+          </div>
+        </article>
+
+        <article class="strat-card st-card-skill" id="st-skilltrade" aria-labelledby="st-skilltrade-h">
+          <div class="strat-card-header">
+            <div><h3 class="strat-card-title" id="st-skilltrade-h">6b. Skill-file trading (instead of Kronos)</h3>
+              <div class="st-sub">Your written method opens and closes the trades</div></div>
+            <span class="strat-tag amber">Replaces 3–6</span>
+          </div>
+          <p class="strat-desc">The <b>Who decides trades</b> switch on the Command Center hands entries and exits to a skill file such as PragaPriceActionSkill.md. The file's settings block picks a built-in price-action engine and its numbers. Same chart, same decision every time. Long only.</p>
+          <div class="strat-section-title">How it works (praga_price_action)</div>
+          <ul class="strat-logic-list st-steps">
+            <li>Setup: a bullish engulfing at a swing low, then a higher swing low, then a candle closing above the engulfing (the breakout).</li>
+            <li>Entry: a resting limit buy for the retest, at the engulfing's red candle open, or its high when its upper wick is longer than its body. It's placed a few candles after the breakout, and cancelled if a close falls below the stop or the wait runs out.</li>
+            <li>Stop below the breakout candle's low. Target just under the nearest swing high (or a multiple of the risk).</li>
+            <li>Exit at a bearish engulfing close. If that candle is too big, the target moves to the low of the green candle before it. Everything closes when the trend ends.</li>
+          </ul>
+          <ul class="strat-logic-list">
+            <li>Kronos, the indicator check and your rules (steps 4–6) are not used. Risk (step 7) still checks and sizes every entry from the skill's stop, and the daily, per-stock and flat-by-close limits still apply.</li>
+            <li>One switch for every broker; the agent picks it up on its next scan, no restart. Trades keep the manager they were opened with when you switch.</li>
+            <li>The retest order ignores the entry timeout (card 8): the skill's own wait applies.</li>
+            <li>Not yet: adding on every new bullish engulfing, option-chain levels.</li>
+          </ul>
+          <div class="strat-section-title">Your settings now</div>
+          <div class="strat-meta-box">
+            <div class="strat-meta-row"><span class="strat-meta-label">Deciding trades</span><span class="strat-meta-val" data-sv="tm_mode">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Skill file</span><span class="strat-meta-val" data-sv="tm_file">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Swing size</span><span class="strat-meta-val" data-sv="tm_swing">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Retest order</span><span class="strat-meta-val" data-sv="tm_retest">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Minimum quality</span><span class="strat-meta-val" data-sv="tm_quality">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Stop / target</span><span class="strat-meta-val" data-sv="tm_levels">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Exits</span><span class="strat-meta-val" data-sv="tm_exits">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Skill trades now</span><span class="strat-meta-val" data-sv="tm_trades">—</span></div>
+          </div>
+          <div class="strat-section-title">Where it lives</div>
+          <div class="st-files">Switch: data/trading_mode.json (set on the Command Center) · Method and settings: config/PragaPriceActionSkill.md, the <b>```yaml</b> block with <b>strategy: praga_price_action</b><br>Code: src/skill_strategy.py, src/trading_mode.py, src/orchestrator.py · Seen on: Command Center → Who decides trades</div>
+          <div class="strat-upgrade-box">
+            <div class="strat-upgrade-title">How to tune it</div>
+            <div class="strat-upgrade-body">Edit the numbers in the skill file's settings block; the next scan uses them. <span class="strat-upgrade-code">min_quality: 1</span> or <span class="strat-upgrade-code">2</span> takes only setups with a strong breakout candle and green candles after it. Try it on the paper account first and compare its entries with your own chart reading.</div>
           </div>
         </article>
 
@@ -1151,6 +1202,7 @@
             <li>Exits: stop and target orders. These are GTC on live moomoo and Tiger accounts, re-placed daily on moomoo paper accounts, and GTT triggers on Zerodha. Angel One gets limit-priced orders, because SEBI rules don't allow market orders from algorithms.</li>
             <li>Prices are rounded to each exchange's tick size, and quantities to its lot size.</li>
             <li>Manual orders from the Positions tab skip steps 3 to 7 but get the same stop, target and trailing.</li>
+            <li>Skill-file trades (card 6b) always enter with a limit at the retest price, and get the skill's own stop and target.</li>
           </ul>
           <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
@@ -1180,6 +1232,7 @@
             <li>Intraday mode: every agent trade is closed a set number of minutes before the close, win or lose, and anything left from yesterday is closed at the open.</li>
             <li>Your holdings: positions the agent didn't open are shown but never sold or traded by it.</li>
             <li>A position the broker no longer holds is marked closed instead of being watched forever.</li>
+            <li>Skill-file trades (card 6b) are also closed by the skill's exits: a bearish engulfing close, or the end of the trend. The trailing stop is off for them unless the skill file turns it on.</li>
           </ul>
           <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
@@ -1353,11 +1406,12 @@
               <tr><td>verify_opend.py</td><td>moomoo OpenD order test</td></tr>
               <tr><td>config/config.yaml</td><td>Your settings (template: config.example.yaml)</td></tr>
               <tr><td>config/skills.md</td><td>Your own rules (template: skills.example.md)</td></tr>
+              <tr><td>config/PragaPriceActionSkill.md</td><td>Your price-action method; its settings block drives skill-file trading</td></tr>
               <tr><td>.env</td><td>Broker logins, Telegram, GITHUB_TOKEN. Never committed.</td></tr>
             </tbody></table>
             <div class="strat-section-title">Data on this computer (not in git)</div>
             <table class="st-map-table"><tbody>
-              <tr><td>data/</td><td>Trade logs, risk state, dashboard login, training candles, shadow results</td></tr>
+              <tr><td>data/</td><td>Trade logs, risk state, dashboard login, training candles, shadow results, the Who-decides-trades switch (trading_mode.json)</td></tr>
               <tr><td>models/</td><td>Fine-tuned Kronos runs (kronos-ft-…)</td></tr>
               <tr><td>vendor/Kronos</td><td>Kronos source code</td></tr>
               <tr><td>logs/</td><td>agent.log, dashboard.log, finetune.log</td></tr>
@@ -1374,6 +1428,7 @@
               <tr><td>indicator_gate.py, kronos_indicators/</td><td>Step 4</td></tr>
               <tr><td>rules.py</td><td>Step 5: your rules from config/skills.md</td></tr>
               <tr><td>kronos_agent.py</td><td>Step 6</td></tr>
+              <tr><td>skill_strategy.py, trading_mode.py</td><td>Card 6b: skill-file trading and its switch</td></tr>
               <tr><td>risk.py</td><td>Step 7</td></tr>
               <tr><td>trailing_stop.py</td><td>Step 9</td></tr>
               <tr><td>market.py, market_calendar.py</td><td>Sessions, holidays, ticks, closed candles</td></tr>
@@ -5139,7 +5194,7 @@
       if (Date.now() - STRAT.at < 30000) { updateStrategiesView(currentConfig); return; }
       STRAT.at = Date.now();
       const get = async url => { try { return await (await fetch(url, { cache: "no-store" })).json(); } catch (e) { return null; } };
-      [STRAT.brokers, STRAT.finetune, STRAT.versions] = await Promise.all([get("/api/brokers"), get("/api/finetune"), get("/api/finetune/versions")]);
+      [STRAT.brokers, STRAT.finetune, STRAT.versions, STRAT.mode] = await Promise.all([get("/api/brokers"), get("/api/finetune"), get("/api/finetune/versions"), get("/api/trading_mode")]);
       await rulesLoad(false);
       updateStrategiesView(currentConfig);
     }
@@ -5278,6 +5333,30 @@
         v.u_count = `${rs.length - err - off} active${off ? `, ${off} switched off` : ""}${err ? `, ${err} with errors` : ""}`;
         const wk = Object.values(ru.week || {}), stopped = wk.reduce((a, x) => a + x.stopped, 0), would = wk.reduce((a, x) => a + x.would_stop, 0);
         v.u_week = stopped || would ? [stopped ? `${stopped} stopped` : "", would ? `${would} would have been stopped` : ""].filter(Boolean).join(", ") : "Nothing stopped";
+      }
+
+      // 6b who decides trades (skill-file trading)
+      const tm = STRAT.mode;
+      if (tm) {
+        const fname = (tm.file || "").replace(/^config\//, ""), sk = tm.mode === "skill", s = tm.settings;
+        v.tm_mode = sk ? `Skill file: ${fname}` : "Kronos model";
+        v.k_deciding = sk ? `Skill file (${fname}): Kronos is not called` : "Kronos";
+        v.tm_now = sk ? `right now ${fname} is deciding` : "right now Kronos is deciding";
+        v.tm_file = fname + (s ? ` (${s.strategy})` : (tm.problems || []).length ? `: ${tm.problems[0]}` : "");
+        if (s) {
+          v.tm_swing = `${s.swing_candles} candles each side${s.require_second_low ? "; waits for a higher swing low" : ""}`;
+          v.tm_retest = `placed ${plural(s.min_retest_candles, "candle")} after the breakout, cancelled after ${s.max_wait_candles}`;
+          v.tm_quality = `${s.min_quality} of 2`;
+          v.tm_levels = `${s.stop_at === "engulfing_low" ? "below the engulfing low" : "below the breakout candle"} −${s.stop_buffer_pct}% / under the swing high (else ${s.target_r_fallback}R)`;
+          v.tm_exits = [s.exit_on_bearish_engulfing ? `bearish engulfing (too big > ${s.big_candle_atr} ATR)` : "", s.close_on_trend_end ? "trend end" : "",
+                        s.use_trailing_stop ? "trailing stop" : ""].filter(Boolean).join(", ") || "stop and target only";
+        } else {
+          v.tm_swing = v.tm_retest = v.tm_quality = v.tm_levels = v.tm_exits = "—";
+        }
+        const n = (tm.skill_trades || []).length;
+        v.tm_trades = n ? `${plural(n, "trade")} on ${BROKER_LABEL}` : `None on ${BROKER_LABEL}`;
+        const fl = document.getElementById("st-flow-skill");
+        if (fl) fl.classList.toggle("st-flow-dim", !sk);
       }
 
       document.querySelectorAll("#tab-strategies [data-sv]").forEach(el => {
