@@ -236,6 +236,25 @@
         <div class="cc-live" id="cc-live"><span class="cc-live-dot"></span><span id="cc-live-text">Connecting…</span></div>
       </section>
 
+      <section class="cc-card tm-card" id="tm-card" aria-labelledby="tm-h">
+        <div class="tm-row">
+          <div class="tm-title">
+            <h2 id="tm-h">Who decides trades</h2>
+            <p class="cc-muted" id="tm-explain">Loading…</p>
+          </div>
+          <div class="tm-switch" role="radiogroup" aria-labelledby="tm-h">
+            <button type="button" role="radio" id="tm-kronos" aria-checked="true" onclick="tmSet('kronos')">Kronos model</button>
+            <button type="button" role="radio" id="tm-skill" aria-checked="false" onclick="tmSet('skill')">Skill file</button>
+          </div>
+        </div>
+        <div class="tm-row tm-file-row">
+          <label class="cc-muted" for="tm-file">Skill file</label>
+          <select id="tm-file" onchange="tmFileChanged()"></select>
+          <span class="cc-muted" id="tm-file-note"></span>
+        </div>
+        <div id="tm-setups" class="tm-setups" hidden></div>
+      </section>
+
       <section class="cc-card kr-hero" id="kr-hero" aria-labelledby="kr-hero-h">
         <div class="kr-main">
           <div class="kr-head">
@@ -4601,7 +4620,77 @@
       KR.lastLoad = Date.now();
       krHeroLoad();
     }
-    setInterval(krHeroTick, 10000);   // on its own clock, not only when other data changes
+    setInterval(krHeroTick, 10000);
+
+    // ---- Who decides trades: Kronos or a skill file (one switch, all brokers)
+    let tmData = null;
+    function tmEsc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+    function tmRender(d) {
+      tmData = d;
+      const skill = d.mode === "skill";
+      document.getElementById("tm-kronos").setAttribute("aria-checked", String(!skill));
+      document.getElementById("tm-skill").setAttribute("aria-checked", String(skill));
+      document.getElementById("tm-card").classList.toggle("tm-on", skill);
+      const sel = document.getElementById("tm-file");
+      const files = d.files || [];
+      sel.innerHTML = files.length ? files.map(f =>
+        `<option value="${tmEsc(f.file)}"${f.file === d.file ? " selected" : ""}${f.ok ? "" : " disabled"}>${tmEsc(f.file.replace(/^config\//, ""))}${f.ok ? "" : " (needs fixing)"}</option>`).join("")
+        : `<option value="">No skill file with a settings block in config/</option>`;
+      const name = (d.file || "").replace(/^config\//, "");
+      const probs = (d.problems || []).filter(p => !/^Unknown setting/.test(p) || true);
+      document.getElementById("tm-file-note").textContent = probs.length ? probs.join("; ") : "";
+      const since = d.changed_ts ? ` since ${new Date(d.changed_ts * 1000).toLocaleString()}` : "";
+      document.getElementById("tm-explain").innerHTML = skill
+        ? `<b>${tmEsc(name)}</b> opens and closes new trades${tmEsc(since)}. Kronos is not called. Your risk limits still apply to every entry.`
+        : `Kronos confirms every pattern before a trade${tmEsc(since)}. Switch to a skill file to let its rules open and close trades instead.`;
+      const hero = document.getElementById("kr-hero");
+      if (hero) hero.hidden = skill;
+      const box = document.getElementById("tm-setups");
+      const rows = d.setups || [];
+      const trades = d.skill_trades || [];
+      box.hidden = !(skill || trades.length);
+      if (!box.hidden) {
+        const label = { ready: "Ready – retest order", waiting: "Waiting", invalid: "No setup", none: "No setup", error: "File problem" };
+        const tr = trades.map(x => `<li><b>${tmEsc(x.symbol)}</b> <span class="tm-pill tm-open">${x.opened_bar ? "In trade" : "Order resting"}</span>` +
+          ` entry ${tmEsc(x.entry)} · stop ${tmEsc(x.stop)} · target ${tmEsc(x.target)}</li>`).join("");
+        const sc = rows.filter(r => !trades.some(x => x.symbol === r.symbol)).map(r =>
+          `<li><b>${tmEsc(r.symbol)}</b> <span class="tm-pill tm-${tmEsc(r.status)}">${tmEsc(label[r.status] || r.status || "")}</span> <span class="cc-muted">${tmEsc(r.reason || "")}</span></li>`).join("");
+        box.innerHTML = `<h3 class="kr-gates-h">What the skill sees on each stock (latest candle)</h3>` +
+          ((tr + sc) ? `<ul>${tr}${sc}</ul>` : `<p class="cc-muted">Nothing scanned yet – the agent checks on each new closed candle while the market is open.</p>`);
+      }
+    }
+    async function loadTradingMode() {
+      try {
+        const res = await fetch("/api/trading_mode", { cache: "no-store" });
+        if (res.ok) tmRender(await res.json());
+      } catch (e) { /* offline: keep what is shown */ }
+    }
+    async function tmPost(mode, file) {
+      const res = await fetch("/api/trading_mode", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                     body: JSON.stringify({ mode, file }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(body.error || "Couldn't change who decides trades"); loadTradingMode(); return; }
+      tmRender(body);
+    }
+    function tmSet(mode) {
+      if (!tmData || tmData.mode === mode) return;
+      const file = document.getElementById("tm-file").value || tmData.file;
+      const msg = mode === "skill"
+        ? `Let ${file.replace(/^config\//, "")} open and close trades on every broker?\n\nKronos will not be called. Your risk limits (max loss per trade, daily limits, per-stock limits, flat-by-close) still apply. Takes effect on the agent's next scan; open positions keep the manager they were opened with.`
+        : "Go back to Kronos deciding trades on every broker?\n\nTrades the skill already opened keep the skill's exits until they close.";
+      if (!confirm(msg)) { tmRender(tmData); return; }
+      tmPost(mode, file);
+    }
+    function tmFileChanged() {
+      if (!tmData) return;
+      const file = document.getElementById("tm-file").value;
+      if (tmData.mode !== "skill") { tmData.file = file; return; }
+      if (!confirm(`Switch trading to ${file.replace(/^config\//, "")}? New trades follow its settings from the next scan.`)) { tmRender(tmData); return; }
+      tmPost("skill", file);
+    }
+    loadTradingMode();
+    setInterval(() => { if (!document.hidden) loadTradingMode(); }, 30000);
+   // on its own clock, not only when other data changes
 
     function krBarSec(bars) {
       const d = [];

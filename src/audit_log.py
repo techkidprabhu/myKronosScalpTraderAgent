@@ -229,6 +229,11 @@ class AuditLog:
         )
         self.conn.commit()
 
+    def set_target(self, symbol: str, target: float, target_order_id: str | None):
+        self.conn.execute("UPDATE positions SET target=?, target_order_id=? WHERE symbol=? AND status='open'",
+                          (target, target_order_id, symbol))
+        self.conn.commit()
+
     def set_exit_order_ids(self, symbol: str, stop_order_id: str | None, target_order_id: str | None):
         self.conn.execute(
             "UPDATE positions SET stop_order_id=?, target_order_id=? WHERE symbol=? AND status='open'",

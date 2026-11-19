@@ -1795,3 +1795,25 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .cc-target-bar div { height: 100%; width: 0; background: var(--accent-green); border-radius: 3px; transition: width .6s ease; }
 .cc-target.done .cc-target-bar div { background: var(--accent-amber); }
 .cc-target.done .cc-muted { color: var(--warn-text); }
+
+
+/* Who decides trades (Kronos / skill file) */
+.tm-card { display: flex; flex-direction: column; gap: 10px; }
+.tm-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.tm-title { flex: 1 1 260px; min-width: 0; }
+.tm-title h2 { margin: 0 0 2px; font-size: 1rem; }
+.tm-title p { margin: 0; }
+.tm-switch { display: inline-flex; border: 1px solid var(--border-color, #334155); border-radius: 999px; padding: 3px; gap: 3px; }
+.tm-switch button { border: 0; background: transparent; color: inherit; font: inherit; font-size: .85rem;
+  padding: 6px 14px; border-radius: 999px; cursor: pointer; }
+.tm-switch button[aria-checked="true"] { background: var(--accent-blue, #38bdf8); color: #04121c; font-weight: 600; }
+.tm-switch button:focus-visible, .tm-file-row select:focus-visible { outline: 2px solid var(--accent-blue, #38bdf8); outline-offset: 2px; }
+.tm-card.tm-on .tm-switch button[aria-checked="true"] { background: #f59e0b; }
+.tm-file-row select { max-width: 100%; }
+.tm-file-row #tm-file-note { color: var(--accent-red, #ef4444); font-size: .8rem; }
+.tm-setups ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.tm-setups li { font-size: .85rem; overflow-wrap: anywhere; }
+.tm-pill { display: inline-block; font-size: .72rem; padding: 1px 8px; border-radius: 999px; margin: 0 6px; background: var(--track, #1e293b); }
+.tm-pill.tm-ready, .tm-pill.tm-open { background: rgba(34, 197, 94, .25); }
+.tm-pill.tm-waiting { background: rgba(56, 189, 248, .22); }
+.tm-pill.tm-error { background: rgba(239, 68, 68, .3); }

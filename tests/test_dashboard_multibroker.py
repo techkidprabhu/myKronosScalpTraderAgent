@@ -236,3 +236,30 @@ def test_settings_rules_file_must_be_markdown(client):
     assert r.status_code == 400
     r = _post(client, {"scope": "shared", "changes": {"finetune.device": "cuda", "skills.file": "config/my-rules.md"}})
     assert r.status_code == 200, r.get_json()
+
+
+def test_trading_mode_switch(client, monkeypatch):
+    from src import trading_mode
+    monkeypatch.setattr(trading_mode, "ROOT", client.tmp)
+    monkeypatch.setattr(trading_mode, "SWITCH_PATH", client.tmp / "data" / "trading_mode.json")
+    trading_mode._cache.update(mtime=None, value=None)
+    (client.tmp / "config" / "Praga.md").write_text("# m\n```yaml\nstrategy: praga_price_action\n```\n")
+    (client.tmp / "config" / "notes.md").write_text("# just notes\n")
+
+    body = client.get("/api/trading_mode", headers=AUTH).get_json()
+    assert body["mode"] == "kronos"
+    assert [f["file"] for f in body["files"]] == ["config/Praga.md"]
+
+    r = client.post("/api/trading_mode", json={"mode": "skill", "file": "config/notes.md"}, headers=AUTH)
+    assert r.status_code == 400 and trading_mode.read()["mode"] == "kronos"
+    r = client.post("/api/trading_mode", json={"mode": "skill", "file": "../x.md"}, headers=AUTH)
+    assert r.status_code == 400
+
+    r = client.post("/api/trading_mode", json={"mode": "skill", "file": "config/Praga.md"}, headers=AUTH)
+    assert r.status_code == 200 and r.get_json()["mode"] == "skill"
+    assert trading_mode.read() ["file"] == "config/Praga.md"
+    assert r.get_json()["settings"]["swing_candles"] == 2
+
+    r = client.post("/api/trading_mode", json={"mode": "kronos"}, headers=AUTH)
+    assert r.get_json()["mode"] == "kronos"
+    trading_mode._cache.update(mtime=None, value=None)

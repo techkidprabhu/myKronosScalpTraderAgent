@@ -15,6 +15,22 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added
+- **Who decides trades: Kronos or a skill file.** A switch on the Command
+  Center (one for every broker, no restart) hands new trades to a skill file
+  such as `config/PragaPriceActionSkill.md`. The file's ```yaml settings block
+  (`strategy: praga_price_action`) drives a built-in, deterministic
+  price-action engine (`src/skill_strategy.py`): bullish engulfing at a swing
+  low, a higher swing low, a close above the engulfing, then a resting limit
+  buy for the retest at the red candle's open (its high with a long upper
+  wick); stop below the breakout candle; target under the nearest swing high;
+  exits at a bearish engulfing close (a too-big one moves the target to the
+  prior green candle's low) or when the trend ends. Long only. Kronos is not
+  called in this mode. Max loss per trade sizes the position from the skill's
+  stop, and the daily, per-stock and flat-by-close limits still apply. Trades
+  keep the manager they were opened with when the switch changes. Default:
+  Kronos (no switch file = Kronos).
+
 ### Fixed
 - **Flat-by-close could never close a position (held overnight into a gap).**
   Closing cancels the resting target, and moomoo reports a cancel as

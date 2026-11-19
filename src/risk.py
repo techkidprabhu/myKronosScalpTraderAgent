@@ -349,22 +349,27 @@ class RiskManager:
         return stop, target
 
     def plan_entry(self, price: float, default_quantity: int, *, atr: float | None = None,
-                   account: dict | None = None, open_risk: float = 0.0) -> EntryPlan:
+                   account: dict | None = None, open_risk: float = 0.0,
+                   stop_distance: float | None = None, target_distance: float | None = None) -> EntryPlan:
         """Size the trade and run the trade-level checks: stop distance,
         reward:risk, risk-based quantity and the daily cap including open
         risk. With every day-trader rule off this returns the configured
         quantity and the usual distances, allowed."""
         c = self.config
-        stop_d, target_d = self.bracket_distances(price, atr)
+        fixed = stop_distance is not None and target_distance is not None
+        stop_d, target_d = (float(stop_distance), float(target_distance)) if fixed \
+            else self.bracket_distances(price, atr)
         details = {"price": round(price, 6), "atr": round(atr, 6) if atr else None,
-                   "stop_rule": ("atr" if (c.stop_atr_multiple and atr) else "pct" if c.stop_loss_pct else "points"),
-                   "target_rule": ("R" if c.target_r_multiple else "pct" if c.take_profit_pct else "points")}
+                   "stop_rule": "skill" if fixed else
+                   ("atr" if (c.stop_atr_multiple and atr) else "pct" if c.stop_loss_pct else "points"),
+                   "target_rule": "skill" if fixed else
+                   ("R" if c.target_r_multiple else "pct" if c.take_profit_pct else "points")}
 
         def deny(reason: str, **kw) -> EntryPlan:
             return EntryPlan(False, reason, stop_distance=stop_d, target_distance=target_d,
                              details=details, **kw)
 
-        if c.stop_atr_multiple and not atr:
+        if c.stop_atr_multiple and not atr and not fixed:
             return deny("ATR stop configured but no ATR available for these bars")
         if stop_d <= 0 or target_d <= 0:
             return deny("stop / target distance must be above zero")
