@@ -36,7 +36,7 @@ cd "$ROOT" || exit 1
 LOG_DIR="$ROOT/logs"
 RUN_DIR="$ROOT/data"
 DASHBOARD_HOST="${DASHBOARD_HOST:-127.0.0.1}"
-DASHBOARD_PORT="${DASHBOARD_PORT:-5010}"   # 5010: runs beside the swing agent (5000)
+DASHBOARD_PORT="${DASHBOARD_PORT:-5010}"
 mkdir -p "$LOG_DIR" "$RUN_DIR"
 
 find_python() {

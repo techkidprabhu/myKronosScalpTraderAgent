@@ -33,11 +33,17 @@ that heading to the new version and date, and tag the commit
 - Config & Risk: *Scalp trade management* section.
 
 ### Changed
-- Scalp defaults in `config.example.yaml`: MIN_1 candles, 300-candle
-  lookback, Kronos horizon 3, 1 ATR stop / 1.5R target, 3-minute entry
-  timeout, trailing stop on (0.3% / 0.2%) checked every 5 s, scans every
+- **3-minute candles** (`MIN_3`) for every broker: moomoo K_3M, Zerodha
+  3minute, Angel One THREE_MINUTE, IG MINUTE_3, Tiger THREE_MINUTES; in the
+  settings, the chart picker and the indicator / rules filters.
+- Scalp defaults in `config.example.yaml`: MIN_3 candles, 300-candle
+  lookback, Kronos horizon 3 (9 minutes), 1 ATR stop / 1.5R target, 6-minute
+  entry timeout, 30-minute time stop, trailing stop on (0.3% / 0.2%) checked every 5 s, scans every
   15 s, max 20 trades a day, 5-minute cooldown, flat 10 minutes before the
-  close, no entries in the first 5 / last 20 minutes, sentiment on MIN_15.
+  close, no entries in the first 5 / last 20 minutes, market mood on MIN_3.
+- Starter scalp skill: opening range = the first 3-minute candle, exit after
+  10 candles.
+- Remaining "swing" names replaced with scalp ones (kit README, docs, comments).
 - Zerodha and Angel One default to intraday products (MIS / INTRADAY); Zerodha
   exits default to SL-M / limit orders with MIS (no GTT for intraday), and
   both NSE brokers go flat 15 minutes before the close (before the brokers'

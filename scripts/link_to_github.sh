@@ -3,8 +3,8 @@
 # keeping every local file (including the ignored .env, data/ and your live
 # config/config.yaml, which never leave this machine).
 #
-#   cd ~/mySwingTraders/moomoo-swing-agent
-#   bash scripts/link_to_github.sh https://github.com/<you>/moomoo-swing-agent.git
+#   cd ~/mySwingTraders/kronos-scalp-agent
+#   bash scripts/link_to_github.sh https://github.com/<you>/myKronosScalpTraderAgent.git
 set -euo pipefail
 
 REMOTE="${1:?usage: bash scripts/link_to_github.sh <repo-url>}"

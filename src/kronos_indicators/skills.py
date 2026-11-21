@@ -1,5 +1,5 @@
 """
-Indicator *skills* for the Kronos swing-trading agent.
+Indicator *skills* for the Kronos scalp trading agent.
 
 Each skill is a plain function that takes OHLCV candles (Kronos format) and
 returns a small JSON-serialisable dict that an LLM subagent can reason over.
@@ -359,7 +359,7 @@ class IndicatorToolkit:
              "description": "Full technical read of a symbol: trend (EMA 9/20/50/200, ADX, Supertrend), momentum "
                             "(RSI, MACD, Stochastic), volatility (ATR, Bollinger squeeze), volume (OBV, MFI), key levels, "
                             "every fired signal with its weight, a bias score from -100 to 100, and ATR stop/target hints. "
-                            "Use this first when evaluating a swing setup.",
+                            "Use this first when evaluating a scalp setup.",
              "parameters": {"type": "object", "properties": {"symbol": _SYM, "timeframe": _TF, "bars": _BARS,
                             "intraday": {"type": "boolean", "description": "Add session VWAP (intraday bars only)"}},
                             "required": ["symbol", "timeframe"]}},

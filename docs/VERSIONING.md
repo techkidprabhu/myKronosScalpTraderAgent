@@ -14,7 +14,7 @@ and release is a commit there, and releases are tags you can return to.
 ## Day-to-day workflow
 
 ```bash
-cd ~/mySwingTraders/moomoo-swing-agent
+cd ~/mySwingTraders/kronos-scalp-agent
 git checkout main && git pull                 # start from the latest
 git checkout -b feature/my-new-thing          # or fix/what-broke
 

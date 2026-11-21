@@ -18,7 +18,7 @@ IST = "Asia/Kolkata"
 SESSION_MINUTES = 375          # 09:15-15:30
 COLUMNS = ["time", "open", "high", "low", "close", "volume"]
 # agent timeframe -> (minutes per broker bar, bars grouped into one agent bar)
-TIMEFRAME_BARS = {"MIN_1": (1, 1), "MIN_5": (5, 1), "MIN_15": (15, 1), "HOUR_1": (60, 1),
+TIMEFRAME_BARS = {"MIN_1": (1, 1), "MIN_3": (3, 1), "MIN_5": (5, 1), "MIN_15": (15, 1), "HOUR_1": (60, 1),
                   "HOUR_4": (60, 4), "DAY": (None, 1)}
 
 

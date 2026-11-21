@@ -41,7 +41,7 @@ from src.brokers.base import BrokerClient, BrokerError, Capabilities
 logger = logging.getLogger(__name__)
 
 BASE_URLS = {"DEMO": "https://demo-api.ig.com/gateway/deal", "LIVE": "https://api.ig.com/gateway/deal"}
-RESOLUTIONS = {"MIN_1": "MINUTE", "MIN_5": "MINUTE_5", "MIN_15": "MINUTE_15",
+RESOLUTIONS = {"MIN_1": "MINUTE", "MIN_3": "MINUTE_3", "MIN_5": "MINUTE_5", "MIN_15": "MINUTE_15",
                "HOUR_1": "HOUR", "HOUR_4": "HOUR_4", "DAY": "DAY"}
 
 FILLED_ACTIONS = {"POSITION_OPENED", "POSITION_CLOSED", "POSITION_PARTIALLY_CLOSED",
