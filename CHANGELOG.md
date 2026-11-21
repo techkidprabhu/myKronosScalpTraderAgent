@@ -15,6 +15,13 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Fixed
+- **IG login on accounts that require an encrypted password**
+  (`error.public-api.failure.encryption.required`). The agent now fetches IG's
+  RSA key (`/session/encryptionKey`) and logs in with the password encrypted
+  (PKCS#1 v1.5, `encryptedPassword: true`); other accounts log in as before.
+  Needs the `cryptography` package (now in requirements.txt).
+
 ### Added - scalp agent (new repository, from the swing agent's history)
 - **Scalp trade management** on every agent trade: a time stop
   (`scalp.max_hold_minutes`, closed at the market) and a break-even stop

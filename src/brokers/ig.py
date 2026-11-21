@@ -44,6 +44,25 @@ BASE_URLS = {"DEMO": "https://demo-api.ig.com/gateway/deal", "LIVE": "https://ap
 RESOLUTIONS = {"MIN_1": "MINUTE", "MIN_3": "MINUTE_3", "MIN_5": "MINUTE_5", "MIN_15": "MINUTE_15",
                "HOUR_1": "HOUR", "HOUR_4": "HOUR_4", "DAY": "DAY"}
 
+def encrypt_password(password: str, encryption_key_b64: str, time_stamp) -> str:
+    """The password as IG's encrypted login wants it (see IGClient._encrypted_password)."""
+    import base64
+    message = base64.b64encode(f"{password}|{int(time_stamp)}".encode())
+    der = base64.b64decode(encryption_key_b64)
+    try:
+        from cryptography.hazmat.primitives.asymmetric import padding
+        from cryptography.hazmat.primitives.serialization import load_der_public_key
+        encrypted = load_der_public_key(der).encrypt(message, padding.PKCS1v15())
+    except ImportError:
+        try:
+            from Crypto.Cipher import PKCS1_v1_5
+            from Crypto.PublicKey import RSA
+        except ImportError as exc:
+            raise BrokerError("IG needs an encrypted password: run  pip install cryptography") from exc
+        encrypted = PKCS1_v1_5.new(RSA.import_key(der)).encrypt(message)
+    return base64.b64encode(encrypted).decode()
+
+
 FILLED_ACTIONS = {"POSITION_OPENED", "POSITION_CLOSED", "POSITION_PARTIALLY_CLOSED",
                   "LIMIT_ORDER_FILLED", "STOP_ORDER_FILLED"}
 DEAD_ACTIONS = {"WORKING_ORDER_DELETED", "LIMIT_ORDER_DELETED", "STOP_ORDER_DELETED", "POSITION_DELETED"}
@@ -99,8 +118,13 @@ class IGClient(BrokerClient):
         if missing:
             raise BrokerError(f"IG credentials missing in .env: {', '.join(missing)}")
         self._tokens = {}
-        resp = self.http.post(f"{self.base}/session", headers=self._headers(2), timeout=self.timeout,
-                              json={"identifier": os.environ["IG_USERNAME"], "password": os.environ["IG_PASSWORD"]})
+        body = {"identifier": os.environ["IG_USERNAME"], "password": os.environ["IG_PASSWORD"]}
+        resp = self.http.post(f"{self.base}/session", headers=self._headers(2), timeout=self.timeout, json=body)
+        if resp.status_code != 200 and "encryption.required" in (resp.text or ""):
+            # Some IG accounts only accept an RSA-encrypted password.
+            body = {"identifier": os.environ["IG_USERNAME"], "password": self._encrypted_password(),
+                    "encryptedPassword": True}
+            resp = self.http.post(f"{self.base}/session", headers=self._headers(2), timeout=self.timeout, json=body)
         if resp.status_code != 200:
             raise BrokerError(f"IG login failed ({resp.status_code}): {resp.text[:200]}")
         self._tokens = {"CST": resp.headers.get("CST", ""),
@@ -110,6 +134,16 @@ class IGClient(BrokerClient):
         if self.account and self.account != current:
             self._request("PUT", "/session", 1, {"accountId": self.account, "defaultAccount": False})
         self.account = self.account or current
+
+    def _encrypted_password(self) -> str:
+        """IG's encrypted login: GET /session/encryptionKey gives an RSA public
+        key (base64 DER) and a timestamp; the password is
+        base64(RSA-PKCS1v1.5(base64("password|timestamp")))."""
+        resp = self.http.get(f"{self.base}/session/encryptionKey", headers=self._headers(1), timeout=self.timeout)
+        if resp.status_code != 200:
+            raise BrokerError(f"IG encryption key request failed ({resp.status_code}): {resp.text[:200]}")
+        data = resp.json()
+        return encrypt_password(os.environ["IG_PASSWORD"], data["encryptionKey"], data["timeStamp"])
 
     def _request(self, method: str, path: str, version: int = 1, body: dict | None = None,
                  params: dict | None = None, retry: bool = True) -> dict:
