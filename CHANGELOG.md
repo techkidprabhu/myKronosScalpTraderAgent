@@ -16,6 +16,16 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Fixed
+- **24-hour markets card stayed empty while every market was closed** (the
+  weekend). The agent sleeps then, and the screener only ran while awake.
+  Around the clock, it now refreshes the market list every `refresh_minutes`
+  while closed too (nothing is scanned), and the card shows when each market
+  type opens again.
+- **IG request limit during market search** (`exceeded-api-key-allowance`):
+  searches are 3 s apart, and on that error the search pauses 60 s and
+  retries the name once instead of skipping it.
+
+### Fixed
 - **IG around the clock found no markets** on accounts where IG answers 404
   for `/marketnavigation`. Discovery now falls back to looking up well-known
   24-hour markets by name (`/markets?searchTerm=`): 15 forex pairs, 10

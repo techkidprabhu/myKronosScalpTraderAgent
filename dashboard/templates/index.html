@@ -4279,8 +4279,12 @@
       document.getElementById("scr-mode").textContent = `· IG ${classes}`;
       const n = (r.candidates || []).filter(c => c.picked).length;
       const disc = r.discovering ? ` · finding IG's markets: ${r.discovering.nodes} pages read, ${r.discovering.markets} markets so far` : "";
+      const now = Date.now() / 1000;
+      const reopen = Object.entries(r.next_open || {}).filter(([, t]) => t && t > now + 60)
+        .map(([c, t]) => `${IG_CLASS[c] || c} opens ${fmtDateTime(t)}`);
       document.getElementById("scr-sub").textContent =
-        `${r.universe} markets · ${n} streamed and scanned (max ${r.top_n}) · ${r.timeframe} candles · updated ${fmtTime(r.updated)}${disc}`;
+        `${r.universe} markets · ${n} streamed and scanned (max ${r.top_n}) · ${r.timeframe} candles · updated ${fmtTime(r.updated)}${disc}` +
+        (reopen.length ? ` · ${reopen.join(", ")}` : "");
       const s = (live && live.streaming) || (r.stream && r.stream.streaming);
       const a = (live && live.allowance) || (r.stream && r.stream.allowance);
       const parts = [];

@@ -396,3 +396,45 @@ def test_empty_screener_result_is_still_published(tmp_path):
     o._refresh_symbols_from_screener()
     o.audit_log.set_kv.assert_called_once_with(SCREENER_REPORT_KEY, o.screener.last_report)
     o._set_workers.assert_not_called()
+
+
+def test_closed_markets_still_get_a_report(monkeypatch):
+    from src.orchestrator import Orchestrator
+    o = Orchestrator.__new__(Orchestrator)
+    o.config = {"polling_interval_seconds": 15}
+    o.around_the_clock, o.screener, o.screener_refresh_seconds = True, MagicMock(), 900
+    o._last_screener_run, o._stream_published = 0.0, 1e18
+    o.check_broker = lambda now: True
+    o.update_phase = lambda: "sleeping"
+    o.broker, o.workers, o._last_unmanaged_check, o.unmanaged_interval = MagicMock(), {}, 1e18, 300
+    o.sleep_monitor_seconds = 300
+    o.process_manual_orders = o.flat_by_close = lambda: None
+    o.audit_log = MagicMock()
+    o._refresh_symbols_from_screener = MagicMock()
+    o.run_cycle({}, now=1000.0)
+    o.run_cycle({}, now=1100.0)              # within refresh_minutes: not again
+    o.run_cycle({}, now=2000.0)
+    assert o._refresh_symbols_from_screener.call_count == 2
+
+
+def test_search_pauses_and_retries_when_ig_limit_is_hit(monkeypatch):
+    from src.brokers.ig import IGClient
+    for k, v in {"IG_API_KEY": "key", "IG_USERNAME": "u", "IG_PASSWORD": "p"}.items():
+        monkeypatch.setenv(k, v)
+    http = NoNavHttp()
+    client = IGClient(market="IG24", session=http)
+    sleeps = []
+    import src.brokers.ig as igmod
+    monkeypatch.setattr(igmod.time, "sleep", lambda s: sleeps.append(s))
+    state = {"n": 0}
+    orig = http.request
+
+    def limited(method, url, headers=None, json=None, params=None, timeout=None):
+        if params and params.get("searchTerm") == "EUR/USD" and state["n"] == 0:
+            state["n"] += 1
+            return FakeResp(403, {"errorCode": "error.public-api.exceeded-api-key-allowance"})
+        return orig(method, url, headers, json, params, timeout)
+    http.request = limited
+    client.SEARCH_TERMS = {"forex": ["EUR/USD"]}
+    found = client.search_markets(["forex"], delay_s=1)
+    assert [m["epic"] for m in found] == ["CS.D.EURUSD.CFD.IP"] and 60 in sleeps

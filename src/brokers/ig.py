@@ -469,7 +469,7 @@ class IGClient(BrokerClient):
         return bool(m.get("epic")) and str(m.get("expiry") or "-") == self.expiry and \
             not itype.startswith(("BINARY", "BUNGEE", "KNOCKOUTS", "OPT_", "SPRINT"))
 
-    def search_markets(self, classes: list[str], delay_s: float = 2.1, progress=None) -> list[dict]:
+    def search_markets(self, classes: list[str], delay_s: float = 3.0, progress=None) -> list[dict]:
         """Find the well-known markets of these classes by name
         (GET /markets?searchTerm=...): one request per name."""
         found: dict[str, dict] = {}
@@ -479,10 +479,18 @@ class IGClient(BrokerClient):
                 if done and delay_s:
                     time.sleep(delay_s)
                 done += 1
-                try:
-                    res = self._request("GET", "/markets", 1, params={"searchTerm": term}).get("markets") or []
-                except BrokerError as exc:
-                    logger.warning("IG market search %r: %s", term, exc)
+                res = None
+                for attempt in (1, 2):
+                    try:
+                        res = self._request("GET", "/markets", 1, params={"searchTerm": term}).get("markets") or []
+                        break
+                    except BrokerError as exc:
+                        if attempt == 1 and "exceeded" in str(exc) and delay_s:
+                            logger.info("IG request limit reached - pausing the market search for 60 s")
+                            time.sleep(60)        # IG's limits are per minute
+                            continue
+                        logger.warning("IG market search %r: %s", term, exc)
+                if res is None:
                     continue
                 hits = [m for m in res if self._tradeable_cfd(m)]
                 name = term.lower()
