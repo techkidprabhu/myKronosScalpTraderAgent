@@ -35,6 +35,7 @@ from src import market_calendar as cal
 from src.audit_log import AuditLog
 from src import indicator_gate
 from src import rules as rules_gate
+from src import ig_hours
 from src import skill_strategy
 from src import trading_mode
 from src import version as code_version
@@ -83,6 +84,7 @@ CLOSING_MAX_AGE = 30 * 60
 NO_TRAIL = TrailConfig(trigger_points=float("inf"), trail_distance=0.0)
 # A trade opened by skill-file trading (trading_mode "skill"): its setup,
 # so it keeps the skill's exits even if the switch is flipped back.
+IG_STREAM_KEY = "ig_stream"          # around-the-clock IG: stream / allowance status for the dashboard
 SKILL_TRADE_KEY = "skill_trade:{symbol}"
 SKILL_DONE_KEY = "skill_done:{symbol}"
 _skill_cache: dict = {}
@@ -191,6 +193,9 @@ class SymbolWorker:
         return self.broker.market
 
     def _market_open(self) -> bool:
+        per_symbol = getattr(self.broker, "symbol_open", None)
+        if self.market == ig_hours.MARKET and per_symbol is not None:
+            return bool(per_symbol(self.symbol))       # this market's own hours + IG's live status
         return is_market_open(self.market)
 
     # ------------------------------------------------------------------
@@ -471,6 +476,8 @@ class SymbolWorker:
     def _session_minutes(self):
         """(minutes since open, minutes to close) of today's regular session."""
         try:
+            if self.market == ig_hours.MARKET and hasattr(self.broker, "session_minutes_for"):
+                return self.broker.session_minutes_for(self.symbol)
             return cal.session_minutes(cal.exchange_for_market(self.market))
         except Exception:
             logger.exception("Session clock unavailable for %s", self.symbol)
@@ -1207,7 +1214,18 @@ class Orchestrator:
         self._last_unmanaged_check = 0.0
 
         screener_cfg = config.get("screener", {})
-        if screener_cfg.get("enabled"):
+        self.around_the_clock = self.broker.market == ig_hours.MARKET and hasattr(self.broker, "enable_around_the_clock")
+        self._stream_published = 0.0
+        if self.around_the_clock:
+            from src import ig_screener
+            self.broker.enable_around_the_clock(ig_screener.settings(config), config["timeframe"])
+        if screener_cfg.get("enabled") and self.around_the_clock:
+            from src.ig_screener import IG24Screener
+            self.screener = IG24Screener(self.broker, config, open_symbols=lambda: [
+                p["symbol"] for p in self.audit_log.get_active_positions()])
+            self.screener_refresh_seconds = float(self.screener.cfg["refresh_minutes"]) * 60
+            self._refresh_symbols_from_screener()
+        elif screener_cfg.get("enabled"):
             from src.screener import Screener
             self.screener = Screener(self.broker, config)
             self.screener_refresh_seconds = screener_cfg.get("refresh_interval_minutes", 360) * 60
@@ -1274,6 +1292,17 @@ class Orchestrator:
             worker.broker = new_broker
         if self.screener is not None:
             self.screener.broker = new_broker
+        if getattr(self, "around_the_clock", False) and hasattr(new_broker, "enable_around_the_clock"):
+            from src import ig_screener
+            try:
+                old_stream = getattr(old, "stream", None)
+                if old_stream is not None:
+                    old_stream.stop()
+                new_broker.enable_around_the_clock(ig_screener.settings(self.config), self.config["timeframe"])
+                new_broker.classes.update(getattr(old, "classes", {}) or {})
+                new_broker.watch(list(self.workers))
+            except Exception:
+                logger.exception("Restarting the IG stream after the reconnect failed")
         if old is not None and old is not new_broker:
             try:
                 old.close()
@@ -1326,6 +1355,15 @@ class Orchestrator:
         """(phase, next_open_epoch). phase: always | active | warmup | sleeping."""
         if not self.follow_market:
             return "always", None
+        if getattr(self, "around_the_clock", False):
+            now = now or datetime.now(timezone.utc)
+            if self.broker.any_open(now):
+                return "active", None
+            nxt = self.broker.next_open(now)
+            nxt = nxt.timestamp() if nxt is not None else None
+            if nxt is not None and nxt - now.timestamp() <= self.warmup_minutes * 60:
+                return "warmup", nxt
+            return "sleeping", nxt
         market_open = is_market_open(self.broker.market, now) if now else is_market_open(self.broker.market)
         now = now or datetime.now(timezone.utc)
         if market_open:
@@ -1587,6 +1625,15 @@ class Orchestrator:
         phase = self.update_phase()
         awake = phase in ("active", "warmup", "always")
 
+        if getattr(self, "around_the_clock", False):
+            try:
+                self.broker.keep_up()            # save streamed candles, live status, stream health
+            except Exception:
+                logger.exception("IG around-the-clock upkeep failed")
+            if now - self._stream_published >= 15:
+                self._stream_published = now
+                self.audit_log.set_kv(IG_STREAM_KEY, {**self.broker.stream_summary(), "ts": now})
+
         if self.screener and awake and now - self._last_screener_run >= self.screener_refresh_seconds:
             self._refresh_symbols_from_screener()
 
@@ -1622,6 +1669,8 @@ class Orchestrator:
         minutes = getattr(self.risk_manager.config, "flat_by_minutes_before_close", None)
         if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) or minutes <= 0:
             return
+        if getattr(self, "around_the_clock", False):
+            return self._flat_by_each_close(float(minutes))
         try:
             mins = cal.session_minutes(cal.exchange_for_market(self.broker.market))
         except Exception:
@@ -1669,6 +1718,27 @@ class Orchestrator:
                             f"closing {pos['symbol']} before the market close", f"{exc} - retrying; check it manually")
                     except Exception:
                         logger.debug("Could not send the flat-by-close alert", exc_info=True)
+
+    def _flat_by_each_close(self, minutes: float):
+        """Around the clock: each trade is closed `minutes` before ITS market's
+        next close (the daily break or the weekend). Crypto never closes."""
+        for pos in self.audit_log.get_active_positions():
+            mins = self.broker.session_minutes_for(pos["symbol"])
+            if mins is None or mins[1] > minutes:
+                continue
+            worker = self._worker_for(pos["symbol"])
+            try:
+                if pos["status"] == "pending_entry":
+                    if pos.get("entry_order_id"):
+                        self.broker.cancel_order(pos["entry_order_id"])
+                        self.audit_log.log_snapshot(pos["symbol"], None, "flat_by_cancel_entry", {})
+                    continue
+                price = float(self.broker.get_current_price(pos["symbol"]))
+                logger.info("%s: its market closes in %.0f min - closing %s %g",
+                            pos["symbol"], mins[1], pos["direction"], pos["quantity"])
+                worker._software_exit(pos, "flat_by_close", price)
+            except Exception:
+                logger.exception("Flat-before-close failed for %s", pos["symbol"])
 
     def _worker_for(self, symbol: str) -> SymbolWorker:
         """Existing worker for this symbol (matched with or without the

@@ -382,11 +382,29 @@ brokers:
 
   ig:                        # IG REST API - EXPERIMENTAL, IG_* in .env, use a DEMO account
     enabled: false
-    market: US               # session calendar used for scheduling
-    default_quantity: 1      # deal size (contracts)
+    # IG24 = around the clock: forex, indices, commodities and crypto CFDs,
+    # each on its own hours, candles streamed live (pip install
+    # lightstreamer-client-lib). US / HK / SG = one exchange session.
+    market: IG24
+    default_quantity: 1      # deal size (contracts) - check each market's value per point
+    risk:
+      allow_short: true      # CFDs: both directions
+      flat_by_minutes_before_close: 10   # before each market's daily break / weekend close
+      no_entries_first_minutes: 5        # after each market's own open
+      no_entries_last_minutes: 15        # before each market's own close
     screener:
       enabled: true
-      candidate_symbols: [UA.D.AAPL.CASH.IP, UA.D.MSFT.CASH.IP]   # IG epics
+      candidate_symbols: []  # optional extra IG epics, always ranked too
+      around_the_clock:      # used when market is IG24
+        markets: [forex, indices, commodities, crypto]
+        max_watch: 30        # markets streamed and scanned (IG streaming limit: 40)
+        refresh_minutes: 15  # re-rank from price snapshots (no history allowance used)
+        max_spread_pct: 0.2  # forex / indices / commodities
+        crypto_max_spread_pct: 1.5
+        min_range_pct: 0.1   # skip markets that have hardly moved today
+        seed_bars: 150       # history candles fetched once per new market
+        universe_refresh_hours: 24
+        max_nav_nodes: 120   # IG market-menu pages read per discovery (~4 min, background)
 
   zerodha:                   # Zerodha Kite Connect - KITE_* in .env, run kite_login.py daily (EXPERIMENTAL)
     enabled: false

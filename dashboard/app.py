@@ -28,7 +28,7 @@ from dashboard import auth
 from src.kronos_agent import KronosAgent, _ensure_kronos_importable
 from src import market_calendar as cal
 from dashboard import analytics
-from src.orchestrator import (SCREENER_REPORT_KEY, ACTIVE_SYMBOLS_KEY, BROKER_HEALTH_KEY, PHASE_KEY, UNMANAGED_KEY,
+from src.orchestrator import (IG_STREAM_KEY, SCREENER_REPORT_KEY, ACTIVE_SYMBOLS_KEY, BROKER_HEALTH_KEY, PHASE_KEY, UNMANAGED_KEY,
                               bars_to_df)
 from src.patterns import scan
 from src import indicator_gate
@@ -1172,6 +1172,8 @@ def scan_now():
 
 
 def _session_minutes_for(market):
+    if str(market or "").upper() == "IG24":
+        return None             # around the clock: every market has its own hours
     try:
         return cal.session_minutes(cal.exchange_for_market(market or "US"))
     except Exception:  # noqa: BLE001
@@ -1859,7 +1861,7 @@ def get_screener_report():
     report = _kv(SCREENER_REPORT_KEY)
     out = {"enabled": bool(scr.get("enabled")),
            "mode": str((scr.get("score") or {}).get("mode") or "disabled"),
-           "report": None}
+           "report": None, "ig_stream": _kv(IG_STREAM_KEY)}
     if isinstance(report, dict):
         report["candidates"] = [{k: _clean_num(v) for k, v in c.items()}
                                 for c in report.get("candidates") or [] if isinstance(c, dict)]

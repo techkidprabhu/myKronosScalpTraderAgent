@@ -25,7 +25,16 @@ How it maps onto the agent:
   * order state: open working orders and positions first, then the
     activity history (POSITION_OPENED, STOP_ORDER_FILLED, ...).
   * IG limits historical price points per week (10,000 on most accounts):
-    keep lookback_bars and the number of symbols modest.
+    keep lookback_bars and the number of symbols modest - or use the
+    around-the-clock mode below, which streams candles instead.
+
+Around the clock (broker market "IG24", screener.around_the_clock):
+  forex, index, commodity and crypto CFDs are found by browsing IG's market
+  navigation (cached for a day in data/ig_universe.json), ranked from cheap
+  price snapshots, and the picked markets are streamed (src/brokers/
+  ig_stream.py) - candles come from the stream and data/ig_candles, not from
+  the history allowance. Each market follows its own hours (src/ig_hours.py)
+  and IG's live status (TRADEABLE).
 """
 from __future__ import annotations
 
@@ -34,8 +43,13 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 
+import json
+from pathlib import Path
+
 import pandas as pd
 
+from src import ig_hours
+from src.brokers import ig_stream
 from src.brokers.base import BrokerClient, BrokerError, Capabilities
 
 logger = logging.getLogger(__name__)
@@ -63,6 +77,13 @@ def encrypt_password(password: str, encryption_key_b64: str, time_stamp) -> str:
     return base64.b64encode(encrypted).decode()
 
 
+def _f(v):
+    try:
+        return float(v) if v not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 FILLED_ACTIONS = {"POSITION_OPENED", "POSITION_CLOSED", "POSITION_PARTIALLY_CLOSED",
                   "LIMIT_ORDER_FILLED", "STOP_ORDER_FILLED"}
 DEAD_ACTIONS = {"WORKING_ORDER_DELETED", "LIMIT_ORDER_DELETED", "STOP_ORDER_DELETED", "POSITION_DELETED"}
@@ -83,7 +104,7 @@ class IGClient(BrokerClient):
     label = "IG"
     capabilities = Capabilities(
         paper_trading=True, stop_orders=True, gtc_orders=True, short_selling=True,
-        market_scan=False, markets=("US", "HK", "SG"), status="experimental",
+        market_scan=False, markets=("US", "HK", "SG", "IG24"), status="experimental",
         notes="Written from IG's REST docs, not tested on a real account. Symbols are IG epics; "
               "set screener.candidate_symbols (IG can't list a whole market).",
     )
@@ -130,6 +151,7 @@ class IGClient(BrokerClient):
         self._tokens = {"CST": resp.headers.get("CST", ""),
                         "X-SECURITY-TOKEN": resp.headers.get("X-SECURITY-TOKEN", "")}
         body = resp.json() if resp.content else {}
+        self.ls_endpoint = body.get("lightstreamerEndpoint") or getattr(self, "ls_endpoint", None)
         current = body.get("currentAccountId", "")
         if self.account and self.account != current:
             self._request("PUT", "/session", 1, {"accountId": self.account, "defaultAccount": False})
@@ -197,8 +219,27 @@ class IGClient(BrokerClient):
         return round(float(price), 4)
 
     def get_historical_bars(self, symbol: str, resolution: str, num_points: int) -> pd.DataFrame:
+        store = getattr(self, "store", None)
+        if store is not None and resolution == store.tf and store.has(symbol):
+            return store.frame(symbol, num_points)         # streamed - no history allowance used
+        if store is None and resolution in ig_stream.TF_MINUTES:
+            saved = ig_stream.stored_frame(symbol, resolution, num_points)
+            if saved is not None and len(saved) >= min(int(num_points), 20):
+                return saved                                # the agent's candles (e.g. for the dashboard)
+        if store is not None:
+            # around the clock: protect the weekly history allowance from bulk
+            # requests (e.g. self-learning collecting 1,500 candles per market)
+            num_points = min(int(num_points), int(self.atc.get("seed_bars") or 150))
+        return self._rest_bars(symbol, resolution, num_points)
+
+    def _rest_bars(self, symbol: str, resolution: str, num_points: int) -> pd.DataFrame:
         data = self._request("GET", f"/prices/{symbol}", 3,
                              params={"resolution": RESOLUTIONS[resolution], "max": int(num_points), "pageSize": 0})
+        allowance = ((data.get("metadata") or {}).get("allowance") or {})
+        if allowance:
+            self.allowance = {"remaining": allowance.get("remainingAllowance"),
+                              "total": allowance.get("totalAllowance"),
+                              "resets_in_s": allowance.get("allowanceExpiry"), "ts": time.time()}
         rows = []
         for p in data.get("prices", []):
             ts = pd.Timestamp(p.get("snapshotTimeUTC") or p["snapshotTime"])
@@ -217,6 +258,10 @@ class IGClient(BrokerClient):
         return self._request("GET", f"/markets/{symbol}", 3).get("snapshot", {})
 
     def get_current_price(self, symbol: str) -> float:
+        stream = getattr(self, "stream", None)
+        live = stream.price(symbol) if stream is not None else None
+        if live:
+            return float(live)
         snap = self._snapshot(symbol)
         price = _mid({"bid": snap.get("bid"), "offer": snap.get("offer")})
         if not price:
@@ -289,6 +334,204 @@ class IGClient(BrokerClient):
         if dead is not None:
             return {"status": "CANCELLED", "active": False, "quantity": 0, "filled": 0, "avg_fill_price": None}
         raise BrokerError(f"IG order {oid} not found")
+
+    # ---- around the clock ------------------------------------------
+    def enable_around_the_clock(self, settings: dict, timeframe: str, stream: bool = True, client_factory=None):
+        """Streamed candles + per-market hours (broker market IG24)."""
+        self.atc = dict(settings or {})
+        self.store = ig_stream.CandleStore(timeframe)
+        self.classes: dict[str, str] = {}      # epic -> forex / indices / commodities / crypto
+        self.names: dict[str, str] = {}
+        self.status: dict[str, dict] = {}      # epic -> {"status", "bid", "offer", "ts"}
+        self.watched: list[str] = []
+        self._status_at = 0.0
+        self.stream = None
+        if stream:
+            try:
+                if client_factory is None:
+                    import lightstreamer.client  # noqa: F401
+                if not self.ls_endpoint:
+                    raise BrokerError("IG gave no streaming endpoint at login")
+                self.stream = ig_stream.IGStream(self.ls_endpoint, self.account, self._tokens.get("CST", ""),
+                                                 self._tokens.get("X-SECURITY-TOKEN", ""), self.store,
+                                                 client_factory=client_factory)
+                self.stream.start()
+            except ImportError:
+                logger.warning("IG streaming needs  pip install lightstreamer-client-lib  - using history "
+                               "candles (limited by IG's weekly allowance)")
+            except Exception:
+                logger.exception("IG stream could not start - using history candles")
+                self.stream = None
+
+    def watch(self, epics: list[str]) -> list[str]:
+        """Stream these markets: load their saved candles, fetch history only
+        for what is missing, and subscribe. Returns the markets watched."""
+        store = getattr(self, "store", None)
+        if store is None:
+            return list(epics)
+        limit = ig_stream.MAX_SUBSCRIPTIONS if self.stream is None else self.stream.max
+        epics = list(dict.fromkeys(epics))[:limit]
+        seed = int(self.atc.get("seed_bars") or 150)
+        for epic in epics:
+            if epic in self.watched:
+                continue
+            store.load(epic)
+            last = store.last_time(epic)
+            missing = seed if last is None else int((time.time() * 1000 - last) // store.ms) + 2
+            missing = min(seed, missing)
+            if missing > 2 or last is None:
+                try:
+                    store.merge_history(epic, self._rest_bars(epic, store.tf, missing))
+                except Exception as exc:
+                    logger.warning("IG history for %s unavailable: %s", epic, exc)
+        if self.stream is not None:
+            try:
+                self.stream.set_epics(epics)
+            except Exception:
+                logger.exception("IG stream subscription failed")
+        self.watched = epics
+        store.save(force=True)
+        return epics
+
+    def keep_up(self):
+        """Every cycle: save streamed candles, refresh watched markets' live
+        status once a minute, restart a stream that has been down 2 minutes."""
+        if getattr(self, "store", None) is None:
+            return
+        self.store.save()
+        if self.watched and time.time() - self._status_at >= 60:
+            self._status_at = time.time()
+            try:
+                self.market_snapshots(self.watched)
+            except Exception as exc:
+                logger.warning("IG market status refresh failed: %s", exc)
+        s = self.stream
+        if s is not None and not s.connected and time.time() - s.status_since > 120:
+            logger.warning("IG stream down for 2 min - reconnecting with a fresh login")
+            try:
+                s.stop()
+                self._login()
+                s.password = f"CST-{self._tokens.get('CST', '')}|XST-{self._tokens.get('X-SECURITY-TOKEN', '')}"
+                s.endpoint = self.ls_endpoint or s.endpoint
+                s.start()
+                s.set_epics(self.watched)
+            except Exception:
+                logger.exception("IG stream reconnect failed")
+            s.status_since = time.time()
+        elif s is None and self.watched:
+            # REST fallback: fetch only the candles that closed since the last call
+            for epic in self.watched:
+                last = self.store.last_time(epic)
+                if last is not None and time.time() * 1000 - last >= 2 * self.store.ms:
+                    n = min(int((time.time() * 1000 - last) // self.store.ms) + 1, 50)
+                    try:
+                        self.store.merge_history(epic, self._rest_bars(epic, self.store.tf, n))
+                    except Exception as exc:
+                        logger.debug("IG catch-up for %s failed: %s", epic, exc)
+
+    def market_snapshots(self, epics: list[str]) -> dict[str, dict]:
+        """Live status and prices, 50 markets per request (no history
+        allowance used)."""
+        out = {}
+        for i in range(0, len(epics), 50):
+            chunk = epics[i:i + 50]
+            data = self._request("GET", "/markets", 2, params={"epics": ",".join(chunk), "filter": "SNAPSHOT_ONLY"})
+            for pos, md in enumerate(data.get("marketDetails") or []):
+                epic = ((md.get("instrument") or {}).get("epic")) or (chunk[pos] if pos < len(chunk) else None)
+                snap = md.get("snapshot") or {}
+                if not epic:
+                    continue
+                out[epic] = {"status": snap.get("marketStatus"), "bid": _f(snap.get("bid")),
+                             "offer": _f(snap.get("offer")), "high": _f(snap.get("high")),
+                             "low": _f(snap.get("low")), "change_pct": _f(snap.get("percentageChange")),
+                             "ts": time.time()}
+        if hasattr(self, "status"):
+            self.status.update(out)
+        return out
+
+    NAV_KEYWORDS = {"forex": ("forex", "currenc", " fx"), "indices": ("indices", "index"),
+                    "commodities": ("commodit", "metal", "energ"), "crypto": ("crypto", "bitcoin")}
+    NAV_SKIP = ("weekend", "option", "binary", "sprint", "knock", "barrier", "bungee", "future", "forward")
+
+    def discover_markets(self, classes: list[str], max_nodes: int = 120, delay_s: float = 2.1,
+                         progress=None) -> list[dict]:
+        """Browse IG's market navigation for these asset classes. Keeps the
+        markets tradeable on this account type (expiry "-" for CFDs). Slow on
+        purpose: IG allows 30 such requests a minute per account."""
+        found: dict[str, dict] = {}
+        top = self._request("GET", "/marketnavigation", 1).get("nodes") or []
+        queue = []
+        for node in top:
+            name = " " + str(node.get("name") or "").lower()
+            if any(s in name for s in self.NAV_SKIP):
+                continue
+            # most specific first: "Cryptocurrency" must not count as forex ("currenc")
+            cls = next((c for c in ("crypto", "forex", "indices", "commodities")
+                        if any(k in name for k in self.NAV_KEYWORDS[c])), None)
+            if cls in classes:
+                queue.append((node.get("id"), cls, 0))
+        visited = 0
+        while queue and visited < max_nodes:
+            node_id, cls, depth = queue.pop(0)
+            if delay_s:
+                time.sleep(delay_s)
+            try:
+                data = self._request("GET", f"/marketnavigation/{node_id}", 1)
+            except BrokerError as exc:
+                logger.warning("IG navigation node %s: %s", node_id, exc)
+                continue
+            visited += 1
+            for m in data.get("markets") or []:
+                epic = m.get("epic")
+                itype = str(m.get("instrumentType") or "")
+                if not epic or epic in found or str(m.get("expiry") or "-") != self.expiry:
+                    continue
+                if itype.startswith(("BINARY", "BUNGEE", "KNOCKOUTS", "OPT_", "SPRINT")):
+                    continue
+                found[epic] = {"epic": epic, "name": m.get("instrumentName") or epic,
+                               "class": ig_hours.classify(itype, epic, cls), "instrument_type": itype}
+            if depth < 3:
+                for child in data.get("nodes") or []:
+                    name = str(child.get("name") or "").lower()
+                    if not any(s in name for s in self.NAV_SKIP):
+                        queue.append((child.get("id"), cls, depth + 1))
+            if progress:
+                progress(visited, len(found))
+        return list(found.values())
+
+    def _class(self, symbol: str) -> str:
+        cls = getattr(self, "classes", {}).get(symbol) or ig_hours.classify(None, symbol)
+        return cls or "indices"
+
+    def symbol_open(self, symbol: str, now=None) -> bool:
+        """Open for new entries: its market's hours, and IG's live status
+        when known (TRADEABLE)."""
+        if not ig_hours.is_open(self._class(symbol), now):
+            return False
+        st = getattr(self, "status", {}).get(symbol)
+        if st and st.get("status") and time.time() - st.get("ts", 0) < 600:
+            return st["status"] == "TRADEABLE"
+        return True
+
+    def session_minutes_for(self, symbol: str, now=None):
+        return ig_hours.session_minutes(self._class(symbol), now)
+
+    def any_open(self, now=None) -> bool:
+        classes = (getattr(self, "atc", {}) or {}).get("markets") or list(ig_hours.CLASSES)
+        return any(ig_hours.is_open(c, now) for c in classes)
+
+    def next_open(self, now=None):
+        classes = (getattr(self, "atc", {}) or {}).get("markets") or list(ig_hours.CLASSES)
+        opens = [ig_hours.next_open(c, now) for c in classes]
+        opens = [o for o in opens if o is not None]
+        return min(opens) if opens else None
+
+    def stream_summary(self) -> dict:
+        s = getattr(self, "stream", None)
+        return {"streaming": s.summary() if s is not None else None,
+                "watched": len(getattr(self, "watched", []) or []),
+                "allowance": getattr(self, "allowance", None),
+                "candles": "stream" if s is not None else "history"}
 
     # ---- orders -----------------------------------------------------
     def _deal(self, body: dict) -> str:
