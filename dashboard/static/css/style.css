@@ -1834,3 +1834,7 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .sc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; font-size: .85rem; }
 .sc-list li { overflow-wrap: anywhere; }
 .sc-list .pos { color: var(--accent-green, #22c55e); } .sc-list .neg { color: var(--accent-red, #ef4444); }
+
+/* IG around the clock */
+.ig24-status { margin: 4px 0 10px; font-size: .82rem; line-height: 1.5; }
+.scr-table tr.scr-out td { opacity: .6; }

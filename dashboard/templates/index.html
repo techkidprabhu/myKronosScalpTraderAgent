@@ -371,11 +371,12 @@
 
       <section class="cc-card" id="scr-card" aria-label="Screener ranking" hidden>
         <div class="cc-card-head">
-          <h2>Stock ranking <span class="cc-muted" id="scr-mode"></span></h2>
+          <h2><span id="scr-title">Stock ranking</span> <span class="cc-muted" id="scr-mode"></span></h2>
           <span class="cc-muted" id="scr-sub"></span>
         </div>
+        <div class="cc-muted ig24-status" id="scr-stream" hidden></div>
         <div class="scr-wrap"><table class="cc-mini-table scr-table">
-          <thead><tr>
+          <thead id="scr-head"><tr>
             <th>#</th><th>Symbol</th>
             <th title="Weighted blend of the three readings, 0 to 100">Score</th>
             <th title="Return over the lookback minus the benchmark's return">Rel. strength</th>
@@ -4262,11 +4263,63 @@
     const SOURCE_LABELS = { top_gainers: "Top gainers", top_losers: "Top losers", hot_list: "Heat list",
                             movers_5min: "5-min movers", short_selling: "Short sales", candidate_symbols: "Your list" };
 
+    let SCR_HEAD_DEFAULT = null;
+    const IG_CLASS = { forex: "Forex", indices: "Index", commodities: "Commodity", crypto: "Crypto" };
+    function renderIG24(r, live) {
+      const head = document.getElementById("scr-head");
+      if (!SCR_HEAD_DEFAULT) SCR_HEAD_DEFAULT = head.innerHTML;
+      head.innerHTML = `<tr><th>#</th><th>Market</th><th>Type</th>
+        <th title="How much it moves for what it costs (range / spread), and how far it has moved today. 0 to 100">Score</th>
+        <th title="Bid-offer spread as % of price - the cost of a round trip">Spread</th>
+        <th title="Today's high - low as % of price">Range</th><th>Today</th><th>Status</th><th>Streamed</th></tr>`;
+      const num = (v, dp) => v === null || v === undefined ? "–" : Number(v).toFixed(dp);
+      const signed = v => v === null || v === undefined ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2) + "%";
+      const classes = (r.classes || []).map(c => IG_CLASS[c] || c).join(", ");
+      document.getElementById("scr-title").textContent = "24-hour markets";
+      document.getElementById("scr-mode").textContent = `· IG ${classes}`;
+      const n = (r.candidates || []).filter(c => c.picked).length;
+      const disc = r.discovering ? ` · finding IG's markets: ${r.discovering.nodes} pages read, ${r.discovering.markets} markets so far` : "";
+      document.getElementById("scr-sub").textContent =
+        `${r.universe} markets · ${n} streamed and scanned (max ${r.top_n}) · ${r.timeframe} candles · updated ${fmtTime(r.updated)}${disc}`;
+      const s = (live && live.streaming) || (r.stream && r.stream.streaming);
+      const a = (live && live.allowance) || (r.stream && r.stream.allowance);
+      const parts = [];
+      if (s) parts.push(`Live stream: <b>${/^CONNECTED/.test(s.status) ? "connected" : esc(String(s.status).toLowerCase())}</b>, ${s.subscriptions} of ${s.max} markets` +
+                        ((s.stale || []).length ? ` · no ticks for 5 min: ${esc(s.stale.slice(0, 4).join(", "))}` : ""));
+      else parts.push(`Candles from IG's price history (streaming off - install <span class="mono">lightstreamer-client-lib</span>)`);
+      if (a && a.total) parts.push(`History allowance ${Number(a.remaining).toLocaleString()} of ${Number(a.total).toLocaleString()} points left` +
+                                   (a.resets_in_s ? `, resets in ${Math.round(a.resets_in_s / 3600)} h` : ""));
+      const st = document.getElementById("scr-stream");
+      st.innerHTML = parts.join(" · ");
+      st.hidden = false;
+      document.getElementById("scr-body").innerHTML = (r.candidates || []).map((c, i) => `
+        <tr class="${c.picked ? "scr-picked" : ""}${c.excluded ? " scr-out" : ""}">
+          <td class="cc-muted">${i + 1}</td>
+          <td><span class="mono">${esc(c.name || c.symbol)}</span><div class="cc-muted mono" style="font-size:11px">${esc(c.symbol)}</div></td>
+          <td>${esc(IG_CLASS[c.class] || c.class || "–")}</td>
+          <td>${c.score === undefined || c.score === null ? "–" : `<div class="scr-score"><span class="mono">${num(c.score, 0)}</span><span class="scr-bar"><i style="width:${Math.max(0, Math.min(100, c.score))}%"></i></span></div>`}</td>
+          <td class="mono">${num(c.spread_pct, 3)}%</td>
+          <td class="mono">${num(c.range_pct, 2)}%</td>
+          <td class="mono ${c.change_pct > 0 ? "cc-pos" : c.change_pct < 0 ? "cc-neg" : ""}">${signed(c.change_pct)}</td>
+          <td>${c.excluded ? `<span class="cc-muted">${esc(c.excluded)}</span>` : "Open"}</td>
+          <td>${c.picked ? "Yes" : '<span class="cc-muted">No</span>'}</td>
+        </tr>`).join("") || `<tr><td colspan="9" class="cc-empty">${r.discovering ? "Finding IG's markets - this takes a few minutes the first time." : "No markets yet."}</td></tr>`;
+      document.querySelector("#scr-card .scr-table").classList.remove("scr-noscore");
+      const f = r.filters || {};
+      document.getElementById("scr-note").textContent =
+        `A market is scanned when IG says it is tradeable, its hours are open, its spread is at most ${f.max_spread_pct}% (crypto ${f.crypto_max_spread_pct}%) and it has moved at least ${f.min_range_pct}% today. ` +
+        "Each trade is closed before its own market's daily or weekend close. The score only chooses which markets are scanned; patterns, Kronos (or your skill file) and the risk rules decide trades.";
+    }
+
     async function loadScreenerReport() {
       const card = document.getElementById("scr-card");
       try {
         const d = await (await fetch("/api/screener")).json();
         const r = d.report;
+        if (r && r.mode === "ig24") { renderIG24(r, d.ig_stream); card.hidden = false; return; }
+        document.getElementById("scr-title").textContent = "Stock ranking";
+        document.getElementById("scr-stream").hidden = true;
+        if (SCR_HEAD_DEFAULT) document.getElementById("scr-head").innerHTML = SCR_HEAD_DEFAULT;
         const hasSources = r && r.sources && r.sources.length;
         if (!r || !r.candidates || !r.candidates.length || (r.mode === "disabled" && !hasSources)) { card.hidden = true; return; }
         const num = (v, dp = 1, suffix = "") => v === null || v === undefined ? "–" : Number(v).toFixed(dp) + suffix;

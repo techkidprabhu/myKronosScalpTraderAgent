@@ -15,6 +15,31 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added
+- **IG around the clock** (broker market `IG24`): a 24-hour screener for IG
+  forex, index, commodity and crypto CFDs.
+  - Markets are found by browsing IG's market navigation in the background
+    (cached a day in `data/ig_universe.json`), ranked every 15 min from price
+    snapshots (status, spread, today's range and move - no history allowance
+    used) and the best (max 40, IG's streaming limit) are streamed and scanned.
+    Markets with an open trade are always kept. Crypto has its own spread limit.
+  - **Live candles** from IG's streaming API (`src/brokers/ig_stream.py`,
+    `lightstreamer-client-lib`): 1-minute chart candles folded into the
+    agent's timeframe, saved in `data/ig_candles/`. History is fetched only
+    to seed a new market or fill a gap, so IG's 10,000-points-a-week history
+    allowance lasts; the dashboard reads the saved candles too. Live prices
+    come from the stream. Without the package it falls back to history
+    candles, fetching only new ones.
+  - **Each market on its own hours** (`src/ig_hours.py`, New York time): forex
+    Sun 17:00 - Fri 17:00; indices and commodities Sun 18:00 - Fri 17:00 with a
+    daily 17:00-18:00 break; crypto always. Entries also need IG's live status
+    TRADEABLE. Each trade is closed `flat_by_minutes_before_close` before its
+    own market's next close; the entry window applies per market. The agent
+    sleeps only when every chosen class is closed.
+  - Dashboard: the screener card becomes **24-hour markets** (type, score,
+    spread, range, today's move, status, streamed) with the live-stream and
+    history-allowance status; Config & Risk section *IG around the clock*.
+
 ### Fixed
 - **IG login on accounts that require an encrypted password**
   (`error.public-api.failure.encryption.required`). The agent now fetches IG's

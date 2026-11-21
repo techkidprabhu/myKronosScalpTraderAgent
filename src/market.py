@@ -28,6 +28,9 @@ SESSIONS = {
     # India - NSE / BSE cash market, normal session (holidays: market_calendar NSE list)
     "NSE": (ZoneInfo("Asia/Kolkata"), [(time(9, 15), time(15, 30))]),
     "BSE": (ZoneInfo("Asia/Kolkata"), [(time(9, 15), time(15, 30))]),
+    # IG around the clock: each market keeps its own hours (src/ig_hours.py);
+    # this entry only gives the risk day (New York midnight) and a weekday clock.
+    "IG24": (ZoneInfo("America/New_York"), [(time(0, 0), time(23, 59, 59))]),
 }
 
 # NSE cash-market tick bands (NSE circulars, in force since 15 Apr 2025):

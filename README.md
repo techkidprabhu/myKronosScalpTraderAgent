@@ -175,6 +175,27 @@ the Tiger version. Only the broker integration (`moomoo_client.py`,
    - If OpenD is down, the dashboard retries the connection every 30s
      rather than on every poll.
 
+## IG around the clock (24-hour forex, indices, commodities, crypto)
+
+Set the IG broker's `market: IG24` and keep its screener on (see the `ig:`
+block in `config/config.example.yaml`), then `pip install -r requirements.txt`
+(adds `lightstreamer-client-lib` for IG's live stream).
+
+- **What it scans:** IG's forex, index, commodity and crypto CFDs, found by
+  browsing IG's market menus in the background the first time (a few minutes;
+  cached a day). Every 15 minutes they are ranked from price snapshots and the
+  best (up to 40, IG's streaming limit) are streamed and scanned.
+- **Candles:** built from IG's live stream and saved in `data/ig_candles/`.
+  IG's price history (10,000 points a week) is used only to seed a market the
+  first time - so the allowance lasts. The dashboard shows how much is left.
+- **Hours:** each market keeps its own (New York time): forex Sunday 17:00 to
+  Friday 17:00; indices and commodities Sunday 18:00 to Friday 17:00 with a
+  17:00-18:00 daily break; crypto always open. IG's live status must also be
+  TRADEABLE. Every trade is closed `flat_by_minutes_before_close` minutes
+  before its own market closes.
+- **Size:** `default_quantity` is in contracts. A point is worth a different
+  amount in each market - check them in IG before trading bigger.
+
 ## Multi-broker setup
 
 The Kronos pipeline (patterns → indicator gate → Kronos → risk) is the same
