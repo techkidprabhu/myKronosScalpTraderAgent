@@ -1,5 +1,5 @@
 """
-OpenD execution smoke test for the moomoo swing agent.
+OpenD execution smoke test for the Kronos scalp agent.
 
 Uses the agent's own MoomooClient, so it exercises the exact code path
 the orchestrator uses. Run from the project folder with OpenD running:

@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 SWITCH_PATH = ROOT / "data" / "trading_mode.json"
 MODES = ("kronos", "skill")
-DEFAULT_FILE = "config/PragaPriceActionSkill.md"
+DEFAULT_FILE = "config/ScalpStarterSkill.md"
 
 _cache: dict = {"mtime": None, "path": None, "value": None}
 

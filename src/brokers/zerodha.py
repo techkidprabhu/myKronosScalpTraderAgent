@@ -9,7 +9,7 @@ start with a tiny quantity and watch the first trades.
 .env:
     KITE_API_KEY, KITE_API_SECRET
     KITE_ACCESS_TOKEN        optional - normally written daily by kite_login.py
-    KITE_PRODUCT=CNC         CNC = delivery (swing). MIS would be squared off intraday.
+    KITE_PRODUCT=MIS         MIS = intraday (scalping; Zerodha squares off ~15:20). CNC = delivery.
     KITE_EXIT_MODE=gtt       gtt (default) or order - see below
     KITE_STOP_LIMIT_PCT=0.5  GTT stop: limit price this % beyond the trigger
     KITE_MARKET_PROTECTION=-1  sent with every MARKET / SL-M order (-1 = Zerodha's
@@ -27,19 +27,23 @@ Login: Kite access tokens expire every morning (~06:00 IST). Run
 data/kite_access_token, which this adapter reads. Until then the agent waits,
 retrying, and says so on Telegram.
 
-Exits:
-  * gtt (default): stop and target are single-leg GTT triggers. They live up
+Exits (KITE_EXIT_MODE; default: order with MIS, gtt with CNC - Zerodha
+doesn't accept GTT triggers for intraday MIS positions):
+  * gtt: stop and target are single-leg GTT triggers. They live up
     to a year (no daily re-placing), survive the agent being down, and don't
     block the shares the way two pending sell orders would. When a GTT fires
     Kite places a LIMIT order - the stop's limit sits KITE_STOP_LIMIT_PCT
     beyond the trigger so it fills in a normal move; in a gap the agent's
     software monitor closes at market instead.
   * order: SL-M stop + LIMIT target as DAY orders, re-armed every session by
-    the orchestrator. Kite may reject the second sell order for the same
+    the orchestrator. The scalping default (MIS). Kite may reject the second sell order for the same
     CNC shares; the software monitor then enforces that level.
 
 Symbols: canonical "NSE.RELIANCE" / "BSE.500325"-style tradingsymbols.
-Short selling: not with CNC - keep risk.allow_short false for this broker.
+Short selling: not with CNC. MIS allows intraday shorts; the adapter still
+reports no short selling, so keep risk.allow_short false until it's tested.
+MIS positions are squared off by Zerodha at about 15:20 IST - go flat before
+(risk.flat_by_minutes_before_close: 15 on this broker).
 """
 from __future__ import annotations
 
@@ -91,7 +95,7 @@ class ZerodhaClient(BrokerClient):
         paper_trading=False, stop_orders=True, gtc_orders=True, short_selling=False,
         market_scan=True, markets=("NSE", "BSE"), status="experimental",
         notes="No paper account - start with tiny size. Access token expires daily: run kite_login.py. "
-              "Exits are GTT triggers (CNC delivery).",
+              "Intraday MIS by default, with SL-M / limit exit orders (GTT exits with CNC).",
     )
 
     def __init__(self, market: str | None = None, connect_timeout: float | None = None, kite=None):
@@ -99,8 +103,8 @@ class ZerodhaClient(BrokerClient):
         if self.market not in ("NSE", "BSE"):
             raise BrokerError(f"Zerodha market must be NSE or BSE, got {self.market!r}")
         self.sandbox = False
-        self.product = os.environ.get("KITE_PRODUCT", "CNC").upper()
-        self.exit_mode = os.environ.get("KITE_EXIT_MODE", "gtt").lower()
+        self.product = os.environ.get("KITE_PRODUCT", "MIS").upper()
+        self.exit_mode = os.environ.get("KITE_EXIT_MODE", "order" if self.product == "MIS" else "gtt").lower()
         self.stop_limit_pct = float(os.environ.get("KITE_STOP_LIMIT_PCT", "0.5"))
         self.market_protection = float(os.environ.get("KITE_MARKET_PROTECTION", "-1"))
         self._instruments: dict[str, dict] = {}

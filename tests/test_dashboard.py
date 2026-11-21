@@ -149,7 +149,7 @@ def test_limit_parameter_bounded(client):
 def test_index_route(client):
     rv = client.get("/", headers=AUTH)
     assert rv.status_code == 200
-    assert b"Kronos Swing Agent" in rv.data
+    assert b"Kronos Scalp Agent" in rv.data
     assert b"Strategies & Tactics" in rv.data
     assert b"tab-strategies" in rv.data
     # the playbook covers the whole current pipeline, self-learning included

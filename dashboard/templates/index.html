@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kronos Swing Agent — Trading Terminal</title>
+  <title>Kronos Scalp Agent — Trading Terminal</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/chronos.css">
   <script>
@@ -24,7 +24,7 @@
     <div class="brand-section">
       <div class="brand-logo" aria-hidden="true"><span class="brand-emoji">🐅</span><span class="brand-orb"><i></i></span></div>
       <div>
-        <div class="brand-title">Kronos Swing Agent <span style="color:var(--accent-cyan); font-weight:400; font-size:14px;">Terminal</span></div>
+        <div class="brand-title">Kronos Scalp Agent <span style="color:var(--accent-cyan); font-weight:400; font-size:14px;">Terminal</span></div>
         <div class="brand-sub">Powered by Kronos Offline K-Line Foundation Model (AAAI 2026)</div>
         <div class="ver-wrap">
           <button type="button" class="ver-chip" id="ver-chip" aria-expanded="false" aria-controls="ver-pop" onclick="toggleVersion()" title="Which version is running">
@@ -253,6 +253,24 @@
           <span class="cc-muted" id="tm-file-note"></span>
         </div>
         <div id="tm-setups" class="tm-setups" hidden></div>
+      </section>
+
+      <section class="cc-card sc-card" id="sc-card" aria-labelledby="sc-h">
+        <div class="tm-row">
+          <div class="tm-title"><h2 id="sc-h">Scalp session today</h2>
+            <p class="cc-muted" id="sc-rules">—</p></div>
+        </div>
+        <div class="sc-kpis">
+          <div><span class="cc-muted">Trades</span><b id="sc-trades">—</b><span class="cc-muted" id="sc-wl"></span></div>
+          <div><span class="cc-muted">Win rate</span><b id="sc-win">—</b><span class="cc-muted" id="sc-avg"></span></div>
+          <div><span class="cc-muted">Average R</span><b id="sc-r">—</b><span class="cc-muted">per closed trade</span></div>
+          <div><span class="cc-muted">Average hold</span><b id="sc-hold">—</b><span class="cc-muted" id="sc-rate"></span></div>
+        </div>
+        <div class="sc-exits" id="sc-exits"></div>
+        <div class="sc-cols">
+          <div><h3 class="kr-gates-h">Open scalps</h3><ul class="sc-list" id="sc-open"><li class="cc-muted">None</li></ul></div>
+          <div><h3 class="kr-gates-h">Last closed</h3><ul class="sc-list" id="sc-last"><li class="cc-muted">None yet today</li></ul></div>
+        </div>
       </section>
 
       <section class="cc-card kr-hero" id="kr-hero" aria-labelledby="kr-hero-h">
@@ -887,7 +905,7 @@
     <div id="tab-strategies" class="tab-panel">
       <section class="strategy-hero" aria-labelledby="st-title">
         <div>
-          <h2 class="strategy-hero-title" id="st-title">How the agent trades, and how it learns</h2>
+          <h2 class="strategy-hero-title" id="st-title">How the scalp agent trades, and how it learns</h2>
           <p class="strategy-hero-sub">Every broker you enable runs the same pipeline on each newly closed candle. A signal must pass every step in order; any step can stop it, and none can be skipped. The <b>Who decides trades</b> switch on the Command Center can hand steps 3 to 6 to a skill file instead of Kronos (card 6b); <span data-sv="tm_now">—</span>. After the markets close, the self-learning loop can train a new Kronos model on what the agent saw. A new model never trades until you choose it. The values on this page are your current settings for the broker selected at the top.</p>
         </div>
         <div class="st-flows">
@@ -1120,8 +1138,14 @@
               <div class="st-sub">Your written method opens and closes the trades</div></div>
             <span class="strat-tag amber">Replaces 3–6</span>
           </div>
-          <p class="strat-desc">The <b>Who decides trades</b> switch on the Command Center hands entries and exits to a skill file such as PragaPriceActionSkill.md. The file's settings block picks a built-in price-action engine and its numbers. Same chart, same decision every time. Long only.</p>
-          <div class="strat-section-title">How it works (praga_price_action)</div>
+          <p class="strat-desc">The <b>Who decides trades</b> switch on the Command Center hands entries and exits to a skill file. The file's settings block picks a built-in engine and its numbers. Same chart, same decision every time. Two engines: <b>scalp_vwap_orb</b> (the starter scalp method in ScalpStarterSkill.md, long and short) and <b>praga_price_action</b> (long only).</p>
+          <div class="strat-section-title">scalp_vwap_orb (ScalpStarterSkill.md)</div>
+          <ul class="strat-logic-list st-steps">
+            <li>Opening-range breakout: the first close beyond the first 15 minutes' high or low, on the same side of VWAP, on 1.5x volume, in the first 90 minutes. Stop at the middle of the range.</li>
+            <li>VWAP pullback: in a 9/20 EMA trend on the right side of VWAP, price touches VWAP or the 9 EMA and the next candle closes back beyond the 9 EMA. Stop beyond the pull-back.</li>
+            <li>Entry: a limit at the signal close. Target 1.5x the risk. Exit early on a close back across VWAP or after 15 candles.</li>
+          </ul>
+          <div class="strat-section-title">praga_price_action (PragaPriceActionSkill.md)</div>
           <ul class="strat-logic-list st-steps">
             <li>Setup: a bullish engulfing at a swing low, then a higher swing low, then a candle closing above the engulfing (the breakout).</li>
             <li>Entry: a resting limit buy for the retest, at the engulfing's red candle open, or its high when its upper wick is longer than its body. It's placed a few candles after the breakout, and cancelled if a close falls below the stop or the wait runs out.</li>
@@ -1138,8 +1162,8 @@
           <div class="strat-meta-box">
             <div class="strat-meta-row"><span class="strat-meta-label">Deciding trades</span><span class="strat-meta-val" data-sv="tm_mode">—</span></div>
             <div class="strat-meta-row"><span class="strat-meta-label">Skill file</span><span class="strat-meta-val" data-sv="tm_file">—</span></div>
-            <div class="strat-meta-row"><span class="strat-meta-label">Swing size</span><span class="strat-meta-val" data-sv="tm_swing">—</span></div>
-            <div class="strat-meta-row"><span class="strat-meta-label">Retest order</span><span class="strat-meta-val" data-sv="tm_retest">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Setups</span><span class="strat-meta-val" data-sv="tm_swing">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Entry order</span><span class="strat-meta-val" data-sv="tm_retest">—</span></div>
             <div class="strat-meta-row"><span class="strat-meta-label">Minimum quality</span><span class="strat-meta-val" data-sv="tm_quality">—</span></div>
             <div class="strat-meta-row"><span class="strat-meta-label">Stop / target</span><span class="strat-meta-val" data-sv="tm_levels">—</span></div>
             <div class="strat-meta-row"><span class="strat-meta-label">Exits</span><span class="strat-meta-val" data-sv="tm_exits">—</span></div>
@@ -1232,7 +1256,9 @@
             <li>Intraday mode: every agent trade is closed a set number of minutes before the close, win or lose, and anything left from yesterday is closed at the open.</li>
             <li>Your holdings: positions the agent didn't open are shown but never sold or traded by it.</li>
             <li>A position the broker no longer holds is marked closed instead of being watched forever.</li>
-            <li>Skill-file trades (card 6b) are also closed by the skill's exits: a bearish engulfing close, or the end of the trend. The trailing stop is off for them unless the skill file turns it on.</li>
+            <li>Skill-file trades (card 6b) are also closed by the skill's own exits. The trailing stop applies to them only if the skill file turns it on.</li>
+            <li>Scalp time stop: a trade that hits neither its stop nor its target within the set minutes is closed at the market.</li>
+            <li>Break-even: once a trade is up by the set multiple of what it risked (R), its stop moves to the entry.</li>
           </ul>
           <div class="strat-section-title">Your settings now</div>
           <div class="strat-meta-box">
@@ -1240,13 +1266,15 @@
             <div class="strat-meta-row"><span class="strat-meta-label">Starts after</span><span class="strat-meta-val" data-sv="t_trigger">—</span></div>
             <div class="strat-meta-row"><span class="strat-meta-label">Trails by</span><span class="strat-meta-val" data-sv="t_dist">—</span></div>
             <div class="strat-meta-row"><span class="strat-meta-label">Holding style</span><span class="strat-meta-val" data-sv="t_flat">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Time stop</span><span class="strat-meta-val" data-sv="t_timestop">—</span></div>
+            <div class="strat-meta-row"><span class="strat-meta-label">Break-even stop</span><span class="strat-meta-val" data-sv="t_be">—</span></div>
             <div class="strat-meta-row"><span class="strat-meta-label">Your own holdings</span><span class="strat-meta-val" data-sv="t_holdings">—</span></div>
           </div>
           <div class="strat-section-title">Where it lives</div>
           <div class="st-files">config.yaml: <b>trailing_stop:</b>, <b>risk.flat_by_minutes_before_close</b>, <b>unmanaged_positions:</b><br>Code: src/trailing_stop.py, src/orchestrator.py · Seen on: Positions &amp; Trailing Stop</div>
           <div class="strat-upgrade-box">
             <div class="strat-upgrade-title">How to tune it</div>
-            <div class="strat-upgrade-body">With a % stop and target, use <span class="strat-upgrade-code">trailing_stop.trigger_pct</span> and <span class="strat-upgrade-code">trail_pct</span> (e.g. 0.5 and 0.4) so the trail behaves the same on cheap and expensive stocks; <span class="strat-upgrade-code">use_atr: true</span> scales it with volatility instead. Leave <span class="strat-upgrade-code">flat_by_minutes_before_close</span> empty for overnight swing trades.</div>
+            <div class="strat-upgrade-body">With a % stop and target, use <span class="strat-upgrade-code">trailing_stop.trigger_pct</span> and <span class="strat-upgrade-code">trail_pct</span> (e.g. 0.5 and 0.4) so the trail behaves the same on cheap and expensive stocks; <span class="strat-upgrade-code">use_atr: true</span> scales it with volatility instead. Keep <span class="strat-upgrade-code">flat_by_minutes_before_close</span> set: scalps never hold overnight.</div>
           </div>
         </article>
 
@@ -1393,7 +1421,7 @@
       <section class="strat-card st-map" aria-labelledby="st-map-h">
         <div class="strat-card-header">
           <div><h3 class="strat-card-title" id="st-map-h">Project map</h3>
-            <div class="st-sub">Where everything lives in the moomoo-swing-agent folder</div></div>
+            <div class="st-sub">Where everything lives in the scalp agent's folder</div></div>
         </div>
         <div class="st-map-grid">
           <div>
@@ -2480,7 +2508,7 @@
         const rules = document.getElementById("pc-rules");
         if (rules) {
           const flat = data.flat_by_minutes_before_close;
-          rules.textContent = (flat ? `Intraday only: agent trades are closed ${flat} min before the market close. ` : "Swing mode: agent trades can be held overnight. ") +
+          rules.textContent = (flat ? `Intraday only: agent trades are closed ${flat} min before the market close. ` : "Overnight holds allowed: set a close-before-the-bell time for scalping. ") +
             (holdingsProtected ? "Your own holdings are protected: the agent never sells them." : "Your own holdings can be closed from this screen.");
         }
         const unmanagedOrders = orders.filter(o => !o.managed).length;
@@ -3261,7 +3289,7 @@
         rmField("risk.min_stop_pct", "Min stop distance %", "refuse stops tighter than this, e.g. 0.05") +
         rmField("risk.no_entries_first_minutes", "No entries: first N min", "after the open") +
         rmField("risk.no_entries_last_minutes", "No entries: last N min", "before the close") +
-        rmField("risk.flat_by_minutes_before_close", "Close everything N min before close", "day-trade mode; empty = swing") +
+        rmField("risk.flat_by_minutes_before_close", "Close everything N min before close", "scalps: never overnight; empty = hold") +
         rmField("risk.max_position_pct", "Max position % of account", "") +
         rmField("risk.cash_buffer_pct", "Cash buffer %", "always left in cash") +
         rmField("risk.blocked_symbols", "Never trade", "comma-separated");
@@ -4745,6 +4773,38 @@
     }
     loadTradingMode();
     setInterval(() => { if (!document.hidden) loadTradingMode(); }, 30000);
+
+    // ---- Scalp session today (live, every 15 s)
+    function scEsc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+    function scMoney(n) { return n == null ? "—" : `${n >= 0 ? "+" : "−"}${ccySym()}${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`; }
+    async function loadScalpStats() {
+      let d;
+      try { const r = await fetch("/api/scalp_stats", { cache: "no-store" }); if (!r.ok) return; d = await r.json(); } catch (e) { return; }
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      set("sc-trades", d.trades);
+      set("sc-wl", d.trades ? `${d.wins} won · ${d.losses} lost · ${scMoney(d.pnl)}` : "none closed yet");
+      set("sc-win", d.win_rate == null ? "—" : `${d.win_rate}%`);
+      set("sc-avg", d.avg_win != null || d.avg_loss != null ? `avg win ${scMoney(d.avg_win)} · avg loss ${scMoney(d.avg_loss)}` : "");
+      set("sc-r", d.avg_r == null ? "—" : `${d.avg_r >= 0 ? "+" : ""}${d.avg_r}R`);
+      set("sc-hold", d.avg_hold_min == null ? "—" : `${d.avg_hold_min} min`);
+      set("sc-rate", d.per_hour ? `${d.per_hour} trades an hour` : "");
+      const rules = [d.max_hold_minutes ? `time stop ${d.max_hold_minutes} min` : "no time stop",
+                     d.breakeven_at_r ? `break-even at ${d.breakeven_at_r}R` : "no break-even stop"];
+      set("sc-rules", `Every agent trade: ${rules.join(", ")}. Closed P&L since the market's midnight, for ${BROKER_LABEL}.`);
+      const ex = Object.entries(d.exits || {}).sort((a, b) => b[1] - a[1]);
+      document.getElementById("sc-exits").innerHTML = ex.length
+        ? `<span class="cc-muted">How trades ended:</span> ` + ex.map(([k, v]) => `<span class="tm-pill">${scEsc(k)} ${v}</span>`).join("") : "";
+      document.getElementById("sc-open").innerHTML = (d.open || []).length ? d.open.map(o =>
+        `<li><b>${scEsc(o.symbol)}</b> ${o.direction === "SELL" ? "short" : "long"} @ ${scEsc(o.entry)} · ${o.age_min} min` +
+        `${d.max_hold_minutes ? ` of ${d.max_hold_minutes}` : ""}${o.breakeven ? ' <span class="tm-pill tm-ready">break-even</span>' : ""}</li>`).join("")
+        : '<li class="cc-muted">None</li>';
+      document.getElementById("sc-last").innerHTML = (d.last || []).length ? d.last.map(x =>
+        `<li><b>${scEsc(x.symbol)}</b> <span class="${x.pnl >= 0 ? "pos" : "neg"}">${scMoney(x.pnl)}</span>` +
+        `${x.r != null ? ` (${x.r >= 0 ? "+" : ""}${x.r}R)` : ""} · ${scEsc(x.reason)}${x.hold_min != null ? ` · ${x.hold_min} min` : ""}</li>`).join("")
+        : '<li class="cc-muted">None yet today</li>';
+    }
+    loadScalpStats();
+    setInterval(() => { if (!document.hidden) loadScalpStats(); }, 15000);
    // on its own clock, not only when other data changes
 
     function krBarSec(bars) {
@@ -5294,7 +5354,10 @@
       v.t_trigger = tr.enabled ? (tr.trigger_pct ? `${tr.trigger_pct}% in profit` : `${tr.trigger_points ?? "–"} ${CCY} in profit`) : "—";
       v.t_dist = tr.enabled ? (tr.use_atr ? `${tr.atr_multiplier || 3} × ATR behind the best price`
         : tr.trail_pct ? `${tr.trail_pct}% behind the best price` : `${tr.trail_distance ?? "–"} ${CCY} behind the best price`) : "—";
-      v.t_flat = isSet(r.flat_by_minutes_before_close) ? `Intraday: everything closed ${r.flat_by_minutes_before_close} min before the close` : "Swing: trades can stay open overnight";
+      const sc = cfg.scalp || {};
+      v.t_timestop = isSet(sc.max_hold_minutes) ? `Close after ${sc.max_hold_minutes} min` : "Off";
+      v.t_be = isSet(sc.breakeven_at_r) ? `At ${sc.breakeven_at_r}R in profit, stop to the entry${sc.breakeven_offset_pct ? ` +${sc.breakeven_offset_pct}%` : ""}` : "Off";
+      v.t_flat = isSet(r.flat_by_minutes_before_close) ? `Intraday: everything closed ${r.flat_by_minutes_before_close} min before the close` : "Overnight holds allowed (not recommended for scalps)";
       const um = cfg.unmanaged_positions || {};
       v.t_holdings = `Never sold by the agent${um.mode === "off" ? "" : "; alerts on new ones"}${um.allow_manual_close ? "; Close button shown" : ""}`;
 
@@ -5343,7 +5406,15 @@
         v.k_deciding = sk ? `Skill file (${fname}): Kronos is not called` : "Kronos";
         v.tm_now = sk ? `right now ${fname} is deciding` : "right now Kronos is deciding";
         v.tm_file = fname + (s ? ` (${s.strategy})` : (tm.problems || []).length ? `: ${tm.problems[0]}` : "");
-        if (s) {
+        if (s && s.strategy === "scalp_vwap_orb") {
+          const setups = { both: "ORB + VWAP pullback", orb: "ORB only", pullback: "VWAP pullback only" }[s.setups] || s.setups;
+          v.tm_swing = `${setups}; ${s.sides === "both" ? "long and short" : s.sides + " only"}; ORB ${s.orb_minutes} min, signals for ${s.orb_window_minutes} min`;
+          v.tm_retest = `limit at the signal close, cancelled after ${plural(s.max_wait_candles, "candle")}`;
+          v.tm_quality = `${s.min_quality} of 1 (volume ≥ ${s.volume_mult}x to signal)`;
+          v.tm_levels = `${s.orb_stop === "mid" ? "ORB: mid of the range" : "ORB: beyond the breakout candle"}, pullback: beyond its extreme / ${s.target_r}R`;
+          v.tm_exits = [s.exit_on_vwap_cross ? "close back across VWAP" : "", s.max_hold_candles ? `after ${s.max_hold_candles} candles` : "",
+                        s.use_trailing_stop ? "trailing stop" : ""].filter(Boolean).join(", ") || "stop and target only";
+        } else if (s) {
           v.tm_swing = `${s.swing_candles} candles each side${s.require_second_low ? "; waits for a higher swing low" : ""}`;
           v.tm_retest = `placed ${plural(s.min_retest_candles, "candle")} after the breakout, cancelled after ${s.max_wait_candles}`;
           v.tm_quality = `${s.min_quality} of 2`;

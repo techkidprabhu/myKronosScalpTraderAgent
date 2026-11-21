@@ -1,23 +1,44 @@
-# moomoo Swing Trading Agent
+# Kronos Scalp Trading Agent
 
-Same architecture as the Tiger and Zerodha agents, retargeted at the
-[moomoo OpenAPI](https://openapi.moomoo.com/moomoo-api-doc/en/intro/intro.html)
-(`moomoo-api` Python SDK talking to the local **OpenD** gateway).
-Deterministic candlestick pattern detection triggers a confirmation
-pass from a local Kronos foundation model, gated by hard-coded risk
-rules the model cannot override. Every decision is logged to SQLite,
-reported via Telegram, and shown in a web dashboard.
+A scalping version of the Kronos swing agent (`myKronosSwingTraderAgent`):
+the same architecture, brokers, dashboard and offline Kronos model, retuned
+for short, quick trades on 1-3 minute candles.
 
-Supported markets per moomoo broker entry: **US** (default), **HK**, **SG**,
-**CN** A-shares.
+**What is different from the swing agent**
 
-**Multi-broker:** one agent process can trade several brokers at once -
-moomoo, Tiger (ported from tiger-swing-agent), and experimentally IG,
-Zerodha Kite and Angel One (NSE/BSE) - each
-with its own settings overrides, audit DB, risk state and market calendar,
-all sharing the same offline Kronos model. See
-[Multi-broker setup](#multi-broker-setup). With no `brokers:` section the
-agent runs moomoo alone, exactly as before.
+| | Swing agent | Scalp agent |
+|---|---|---|
+| Candles | DAY / MIN_5 | **MIN_1** (MIN_3 works too) |
+| Kronos horizon | 6 candles | **3 candles** |
+| Stop / target | % or points | **1 ATR stop, 1.5R target** |
+| Time stop | - | **closed after 15 min** if neither stop nor target hit (`scalp.max_hold_minutes`) |
+| Break-even stop | - | **stop moves to the entry at 1R** (`scalp.breakeven_at_r`) |
+| Open trades checked | every 20 s | **every 5 s**, candles scanned every 15 s |
+| Overnight | allowed | **never**: flat 10 min before the close |
+| Trades a day | a few | **up to 20**, 5 min cooldown per stock |
+| Skill engine | Praga price action (long) | **scalp_vwap_orb**: ORB + VWAP pullback, long and short (`config/ScalpStarterSkill.md`, a starter to replace with your own rules); Praga still available |
+| Zerodha / Angel One | CNC / DELIVERY | **MIS / INTRADAY** |
+| Dashboard | port 5000 | **port 5010**, plus a live *Scalp session today* panel |
+
+Everything else - multi-broker (moomoo, Zerodha + Angel One, IG, Tiger),
+Kronos confirmation, the *Who decides trades* switch (Kronos or a skill
+file), risk limits, self-learning (fine-tuning), the GPU training kit and
+saved model versions - works exactly as in the swing agent.
+
+**Run it beside the swing agent.** Clone it into its own folder (e.g.
+`~/mySwingTraders/kronos-scalp-agent`) with its own `config/config.yaml`,
+`.env` and `data/`. Both agents can share one moomoo OpenD. Copy
+`vendor/Kronos` (and `models/` if you want your fine-tuned runs) from the
+swing folder instead of downloading again. The dashboard starts on port
+5010, so both dashboards run together.
+
+> **One account, two agents:** the scalp agent never trades a symbol the
+> account already holds (the swing agent's positions count as your
+> holdings), but both draw on the same buying power and both agents' daily
+> limits are counted separately. A separate (or paper) account for scalping
+> is safer.
+
+Below is the shared architecture, inherited from the swing agent.
 
 **Version & history:** see [CHANGELOG.md](CHANGELOG.md) for every feature and
 fix, and [docs/VERSIONING.md](docs/VERSIONING.md) for the branch / commit /

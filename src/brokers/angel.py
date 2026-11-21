@@ -8,7 +8,7 @@ with a tiny quantity and watch the first trades.
 
 .env:
     ANGEL_API_KEY, ANGEL_CLIENT_CODE, ANGEL_MPIN, ANGEL_TOTP_SECRET
-    ANGEL_PRODUCT=DELIVERY   DELIVERY = swing holding (INTRADAY would be squared off)
+    ANGEL_PRODUCT=INTRADAY   INTRADAY = scalping (squared off by Angel One before the close). DELIVERY = holding.
     ANGEL_LIMIT_PCT=0.5      buffer for "marketable" limit orders - see below
 
 Exchange rules for API orders (SEBI retail-algo framework, since 1 Apr 2026):
@@ -108,7 +108,7 @@ class AngelClient(BrokerClient):
         if self.market not in ("NSE", "BSE"):
             raise BrokerError(f"Angel market must be NSE or BSE, got {self.market!r}")
         self.sandbox = False
-        self.product = os.environ.get("ANGEL_PRODUCT", "DELIVERY").upper()
+        self.product = os.environ.get("ANGEL_PRODUCT", "INTRADAY").upper()
         self.limit_pct = float(os.environ.get("ANGEL_LIMIT_PCT", "0.5"))
         self.account = os.environ.get("ANGEL_CLIENT_CODE", "")
         self._scrip: dict[str, dict] = {}

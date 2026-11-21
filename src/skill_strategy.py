@@ -42,7 +42,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-ENGINES = ("praga_price_action",)
+ENGINES = ("praga_price_action", "scalp_vwap_orb")
 
 
 @dataclass
@@ -101,8 +101,10 @@ def parse(text: str) -> tuple[StrategySettings | None, list[str]]:
     engine = str(block.get("strategy") or "").strip().lower()
     if engine not in ENGINES:
         return None, [f"Unknown strategy {engine!r}; the agent knows: {', '.join(ENGINES)}"]
-    s = StrategySettings()
-    types = {f.name: f.type for f in fields(StrategySettings)}
+    from src.scalp_engine import ScalpSettings
+    cls = ScalpSettings if engine == "scalp_vwap_orb" else StrategySettings
+    s = cls()
+    types = {f.name: f.type for f in fields(cls)}
     for key, val in block.items():
         k = str(key).strip().lower()
         if k == "strategy":
@@ -125,6 +127,15 @@ def parse(text: str) -> tuple[StrategySettings | None, list[str]]:
             continue
         setattr(s, k, v)
     s.strategy = engine
+    if engine == "scalp_vwap_orb":
+        for name, allowed in (("setups", ("both", "orb", "pullback")), ("sides", ("both", "long", "short")),
+                              ("orb_stop", ("mid", "candle"))):
+            if getattr(s, name) not in allowed:
+                problems.append(f"{name} {getattr(s, name)!r} unknown - using {allowed[0]}")
+                setattr(s, name, allowed[0])
+        if s.max_wait_candles < 1:
+            s.max_wait_candles = 1
+        return s, problems
     if s.stop_at not in ("breakout_candle", "engulfing_low"):
         problems.append(f"stop_at {s.stop_at!r} unknown - using breakout_candle")
         s.stop_at = "breakout_candle"
@@ -215,6 +226,7 @@ class Setup:
     target: float | None = None
     quality: int = 0
     details: dict = field(default_factory=dict)
+    direction: str = "BUY"
 
     @property
     def ready(self) -> bool:
@@ -222,11 +234,14 @@ class Setup:
 
     def summary(self) -> dict:
         return {"status": self.status, "reason": self.reason, "entry": self.entry, "stop": self.stop,
-                "target": self.target, "quality": self.quality, **self.details}
+                "target": self.target, "quality": self.quality, "direction": self.direction, **self.details}
 
 
-def find_setup(df: pd.DataFrame, s: StrategySettings) -> Setup:
+def find_setup(df: pd.DataFrame, s) -> Setup:
     """The current setup on the closed candles in df (newest last)."""
+    if s.strategy == "scalp_vwap_orb":
+        from src import scalp_engine
+        return scalp_engine.find_setup(df, s, Setup)
     if df is None or len(df) < 2 * s.swing_candles + 4:
         return Setup("none", "not enough candles")
     b = _Bars(df, s)
@@ -349,8 +364,11 @@ class ExitSignal:
     price: float | None = None
 
 
-def exit_signal(df: pd.DataFrame, s: StrategySettings, opened_at: str | None) -> ExitSignal | None:
+def exit_signal(df: pd.DataFrame, s, opened_at: str | None, direction: str = "BUY") -> ExitSignal | None:
     """Exit for an open skill trade, judged on the newest closed candle."""
+    if s.strategy == "scalp_vwap_orb":
+        from src import scalp_engine
+        return scalp_engine.exit_signal(df, s, opened_at, direction, ExitSignal)
     if df is None or len(df) < 3:
         return None
     b = _Bars(df, s)

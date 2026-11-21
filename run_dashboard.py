@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Entry point to launch the moomoo Swing Trading Agent Web GUI Dashboard.
+Entry point to launch the Kronos Scalp Trading Agent web dashboard.
 Usage:
-    python run_dashboard.py --port 5000
+    python run_dashboard.py --port 5010
 """
 from dashboard.app import main
 

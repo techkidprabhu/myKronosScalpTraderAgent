@@ -142,6 +142,18 @@ def kite():
     return ZerodhaClient(market="NSE", kite=FakeKite())
 
 
+@pytest.fixture
+def kite_gtt(monkeypatch):
+    """CNC delivery with GTT exits (the swing setup)."""
+    monkeypatch.setenv("KITE_PRODUCT", "CNC")
+    from src.brokers.zerodha import ZerodhaClient
+    return ZerodhaClient(market="NSE", kite=FakeKite())
+
+
+def test_kite_mis_defaults_to_exit_orders(kite):
+    assert kite.product == "MIS" and kite.exit_mode == "order"
+
+
 def test_kite_bars_prices_and_snapshots(kite):
     bars = kite.get_historical_bars("NSE.RELIANCE", "MIN_5", 6)
     assert len(bars) == 6 and bars["symbol"].iloc[0] == "NSE.RELIANCE"
@@ -164,10 +176,10 @@ def test_kite_positions_holdings_orders_and_account(kite):
                                           "market_val": 5000.0, "power": 50000.0}
 
 
-def test_kite_entry_is_cnc_day_with_instrument_tick(kite):
+def test_kite_entry_is_mis_day_with_instrument_tick(kite):
     kite.create_entry("NSE.RELIANCE", "BUY", 5, entry_limit_price=1402.37)
     o = kite.kite.placed[-1]
-    assert o["product"] == "CNC" and o["validity"] == "DAY" and o["order_type"] == "LIMIT"
+    assert o["product"] == "MIS" and o["validity"] == "DAY" and o["order_type"] == "LIMIT"
     assert o["price"] == 1402.4 and o["tradingsymbol"] == "RELIANCE" and o["exchange"] == "NSE"
     assert "market_protection" not in o                  # LIMIT orders don't carry it
     kite.create_entry("NSE.ITC", "BUY", 10)
@@ -175,43 +187,43 @@ def test_kite_entry_is_cnc_day_with_instrument_tick(kite):
     assert kite.kite.placed[-1]["market_protection"] == -1   # mandatory since 1 Apr 2026
 
 
-def test_kite_exits_are_gtts_with_buffered_stop_limit(kite):
-    assert kite.exit_time_in_force == "GTC"
-    stop_id, target_id = kite.place_exit_orders("NSE.RELIANCE", "SELL", 5, 1380.03, 1430.08)
+def test_kite_exits_are_gtts_with_buffered_stop_limit(kite_gtt):
+    assert kite_gtt.exit_time_in_force == "GTC"
+    stop_id, target_id = kite_gtt.place_exit_orders("NSE.RELIANCE", "SELL", 5, 1380.03, 1430.08)
     assert stop_id.startswith("gtt:") and target_id.startswith("gtt:")
-    stop = kite.kite.gtts[int(stop_id[4:])]["_kw"]
+    stop = kite_gtt.kite.gtts[int(stop_id[4:])]["_kw"]
     assert stop["trigger_type"] == "single" and stop["trigger_values"] == [1380.0]
     assert stop["orders"][0]["price"] == 1373.1 and stop["orders"][0]["transaction_type"] == "SELL"
-    target = kite.kite.gtts[int(target_id[4:])]["_kw"]
+    target = kite_gtt.kite.gtts[int(target_id[4:])]["_kw"]
     assert target["trigger_values"] == [1430.1] and target["orders"][0]["price"] == 1430.1
-    assert {o["id"] for o in kite.get_open_orders()} >= {stop_id, target_id}
+    assert {o["id"] for o in kite_gtt.get_open_orders()} >= {stop_id, target_id}
 
 
-def test_kite_gtt_state_follows_the_order_it_places(kite):
-    stop_id, _ = kite.place_exit_orders("NSE.RELIANCE", "SELL", 5, 1380.0, 1430.0)
+def test_kite_gtt_state_follows_the_order_it_places(kite_gtt):
+    stop_id, _ = kite_gtt.place_exit_orders("NSE.RELIANCE", "SELL", 5, 1380.0, 1430.0)
     tid = int(stop_id[4:])
-    assert kite.get_order_state(stop_id) == {"status": "GTT_ACTIVE", "active": True, "quantity": 5,
+    assert kite_gtt.get_order_state(stop_id) == {"status": "GTT_ACTIVE", "active": True, "quantity": 5,
                                              "filled": 0, "avg_fill_price": None}
-    g = kite.kite.gtts[tid]
+    g = kite_gtt.kite.gtts[tid]
     g["status"] = "triggered"
     g["orders"][0]["result"] = {"order_result": {"order_id": "777", "status": "success"}}
-    kite.kite.history["777"] = [{"status": "OPEN", "quantity": 5, "filled_quantity": 0}]
-    assert kite.get_order_state(stop_id)["active"] is True
-    kite.cancel_order(stop_id)                         # triggered: cancels the working child order
-    assert kite.kite.cancelled == ["777"]
-    kite.kite.history["777"] = [{"status": "COMPLETE", "quantity": 5, "filled_quantity": 5, "average_price": 1379.5}]
-    assert kite.get_order_state(stop_id) == {"status": "COMPLETE", "active": False, "quantity": 5,
+    kite_gtt.kite.history["777"] = [{"status": "OPEN", "quantity": 5, "filled_quantity": 0}]
+    assert kite_gtt.get_order_state(stop_id)["active"] is True
+    kite_gtt.cancel_order(stop_id)                         # triggered: cancels the working child order
+    assert kite_gtt.kite.cancelled == ["777"]
+    kite_gtt.kite.history["777"] = [{"status": "COMPLETE", "quantity": 5, "filled_quantity": 5, "average_price": 1379.5}]
+    assert kite_gtt.get_order_state(stop_id) == {"status": "COMPLETE", "active": False, "quantity": 5,
                                              "filled": 5, "avg_fill_price": 1379.5}
 
 
-def test_kite_cancel_and_modify_gtt(kite):
-    stop_id, target_id = kite.place_exit_orders("NSE.RELIANCE", "SELL", 5, 1380.0, 1430.0)
-    kite.modify_stop_order(stop_id, 1390.04)
-    mod = kite.kite.modified[-1]
+def test_kite_cancel_and_modify_gtt(kite_gtt):
+    stop_id, target_id = kite_gtt.place_exit_orders("NSE.RELIANCE", "SELL", 5, 1380.0, 1430.0)
+    kite_gtt.modify_stop_order(stop_id, 1390.04)
+    mod = kite_gtt.kite.modified[-1]
     assert mod["trigger_values"] == [1390.0] and mod["orders"][0]["price"] == 1383.0   # 1383.05 rounded away from the trigger
-    kite.cancel_order(target_id)
-    assert kite.kite.deleted == [int(target_id[4:])]
-    assert kite.get_order_state(target_id)["active"] is False
+    kite_gtt.cancel_order(target_id)
+    assert kite_gtt.kite.deleted == [int(target_id[4:])]
+    assert kite_gtt.get_order_state(target_id)["active"] is False
 
 
 def test_kite_old_day_order_counts_as_expired(kite):
@@ -335,7 +347,7 @@ def test_angel_positions_holdings_account(angel):
 def test_angel_orders_stop_target_modify_cancel(angel):
     entry = angel.create_entry("NSE.RELIANCE", "BUY", 5, entry_limit_price=1402.37)
     p = angel.api.placed[-1]
-    assert p["producttype"] == "DELIVERY" and p["duration"] == "DAY" and p["price"] == "1402.4"
+    assert p["producttype"] == "INTRADAY" and p["duration"] == "DAY" and p["price"] == "1402.4"
     assert angel.get_order_state(entry)["active"] is True
     stop_id, target_id = angel.place_exit_orders("NSE.RELIANCE", "SELL", 5, 1380.03, 1430.08)
     stop = angel.api.placed[-2]

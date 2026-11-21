@@ -220,11 +220,11 @@ class AuditLog:
         re-anchored to the fill price."""
         self.conn.execute(
             """UPDATE positions SET status='open', quantity=?, entry_price=?, high_water=?,
-                 stop_order_id=?, target_order_id=?,
+                 stop_order_id=?, target_order_id=?, opened_ts=?,
                  initial_stop=COALESCE(?, initial_stop), current_stop=COALESCE(?, current_stop),
                  target=COALESCE(?, target)
                WHERE symbol=? AND status='pending_entry'""",
-            (quantity, fill_price, fill_price, stop_order_id, target_order_id,
+            (quantity, fill_price, fill_price, stop_order_id, target_order_id, time.time(),
              stop_price, stop_price, target_price, symbol),
         )
         self.conn.commit()

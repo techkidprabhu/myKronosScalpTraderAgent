@@ -263,3 +263,21 @@ def test_trading_mode_switch(client, monkeypatch):
     r = client.post("/api/trading_mode", json={"mode": "kronos"}, headers=AUTH)
     assert r.get_json()["mode"] == "kronos"
     trading_mode._cache.update(mtime=None, value=None)
+
+
+def test_scalp_stats(client):
+    import json as _j
+    import sqlite3 as _s
+    import time as _t
+    db = _s.connect(str(client.tmp / "audit.db"))
+    now = _t.time()
+    for pnl, reason, hold in ((40.0, "target", 5), (-20.0, "stop-loss", 3), (10.0, "trailing_stop", 8)):
+        det = {"reason": reason, "entry": 100, "exit": 100.4, "quantity": 50, "initial_stop": 99.6,
+               "opened_ts": now - hold * 60, "closed_ts": now}
+        db.execute("INSERT INTO trade_results (ts, epic, deal_id, pnl, details) VALUES (?,?,?,?,?)",
+                   (now, "US.X", "d", pnl, _j.dumps(det)))
+    db.commit()
+    d = client.get("/api/scalp_stats", headers=AUTH).get_json()
+    assert d["trades"] == 3 and d["wins"] == 2 and d["win_rate"] == 66.7
+    assert d["avg_r"] == round((2 - 1 + 0.5) / 3, 2) and d["avg_hold_min"] == round(16 / 3, 1)
+    assert d["exits"] == {"target": 1, "stop-loss": 1, "trailing stop": 1}
