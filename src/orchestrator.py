@@ -1641,6 +1641,13 @@ class Orchestrator:
 
         if self.screener and awake and now - self._last_screener_run >= self.screener_refresh_seconds:
             self._refresh_symbols_from_screener()
+        elif self.screener and getattr(self, "around_the_clock", False) and not awake and \
+                now - getattr(self, "_last_closed_report", 0.0) >= self.screener_refresh_seconds:
+            # Every chosen market is closed (e.g. the weekend): keep the
+            # dashboard's list current - which markets, and when they reopen -
+            # without scanning anything.
+            self._last_closed_report = now
+            self._refresh_symbols_from_screener()
 
         if phase in ("active", "always") and now - state.get("last_full_poll", 0.0) >= interval:
             for worker in list(self.workers.values()):

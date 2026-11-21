@@ -192,5 +192,7 @@ class IG24Screener:
             "classes": self.cfg["markets"], "universe_updated": self.universe_updated,
             "discovering": self.discovering, "filters": {k: self.cfg[k] for k in ("max_spread_pct", "crypto_max_spread_pct", "min_range_pct")},
             "stream": summary,
+            "next_open": {c: (ig_hours.next_open(c).timestamp() if ig_hours.next_open(c) else None)
+                          for c in self.cfg["markets"]},
             "candidates": cands[:80],
         }
