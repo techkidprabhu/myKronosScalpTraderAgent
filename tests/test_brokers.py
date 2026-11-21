@@ -438,3 +438,45 @@ def test_real_orchestrators_per_broker_share_kronos_but_not_state(tmp_path, monk
     assert o_m.risk_manager.config.lot_size == 1
     assert o_t.reporter.prefix == "[Tiger] " and o_m.reporter.prefix == "[moomoo OpenD] "
     assert o_t.broker_label == "Tiger" and "Tiger" in o_t._label
+
+
+class EncryptingIGHttp(FakeIGHttp):
+    """An IG account that only accepts an RSA-encrypted password."""
+
+    def __init__(self):
+        super().__init__()
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        self.private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    def get(self, url, headers=None, timeout=None):
+        import base64
+        from cryptography.hazmat.primitives import serialization
+        assert url.endswith("/session/encryptionKey") and headers["X-IG-API-KEY"] == "key"
+        der = self.private.public_key().public_bytes(serialization.Encoding.DER,
+                                                     serialization.PublicFormat.SubjectPublicKeyInfo)
+        return FakeResp(200, {"encryptionKey": base64.b64encode(der).decode(), "timeStamp": 1795200000000})
+
+    def post(self, url, headers=None, json=None, timeout=None):
+        self.calls.append(("LOGIN", url, json))
+        if not json.get("encryptedPassword"):
+            return FakeResp(400, {"errorCode": "error.public-api.failure.encryption.required"})
+        return FakeResp(200, {"currentAccountId": "ABC12"}, {"CST": "cst-token", "X-SECURITY-TOKEN": "xst-token"})
+
+
+def test_ig_encrypted_password_login(monkeypatch):
+    import base64
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from src.brokers.ig import IGClient
+    for k, v in {"IG_API_KEY": "key", "IG_USERNAME": "user", "IG_PASSWORD": "s3cret|x"}.items():
+        monkeypatch.setenv(k, v)
+    http = EncryptingIGHttp()
+    ig = IGClient(market="US", session=http)
+    assert ig.account == "ABC12" and ig._tokens["CST"] == "cst-token"
+    sent = http.calls[-1][2]
+    assert sent["encryptedPassword"] is True and sent["identifier"] == "user"
+    plain = http.private.decrypt(base64.b64decode(sent["password"]), padding.PKCS1v15())
+    assert base64.b64decode(plain).decode() == "s3cret|x|1795200000000"
+
+
+def test_ig_plain_login_is_unchanged(ig):
+    assert "encryptedPassword" not in ig.http.calls[0][2]
