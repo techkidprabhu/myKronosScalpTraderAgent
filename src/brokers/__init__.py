@@ -7,7 +7,7 @@ Kronos pipeline need no changes.
 
     adapter     status        notes
     moomoo      ready         OpenD gateway (src/moomoo_client.py)
-    tiger       ready         tigeropen SDK, ported from tiger-swing-agent
+    tiger       ready         tigeropen SDK
     ig          experimental  IG REST API - not yet tested on a real account
     zerodha     experimental  Kite Connect (NSE/BSE), GTT exits - daily login via kite_login.py
     angel       experimental  SmartAPI (NSE/BSE), automatic TOTP login

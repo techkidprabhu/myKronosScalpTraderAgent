@@ -40,6 +40,7 @@ IN_TICKS = [(250.0, 0.01), (1000.0, 0.05), (5000.0, 0.10), (10000.0, 0.50),
 
 BAR_DURATION = {
     "MIN_1": pd.Timedelta(minutes=1),
+    "MIN_3": pd.Timedelta(minutes=3),
     "MIN_5": pd.Timedelta(minutes=5),
     "MIN_15": pd.Timedelta(minutes=15),
     "HOUR_1": pd.Timedelta(hours=1),

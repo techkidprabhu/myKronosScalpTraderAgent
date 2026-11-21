@@ -2,23 +2,23 @@
 
 A scalping version of the Kronos swing agent (`myKronosSwingTraderAgent`):
 the same architecture, brokers, dashboard and offline Kronos model, retuned
-for short, quick trades on 1-3 minute candles.
+for short, quick trades on 3-minute candles.
 
 **What is different from the swing agent**
 
 | | Swing agent | Scalp agent |
 |---|---|---|
-| Candles | DAY / MIN_5 | **MIN_1** (MIN_3 works too) |
-| Kronos horizon | 6 candles | **3 candles** |
+| Candles | DAY / MIN_5 | **MIN_3** (MIN_1 works too) |
+| Kronos horizon | 6 candles | **3 candles** (9 minutes) |
 | Stop / target | % or points | **1 ATR stop, 1.5R target** |
-| Time stop | - | **closed after 15 min** if neither stop nor target hit (`scalp.max_hold_minutes`) |
+| Time stop | - | **closed after 30 min** (10 candles) if neither stop nor target hit (`scalp.max_hold_minutes`) |
 | Break-even stop | - | **stop moves to the entry at 1R** (`scalp.breakeven_at_r`) |
 | Open trades checked | every 20 s | **every 5 s**, candles scanned every 15 s |
 | Overnight | allowed | **never**: flat 10 min before the close |
 | Trades a day | a few | **up to 20**, 5 min cooldown per stock |
-| Skill engine | Praga price action (long) | **scalp_vwap_orb**: ORB + VWAP pullback, long and short (`config/ScalpStarterSkill.md`, a starter to replace with your own rules); Praga still available |
+| Skill engine | Praga price action (long) | **scalp_vwap_orb**: ORB on the first 3-minute candle + VWAP pullback, long and short (`config/ScalpStarterSkill.md`, a starter to replace with your own rules); Praga still available |
 | Zerodha / Angel One | CNC / DELIVERY | **MIS / INTRADAY** |
-| Dashboard | port 5000 | **port 5010**, plus a live *Scalp session today* panel |
+| Dashboard | port 5000 | **port 5010**, plus a live *Scalp session today* panel; market mood on 3-minute candles |
 
 Everything else - multi-broker (moomoo, Zerodha + Angel One, IG, Tiger),
 Kronos confirmation, the *Who decides trades* switch (Kronos or a skill
@@ -276,7 +276,7 @@ one line to `REGISTRY` in `src/brokers/__init__.py`.
 ## Repo layout
 
 ```
-moomoo-swing-agent/
+kronos-scalp-agent/
 ├── main.py                  entry point: one orchestrator per enabled broker
 ├── kite_login.py            daily Zerodha Kite login (saves data/kite_access_token)
 ├── run_dashboard.py         launches the web GUI dashboard (Flask)

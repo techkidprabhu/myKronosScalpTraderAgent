@@ -36,7 +36,7 @@ from src.kronos_indicators import ma_crossover, technical_snapshot
 
 logger = logging.getLogger(__name__)
 
-INTRADAY_TIMEFRAMES = {"MIN_1", "MIN_5", "MIN_15", "HOUR_1"}
+INTRADAY_TIMEFRAMES = {"MIN_1", "MIN_3", "MIN_5", "MIN_15", "HOUR_1"}
 
 
 @dataclass

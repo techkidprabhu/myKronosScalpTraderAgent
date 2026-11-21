@@ -438,6 +438,7 @@
               <select id="chart-tf" class="chart-select" title="Chart-only timeframe. The agent keeps trading on the timeframe in config.yaml.">
                 <option value="">Agent setting</option>
                 <option value="MIN_1">1 min</option>
+                <option value="MIN_3">3 min</option>
                 <option value="MIN_5">5 min</option>
                 <option value="MIN_15">15 min</option>
                 <option value="HOUR_1">1 hour</option>
@@ -1033,7 +1034,7 @@
           <div class="st-files">config.yaml: <b>timeframe</b>, <b>lookback_bars</b>, <b>polling_interval_seconds</b><br>Code: src/patterns.py (<b>scan</b>) · Seen on: Live Terminal markers</div>
           <div class="strat-upgrade-box">
             <div class="strat-upgrade-title">How to tune it</div>
-            <div class="strat-upgrade-body">A shorter timeframe gives more signals and more noise; intraday trading uses MIN_5 or MIN_15. Each broker can have its own <span class="strat-upgrade-code">timeframe</span>. Decisions &amp; Audit Log shows how each pattern has performed.</div>
+            <div class="strat-upgrade-body">A shorter timeframe gives more signals and more noise; scalping uses MIN_3 (or MIN_1). Each broker can have its own <span class="strat-upgrade-code">timeframe</span>. Decisions &amp; Audit Log shows how each pattern has performed.</div>
           </div>
         </article>
 
@@ -1141,9 +1142,9 @@
           <p class="strat-desc">The <b>Who decides trades</b> switch on the Command Center hands entries and exits to a skill file. The file's settings block picks a built-in engine and its numbers. Same chart, same decision every time. Two engines: <b>scalp_vwap_orb</b> (the starter scalp method in ScalpStarterSkill.md, long and short) and <b>praga_price_action</b> (long only).</p>
           <div class="strat-section-title">scalp_vwap_orb (ScalpStarterSkill.md)</div>
           <ul class="strat-logic-list st-steps">
-            <li>Opening-range breakout: the first close beyond the first 15 minutes' high or low, on the same side of VWAP, on 1.5x volume, in the first 90 minutes. Stop at the middle of the range.</li>
+            <li>Opening-range breakout: the first close beyond the first 3-minute candle's high or low, on the same side of VWAP, on 1.5x volume, in the first 90 minutes. Stop at the middle of the range.</li>
             <li>VWAP pullback: in a 9/20 EMA trend on the right side of VWAP, price touches VWAP or the 9 EMA and the next candle closes back beyond the 9 EMA. Stop beyond the pull-back.</li>
-            <li>Entry: a limit at the signal close. Target 1.5x the risk. Exit early on a close back across VWAP or after 15 candles.</li>
+            <li>Entry: a limit at the signal close. Target 1.5x the risk. Exit early on a close back across VWAP or after 10 candles.</li>
           </ul>
           <div class="strat-section-title">praga_price_action (PragaPriceActionSkill.md)</div>
           <ul class="strat-logic-list st-steps">
@@ -1669,7 +1670,7 @@
     let autoRefresh = true;
 
     // Chart view settings (chart only - the agent's own timeframe is untouched)
-    const TF_LABEL = { MIN_1: "1 min", MIN_5: "5 min", MIN_15: "15 min", HOUR_1: "1 hour", HOUR_4: "4 hours", DAY: "1 day" };
+    const TF_LABEL = { MIN_1: "1 min", MIN_3: "3 min", MIN_5: "5 min", MIN_15: "15 min", HOUR_1: "1 hour", HOUR_4: "4 hours", DAY: "1 day" };
     function lsGet(key, fallback) { try { return localStorage.getItem(key) ?? fallback; } catch (e) { return fallback; } }
     function lsSet(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
     let chartTimeframe = lsGet("chartTimeframe", "");          // "" = follow agent config

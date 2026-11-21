@@ -1,13 +1,13 @@
 """
 Starter scalp engine for skill-file trading: `strategy: scalp_vwap_orb`.
 
-A common 1-3 minute scalping method, written as a placeholder until your
+A common 3-minute scalping method, written as a placeholder until your
 own scalp rules replace it. Two setups, long and short, on CLOSED candles of
 the current session only:
 
 Opening-range breakout (ORB)
   The opening range is the high / low of the first `orb_minutes` of the
-  session. A candle that closes beyond it - on the same side of VWAP, with
+  session - by default the first 3-minute candle. A candle that closes beyond it - on the same side of VWAP, with
   volume at least `volume_mult` x the recent average, within
   `orb_window_minutes` of the open - is the signal. Stop at the middle of
   the range (or beyond the breakout candle, `orb_stop: candle`); target
@@ -38,7 +38,7 @@ class ScalpSettings:
     strategy: str = "scalp_vwap_orb"
     setups: str = "both"                # both | orb | pullback
     sides: str = "both"                 # both | long | short
-    orb_minutes: int = 15
+    orb_minutes: int = 3                # 3 = the first 3-minute candle
     orb_window_minutes: int = 90        # ORB signals only this long after the open
     orb_stop: str = "mid"               # mid (of the range) | candle (beyond the breakout candle)
     volume_mult: float = 1.5            # signal candle volume vs the last volume_period candles
@@ -49,7 +49,7 @@ class ScalpSettings:
     stop_buffer_pct: float = 0.02
     target_r: float = 1.5
     max_wait_candles: int = 2           # cancel the entry if not filled after this many candles
-    max_hold_candles: int = 15          # close after this many candles in the trade
+    max_hold_candles: int = 10          # close after this many candles in the trade
     exit_on_vwap_cross: bool = True
     use_trailing_stop: bool = True      # the agent's trailing stop on these trades
     min_quality: int = 0                # 0-1: +1 when volume is 2x the average

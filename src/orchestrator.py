@@ -861,7 +861,7 @@ class SymbolWorker:
         update = self._breakeven(pos, current_price, update)
 
         # Scalp time stop: a trade that hasn't worked within max_hold_minutes
-        # is closed at the market - scalps that sit become swing trades.
+        # is closed at the market - a scalp that sits is not a scalp any more.
         if not exiting and self.max_hold_minutes and pos.get("opened_ts") and \
                 time.time() - float(pos["opened_ts"]) >= float(self.max_hold_minutes) * 60:
             self._software_exit({**pos, "current_stop": update.new_stop},

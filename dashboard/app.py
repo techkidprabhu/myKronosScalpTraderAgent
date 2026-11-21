@@ -2470,7 +2470,7 @@ def main():
     parser.add_argument("--host", default="127.0.0.1",
                         help="Interface to bind (default: this machine only). Prefer an SSH "
                              "tunnel over binding 0.0.0.0 for remote access.")
-    parser.add_argument("--port", type=int, default=5010, help="Port to listen on (5010: runs beside the swing agent on 5000)")
+    parser.add_argument("--port", type=int, default=5010, help="Port to listen on")
     args = parser.parse_args()
 
     try:

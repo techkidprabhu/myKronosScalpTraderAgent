@@ -63,9 +63,9 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent.parent
 TOKEN_FILE = ROOT / "data" / "kite_access_token"
 
-INTERVAL = {"MIN_1": "minute", "MIN_5": "5minute", "MIN_15": "15minute",
+INTERVAL = {"MIN_1": "minute", "MIN_3": "3minute", "MIN_5": "5minute", "MIN_15": "15minute",
             "HOUR_1": "60minute", "HOUR_4": "60minute", "DAY": "day"}
-MAX_DAYS = {"minute": 60, "5minute": 100, "15minute": 200, "60minute": 400, "day": 2000}
+MAX_DAYS = {"minute": 60, "3minute": 100, "5minute": 100, "15minute": 200, "60minute": 400, "day": 2000}
 ACTIVE = {"OPEN", "TRIGGER PENDING", "OPEN PENDING", "VALIDATION PENDING", "PUT ORDER REQ RECEIVED",
           "MODIFY PENDING", "MODIFY VALIDATION PENDING", "AMO REQ RECEIVED"}
 GTT_PREFIX = "gtt:"
