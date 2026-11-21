@@ -336,3 +336,63 @@ def test_history_requests_are_capped_around_the_clock(ig):
     ig.enable_around_the_clock({"seed_bars": 40}, "MIN_3", stream=False)
     ig.get_historical_bars("CS.D.AUDUSD.CFD.IP", "MIN_3", 1500)
     assert [c[1]["max"] for c in ig.http.calls if c[0].startswith("/prices/")] == [40]
+
+
+class NoNavHttp(FakeHttp):
+    """An account where IG answers 404 for /marketnavigation (seen live)."""
+    SEARCH = {
+        "EUR/USD": [{"epic": "CS.D.EURUSD.MINI.IP", "instrumentName": "EUR/USD Mini", "instrumentType": "CURRENCIES", "expiry": "-"},
+                    {"epic": "CS.D.EURUSD.CFD.IP", "instrumentName": "EUR/USD", "instrumentType": "CURRENCIES", "expiry": "-"},
+                    {"epic": "CS.D.EURUSD.TODAY.IP", "instrumentName": "EUR/USD", "instrumentType": "CURRENCIES", "expiry": "DFB"}],
+        "Germany 40": [{"epic": "IX.D.DAX.IFD.IP", "instrumentName": "Germany 40 Cash (€1)", "instrumentType": "INDICES", "expiry": "-"},
+                       {"epic": "IX.D.DAX.BIN.IP", "instrumentName": "Germany 40 Binary", "instrumentType": "BINARY", "expiry": "-"}],
+    }
+
+    def request(self, method, url, headers=None, json=None, params=None, timeout=None):
+        path = url.split("/gateway/deal", 1)[1]
+        if path.startswith("/marketnavigation"):
+            self.calls.append((path, params))
+            return FakeResp(404, "<!doctype html><title>HTTP Status 404 – Not Found</title>")
+        if path == "/markets" and params and "searchTerm" in params:
+            self.calls.append((path, params))
+            return FakeResp(200, {"markets": self.SEARCH.get(params["searchTerm"], [])})
+        return super().request(method, url, headers, json, params, timeout)
+
+
+def test_discovery_falls_back_to_search_when_navigation_404s(monkeypatch, tmp_path):
+    from src.brokers.ig import IGClient
+    for k, v in {"IG_API_KEY": "key", "IG_USERNAME": "u", "IG_PASSWORD": "p"}.items():
+        monkeypatch.setenv(k, v)
+    client = IGClient(market="IG24", session=NoNavHttp())
+    found = client.discover_markets(["forex", "indices"], delay_s=0)
+    assert {m["epic"]: m["class"] for m in found} == {"CS.D.EURUSD.CFD.IP": "forex", "IX.D.DAX.IFD.IP": "indices"}
+    terms = [c[1]["searchTerm"] for c in client.http.calls if c[1] and "searchTerm" in c[1]]
+    assert terms == client.SEARCH_TERMS["forex"] + client.SEARCH_TERMS["indices"]
+
+
+def test_failed_discovery_waits_10_minutes(ig, tmp_path):
+    ig.enable_around_the_clock({}, "MIN_3", stream=False)
+    calls = []
+
+    def boom(*a, **k):
+        calls.append(1)
+        raise RuntimeError("down")
+    ig.discover_markets = boom
+    scr = ig_screener.IG24Screener(ig, {"timeframe": "MIN_3", "screener": {}}, universe_file=tmp_path / "u.json",
+                                   background=False)
+    scr._run()
+    scr._run()
+    assert len(calls) == 1 and scr.last_report["universe"] == 0
+
+
+def test_empty_screener_result_is_still_published(tmp_path):
+    from src.orchestrator import Orchestrator, SCREENER_REPORT_KEY
+    o = Orchestrator.__new__(Orchestrator)
+    o.screener = MagicMock()
+    o.screener.run.return_value = []
+    o.screener.last_report = {"mode": "ig24", "candidates": [], "discovering": {"nodes": 3, "markets": 1}}
+    o.audit_log = MagicMock()
+    o._set_workers = MagicMock()
+    o._refresh_symbols_from_screener()
+    o.audit_log.set_kv.assert_called_once_with(SCREENER_REPORT_KEY, o.screener.last_report)
+    o._set_workers.assert_not_called()

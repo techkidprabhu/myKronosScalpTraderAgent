@@ -1598,17 +1598,22 @@ class Orchestrator:
         except Exception:
             logger.exception("Screener run failed - keeping existing symbol list")
             return
-        if not selected:
-            logger.warning("Screener returned no candidates - keeping existing symbol list")
-            return
-        self._set_workers(selected)
-        self._last_screener_run = time.time()
+        # Publish what the screener saw even when it picked nothing, so the
+        # dashboard can say why (markets closed, still being discovered, ...).
         report = getattr(self.screener, "last_report", None)
         if isinstance(report, dict):
             try:
                 self.audit_log.set_kv(SCREENER_REPORT_KEY, report)
             except Exception:
                 logger.exception("Could not publish the screener report")
+        if not selected:
+            if not getattr(self, "_empty_logged", False):
+                logger.warning("Screener returned no candidates - keeping existing symbol list")
+                self._empty_logged = True
+            return
+        self._empty_logged = False
+        self._set_workers(selected)
+        self._last_screener_run = time.time()
 
     # ------------------------------------------------------------------
     # Main loop

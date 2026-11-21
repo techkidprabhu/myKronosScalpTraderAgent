@@ -99,9 +99,11 @@ class IG24Screener:
                                                  "markets": markets}, indent=1))
                 logger.info("IG universe: %d markets (%s)", len(markets), ", ".join(self.cfg["markets"]))
             else:
-                logger.warning("IG market navigation found no markets for %s", self.cfg["markets"])
+                logger.warning("IG found no markets for %s - trying again in 10 min", self.cfg["markets"])
+                self._failed_at = time.time()
         except Exception:
-            logger.exception("IG market discovery failed")
+            logger.exception("IG market discovery failed - trying again in 10 min")
+            self._failed_at = time.time()
         finally:
             self.discovering = None
 
@@ -109,6 +111,8 @@ class IG24Screener:
         stale = time.time() - self.universe_updated > float(self.cfg["universe_refresh_hours"]) * 3600
         if not stale or (self._thread is not None and self._thread.is_alive()):
             return
+        if time.time() - getattr(self, "_failed_at", 0.0) < 600:
+            return                                  # the last attempt failed: wait 10 min
         self.discovering = {"nodes": 0, "markets": 0}
         if self.background:
             self._thread = threading.Thread(target=self._discover, name="ig-discover", daemon=True)
