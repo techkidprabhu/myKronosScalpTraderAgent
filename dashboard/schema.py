@@ -15,7 +15,7 @@ config.yaml) and credentials (.env).
 """
 from __future__ import annotations
 
-TIMEFRAMES = ["MIN_1", "MIN_5", "MIN_15", "HOUR_1", "HOUR_4", "DAY"]
+TIMEFRAMES = ["MIN_1", "MIN_3", "MIN_5", "MIN_15", "HOUR_1", "HOUR_4", "DAY"]
 
 SECTIONS = [
     {"id": "broker", "title": "Broker", "fields": [
@@ -201,7 +201,7 @@ SECTIONS = [
     {"id": "sentiment", "title": "Market sentiment meter (display only)", "fields": [
         ("sentiment.enabled", "Show the sentiment meter", "bool", {}),
         ("sentiment.timeframe", "Candles used", "select", {"options": TIMEFRAMES,
-         "help": "DAY = the market's trend; HOUR_1 / MIN_15 for intraday mood"}),
+         "help": "MIN_3 = the mood on the scalping chart; MIN_15 / HOUR_1 for the intraday trend; DAY = the market's trend"}),
         ("sentiment.lookback_bars", "Candles read per benchmark", "int", {"min": 60, "max": 1000}),
         ("sentiment.refresh_minutes", "Re-read every (min)", "int", {"min": 1, "max": 1440}),
         ("sentiment.adx_trend", "ADX that counts as trending", "float", {"min": 10, "max": 40}),

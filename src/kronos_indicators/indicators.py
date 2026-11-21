@@ -1,5 +1,5 @@
 """
-Candle-based technical indicators for the Kronos swing-trading agent.
+Candle-based technical indicators for the Kronos scalp trading agent.
 
 Pure pandas/numpy (no TA-Lib needed). Every function takes the same OHLCV
 DataFrame format Kronos uses:
@@ -243,7 +243,7 @@ def mfi(df: pd.DataFrame, n: int = 14) -> pd.Series:
 # levels
 # --------------------------------------------------------------------------- #
 def pivot_points(df: pd.DataFrame) -> dict:
-    """Classic floor pivots from the last *completed* bar (use daily bars for swing)."""
+    """Classic floor pivots from the last *completed* bar (use daily bars for the day's levels)."""
     last = df.iloc[-1]
     p = (last["high"] + last["low"] + last["close"]) / 3
     rng = last["high"] - last["low"]

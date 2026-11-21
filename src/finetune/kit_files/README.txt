@@ -1,7 +1,7 @@
 Kronos training kit
 ===================
 
-Exported from the swing trading agent's dashboard. It holds the candles the
+Exported from the scalp trading agent's dashboard. It holds the candles the
 agent collected, the times of the agent's own signals, and the trainer.
 No broker logins, keys or trade records are in it.
 

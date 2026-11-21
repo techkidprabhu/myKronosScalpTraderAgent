@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 EXAMPLE_PATH = ROOT / "config" / "skills.example.md"
 DEFAULTS = {"enabled": False, "mode": "log", "file": "config/skills.md"}
-INTRADAY = {"MIN_1", "MIN_5", "MIN_15", "HOUR_1"}
+INTRADAY = {"MIN_1", "MIN_3", "MIN_5", "MIN_15", "HOUR_1"}
 
 # name -> (kind, what it means). kind: num | word
 METRICS = {

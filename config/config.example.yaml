@@ -1,15 +1,15 @@
 # Copy to config.yaml and edit.
 #
-# SCALPING defaults: 1-minute candles, small targets (1.5R), a time stop and
+# SCALPING defaults: 3-minute candles, small targets (1.5R), a time stop and
 # a break-even stop, flat before the close, many small trades a day.
 
-# Timeframe for scalp analysis (MIN_1 or MIN_3 suit scalping). Maps to moomoo KLType via
-# src/moomoo_client.py's RESOLUTION_MAP: MIN_1, MIN_5, MIN_15, HOUR_1,
+# Timeframe for scalp analysis: MIN_3 (default) or MIN_1 for faster scalps. Maps to moomoo KLType via
+# src/moomoo_client.py's RESOLUTION_MAP: MIN_1, MIN_3, MIN_5, MIN_15, HOUR_1,
 # HOUR_4, DAY. moomoo has no historical 4h K-line, so HOUR_4 is built
 # from 60-minute bars (4 per group, per trading day).
 # Note: each distinct symbol you pull history for uses moomoo's 7-day
 # historical K-line quota.
-timeframe: "MIN_1"
+timeframe: "MIN_3"
 
 # Kronos offline model configuration
 kronos:
@@ -19,7 +19,7 @@ kronos:
   max_context: 512
   local_files_only: true                   # Enforce offline mode (no network call to HuggingFace)
   sample_count: 3                          # Number of prediction paths to average
-  temperature: 0.5                         # Lower for more stable swing predictions
+  temperature: 0.5                         # Lower for more stable predictions
   top_p: 0.9
   verbose: false
 
@@ -62,7 +62,7 @@ finetune:
 lookback_bars: 300
 
 # How many bars ahead to forecast for the confirmation signal. Scalps live
-# for a few candles, so a short horizon.
+# for a few candles, so a short horizon (3 x 3-minute candles = 9 minutes).
 forecast_horizon: 3
 
 # Minimum Kronos confidence (0-1, probability price moves in the
@@ -107,7 +107,7 @@ order_type: "LIMIT"
 
 # Cancel an entry that is still completely unfilled after this many
 # minutes, so a stale limit doesn't block the symbol for the session.
-entry_timeout_minutes: 3
+entry_timeout_minutes: 6       # two 3-minute candles
 
 # false (recommended): only evaluate signals and submit entries while the
 # exchange session is open. A bar that closes after hours is evaluated at
@@ -199,7 +199,7 @@ screener:
   per_source: 30
 
   # Stock score - ranks the candidates that pass the filters above on
-  # three things swing traders look for, measured on the agent's own
+  # three things scalpers look for, measured on the agent's own
   # timeframe bars:
   #   relative strength  return over rs_lookback bars vs the benchmark
   #   relative volume    last few bars' volume vs the usual
@@ -260,7 +260,7 @@ risk:
   daily_loss_includes_open_risk: false
   # Stop = K x ATR of the signal bars (replaces the % / points stop), and
   # target = R x the stop distance (replaces the % / points target).
-  stop_atr_multiple: 1.0           # stop = 1 ATR of the 1-minute candles
+  stop_atr_multiple: 1.0           # stop = 1 ATR of the 3-minute candles
   atr_period: 14
   target_r_multiple: 1.5           # target = 1.5 x the stop distance
   # Refuse stops tighter than this % of the price (spread and noise).
@@ -270,8 +270,8 @@ risk:
   no_entries_first_minutes: 5       # 09:35 ET on US: skip the opening print
   no_entries_last_minutes: 20       # 15:40 ET on US
   # Day-trade mode: close every agent position N minutes before the close,
-  # win or lose - no overnight holds. Needs an intraday timeframe. Leave
-  # empty for swing trading.
+  # win or lose - no overnight holds. Needs an intraday timeframe. Keep it
+  # set for scalping.
   flat_by_minutes_before_close: 10    # scalps never hold overnight
   # Per stock, per exchange day: no new entries in a symbol once its closed
   # trades today lost this much in total, or after this many losing trades in
@@ -328,7 +328,7 @@ polling_interval_seconds: 15
 scalp:
   # Time stop: close a trade that hasn't hit its stop or target after this
   # many minutes, at the market. Empty = off.
-  max_hold_minutes: 15
+  max_hold_minutes: 30           # 10 x 3-minute candles
   # Break-even: once a trade is this many R in profit (R = its initial
   # risk), move the stop to the entry. Empty = off.
   breakeven_at_r: 1.0
@@ -340,7 +340,7 @@ scalp:
 # Up trend / Down trend / Sideways / Stable with a -100..100 needle.
 sentiment:
   enabled: true
-  timeframe: MIN_15          # intraday mood for scalping; DAY = the market's trend
+  timeframe: MIN_3           # mood on the scalping chart; MIN_15 / HOUR_1 = intraday trend; DAY = the market's trend
   lookback_bars: 250
   refresh_minutes: 15        # cached between readings (broker data limits)
   adx_trend: 20              # ADX at or above this counts as trending

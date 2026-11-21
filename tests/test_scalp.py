@@ -83,6 +83,7 @@ def orb_rows(breakout):
 
 def scalp(**kw):
     s = scalp_engine.ScalpSettings()
+    s.orb_minutes = 15            # these charts are 1-minute candles with a 15-minute range
     for k, v in kw.items():
         setattr(s, k, v)
     return s
@@ -176,3 +177,27 @@ def test_short_scalp_skill_trade(tmp_path, monkeypatch, market_open):
         assert broker.placed[1][2]["direction"] == "BUY"
     finally:
         trading_mode._cache.update(mtime=None, value=None)
+
+
+def test_orb_on_the_first_3_minute_candle():
+    idx = pd.date_range("2026-11-02 09:30", periods=25, freq="3min")
+    rows = [(100.5, 101.0, 100.0, 100.5, 1000)] + [(100.6, 100.8, 100.4, 100.6, 1000)] * 23
+    rows.append((100.9, 101.6, 100.9, 101.5, 3000))
+    df = pd.DataFrame(rows, columns=["open", "high", "low", "close", "volume"], index=idx)
+    s = scalp_engine.ScalpSettings()                       # default: opening range = first 3 minutes
+    st = ss.find_setup(df, s)
+    assert s.orb_minutes == 3 and st.ready and st.details["or_high"] == 101.0 and st.details["or_low"] == 100.0
+
+
+def test_every_broker_has_3_minute_candles():
+    from src import market, moomoo_client
+    from src.brokers import angel, ig, india, tiger, zerodha
+    assert "MIN_3" in moomoo_client.RESOLUTION_MAP and "MIN_3" in market.BAR_DURATION
+    assert zerodha.INTERVAL["MIN_3"] == "3minute" and angel.INTERVAL["MIN_3"] == "THREE_MINUTE"
+    assert ig.RESOLUTIONS["MIN_3"] == "MINUTE_3" and tiger.TigerClient.RESOLUTIONS["MIN_3"] == "THREE_MINUTES"
+    assert india.history_window("MIN_3", 300).total_seconds() > 0
+
+
+def test_starter_skill_file_matches_engine_defaults():
+    s, probs = ss.load("config/ScalpStarterSkill.md")
+    assert not probs and s.orb_minutes == 3 and s.max_hold_candles == 10

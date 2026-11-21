@@ -57,6 +57,7 @@ logger = logging.getLogger(__name__)
 # from 60-minute bars, grouped 4 at a time within each trading day.
 RESOLUTION_MAP = {
     "MIN_1": (KLType.K_1M, 1),
+    "MIN_3": (KLType.K_3M, 1),
     "MIN_5": (KLType.K_5M, 1),
     "MIN_15": (KLType.K_15M, 1),
     "HOUR_1": (KLType.K_60M, 1),
@@ -64,7 +65,7 @@ RESOLUTION_MAP = {
     "DAY": (KLType.K_DAY, 1),
 }
 
-INTRADAY_MINUTES = {KLType.K_1M: 1, KLType.K_5M: 5, KLType.K_15M: 15, KLType.K_60M: 60}
+INTRADAY_MINUTES = {KLType.K_1M: 1, KLType.K_3M: 3, KLType.K_5M: 5, KLType.K_15M: 15, KLType.K_60M: 60}
 
 # Code prefixes moomoo uses, e.g. "US.AAPL", "HK.00700", "SG.D05", "SH.600519"
 CODE_PREFIXES = {"US", "HK", "SG", "SH", "SZ", "JP", "MY", "AU", "CA"}

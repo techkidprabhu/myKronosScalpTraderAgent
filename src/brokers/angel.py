@@ -53,9 +53,9 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIP_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
 SCRIP_FILE = ROOT / "data" / "angel_scrip_master.json"
-INTERVAL = {"MIN_1": "ONE_MINUTE", "MIN_5": "FIVE_MINUTE", "MIN_15": "FIFTEEN_MINUTE",
+INTERVAL = {"MIN_1": "ONE_MINUTE", "MIN_3": "THREE_MINUTE", "MIN_5": "FIVE_MINUTE", "MIN_15": "FIFTEEN_MINUTE",
             "HOUR_1": "ONE_HOUR", "HOUR_4": "ONE_HOUR", "DAY": "ONE_DAY"}
-MAX_DAYS = {"ONE_MINUTE": 30, "FIVE_MINUTE": 100, "FIFTEEN_MINUTE": 200, "ONE_HOUR": 400, "ONE_DAY": 2000}
+MAX_DAYS = {"ONE_MINUTE": 30, "THREE_MINUTE": 60, "FIVE_MINUTE": 100, "FIFTEEN_MINUTE": 200, "ONE_HOUR": 400, "ONE_DAY": 2000}
 ACTIVE = {"open", "trigger pending", "open pending", "modify pending", "validation pending",
           "after market order req received", "modify validation pending"}
 

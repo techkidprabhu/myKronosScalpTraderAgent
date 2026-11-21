@@ -1,5 +1,5 @@
 """
-Tiger Brokers adapter (tigeropen SDK), ported from tiger-swing-agent's
+Tiger Brokers adapter (tigeropen SDK), ported from the earlier Tiger agent's
 tiger_client.py and fitted to the common BrokerClient interface.
 
 SDK:  pip install tigeropen
@@ -63,11 +63,11 @@ class TigerClient(BrokerClient):
     capabilities = Capabilities(
         paper_trading=True, stop_orders=True, gtc_orders=True, short_selling=True,
         market_scan=True, markets=("SG", "US", "HK"),
-        notes="Ported from tiger-swing-agent. Uses .env TIGER_* credentials and a private key file.",
+        notes="Uses .env TIGER_* credentials and a private key file.",
     )
 
     RESOLUTIONS = {
-        "MIN_1": "ONE_MINUTE", "MIN_5": "FIVE_MINUTES", "MIN_15": "FIFTEEN_MINUTES",
+        "MIN_1": "ONE_MINUTE", "MIN_3": "THREE_MINUTES", "MIN_5": "FIVE_MINUTES", "MIN_15": "FIFTEEN_MINUTES",
         "HOUR_1": "ONE_HOUR", "HOUR_4": "FOUR_HOURS", "DAY": "DAY",
     }
 
