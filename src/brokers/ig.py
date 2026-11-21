@@ -453,11 +453,70 @@ class IGClient(BrokerClient):
                     "commodities": ("commodit", "metal", "energ"), "crypto": ("crypto", "bitcoin")}
     NAV_SKIP = ("weekend", "option", "binary", "sprint", "knock", "barrier", "bungee", "future", "forward")
 
+    # Well-known 24-hour markets, looked up by name when the navigation menus
+    # aren't available to this account (IG answers 404 for some).
+    SEARCH_TERMS = {
+        "forex": ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD", "USD/CHF", "NZD/USD", "EUR/GBP",
+                  "EUR/JPY", "GBP/JPY", "EUR/CHF", "AUD/JPY", "EUR/AUD", "GBP/CHF", "USD/SGD"],
+        "indices": ["Wall Street", "US 500", "US Tech 100", "Germany 40", "FTSE 100", "Japan 225",
+                    "Hong Kong HS50", "Australia 200", "France 40", "EU Stocks 50"],
+        "commodities": ["Spot Gold", "Spot Silver", "US Crude", "Brent Crude", "Natural Gas", "Copper"],
+        "crypto": ["Bitcoin", "Ether", "Litecoin", "Ripple", "Bitcoin Cash"],
+    }
+
+    def _tradeable_cfd(self, m: dict) -> bool:
+        itype = str(m.get("instrumentType") or "")
+        return bool(m.get("epic")) and str(m.get("expiry") or "-") == self.expiry and \
+            not itype.startswith(("BINARY", "BUNGEE", "KNOCKOUTS", "OPT_", "SPRINT"))
+
+    def search_markets(self, classes: list[str], delay_s: float = 2.1, progress=None) -> list[dict]:
+        """Find the well-known markets of these classes by name
+        (GET /markets?searchTerm=...): one request per name."""
+        found: dict[str, dict] = {}
+        done = 0
+        for cls in classes:
+            for term in self.SEARCH_TERMS.get(cls, []):
+                if done and delay_s:
+                    time.sleep(delay_s)
+                done += 1
+                try:
+                    res = self._request("GET", "/markets", 1, params={"searchTerm": term}).get("markets") or []
+                except BrokerError as exc:
+                    logger.warning("IG market search %r: %s", term, exc)
+                    continue
+                hits = [m for m in res if self._tradeable_cfd(m)]
+                name = term.lower()
+                exact = [m for m in hits if str(m.get("instrumentName") or "").lower() == name]
+                starts = [m for m in hits if str(m.get("instrumentName") or "").lower().startswith(name)
+                          and "mini" not in str(m.get("instrumentName") or "").lower()]
+                pick = (exact or starts or hits)[:1]
+                for m in pick:
+                    if m["epic"] not in found:
+                        found[m["epic"]] = {"epic": m["epic"], "name": m.get("instrumentName") or m["epic"],
+                                            "class": ig_hours.classify(m.get("instrumentType"), m["epic"], cls),
+                                            "instrument_type": m.get("instrumentType")}
+                if progress:
+                    progress(done, len(found))
+        return list(found.values())
+
     def discover_markets(self, classes: list[str], max_nodes: int = 120, delay_s: float = 2.1,
                          progress=None) -> list[dict]:
-        """Browse IG's market navigation for these asset classes. Keeps the
-        markets tradeable on this account type (expiry "-" for CFDs). Slow on
-        purpose: IG allows 30 such requests a minute per account."""
+        """Browse IG's market navigation for these asset classes; if this
+        account can't (IG answers 404 for some) or it finds nothing, look the
+        well-known markets up by name instead. Keeps the markets tradeable on
+        this account type (expiry "-" for CFDs). Slow on purpose: IG allows 30
+        such requests a minute per account."""
+        try:
+            found = self._navigate(classes, max_nodes, delay_s, progress)
+        except BrokerError as exc:
+            logger.warning("IG market navigation unavailable (%s) - searching markets by name instead",
+                           str(exc).split(":")[0])
+            found = []
+        if not found:
+            found = self.search_markets(classes, delay_s, progress)
+        return found
+
+    def _navigate(self, classes: list[str], max_nodes: int, delay_s: float, progress) -> list[dict]:
         found: dict[str, dict] = {}
         top = self._request("GET", "/marketnavigation", 1).get("nodes") or []
         queue = []
@@ -484,9 +543,7 @@ class IGClient(BrokerClient):
             for m in data.get("markets") or []:
                 epic = m.get("epic")
                 itype = str(m.get("instrumentType") or "")
-                if not epic or epic in found or str(m.get("expiry") or "-") != self.expiry:
-                    continue
-                if itype.startswith(("BINARY", "BUNGEE", "KNOCKOUTS", "OPT_", "SPRINT")):
+                if epic in found or not self._tradeable_cfd(m):
                     continue
                 found[epic] = {"epic": epic, "name": m.get("instrumentName") or epic,
                                "class": ig_hours.classify(itype, epic, cls), "instrument_type": itype}

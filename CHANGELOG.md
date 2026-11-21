@@ -15,6 +15,16 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Fixed
+- **IG around the clock found no markets** on accounts where IG answers 404
+  for `/marketnavigation`. Discovery now falls back to looking up well-known
+  24-hour markets by name (`/markets?searchTerm=`): 15 forex pairs, 10
+  indices, 6 commodities, 5 cryptos - the CFD (expiry "-") of each. A failed
+  discovery is retried after 10 minutes instead of every minute.
+- The screener report is published even when nothing is picked, so the
+  dashboard shows the markets and why each isn't scanned (closed for the
+  weekend, not tradeable, spread...) or that discovery is still running.
+
 ### Added
 - **IG around the clock** (broker market `IG24`): a 24-hour screener for IG
   forex, index, commodity and crypto CFDs.
