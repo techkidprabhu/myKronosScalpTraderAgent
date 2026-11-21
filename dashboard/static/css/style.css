@@ -1822,3 +1822,15 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .st-flow a.st-skill { color: #f59e0b; }
 .st-card-skill { border-color: color-mix(in srgb, #f59e0b 45%, var(--border-color)); }
 .st-flow.st-flow-dim { opacity: .55; }
+
+/* Scalp session panel */
+.sc-card { display: flex; flex-direction: column; gap: 12px; }
+.sc-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.sc-kpis > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border-color, #334155); border-radius: 10px; min-width: 0; }
+.sc-kpis b { font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sc-kpis .cc-muted { font-size: .78rem; overflow-wrap: anywhere; }
+.sc-exits { font-size: .82rem; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.sc-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px 24px; }
+.sc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; font-size: .85rem; }
+.sc-list li { overflow-wrap: anywhere; }
+.sc-list .pos { color: var(--accent-green, #22c55e); } .sc-list .neg { color: var(--accent-red, #ef4444); }

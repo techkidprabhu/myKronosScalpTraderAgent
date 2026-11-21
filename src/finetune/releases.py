@@ -76,7 +76,7 @@ class GitHub:
         self.repo, self.api, self.timeout = repo, (api or API).rstrip("/"), timeout
         self.s = requests.Session()
         self.s.headers.update({"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
-                               "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "kronos-swing-agent"})
+                               "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "kronos-scalp-agent"})
 
     def _check(self, r, what: str):
         if r.status_code in (401, 403):
@@ -162,7 +162,7 @@ def _fmt(v, suffix=""):
 def release_text(report: dict, note: str, meta: dict) -> str:
     o, t = report.get("original") or {}, report.get("fine_tuned") or {}
     lines = [
-        f"Fine-tuned Kronos model **{report['run_id']}**, saved from the swing agent's dashboard.",
+        f"Fine-tuned Kronos model **{report['run_id']}**, saved from the scalp agent's dashboard.",
         "",
         *([f"> {note}", ""] if note else []),
         "| | Original | Fine-tuned |",

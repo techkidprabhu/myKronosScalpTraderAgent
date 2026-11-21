@@ -1,12 +1,15 @@
 # Copy to config.yaml and edit.
+#
+# SCALPING defaults: 1-minute candles, small targets (1.5R), a time stop and
+# a break-even stop, flat before the close, many small trades a day.
 
-# Timeframe for swing analysis. Maps to moomoo KLType via
+# Timeframe for scalp analysis (MIN_1 or MIN_3 suit scalping). Maps to moomoo KLType via
 # src/moomoo_client.py's RESOLUTION_MAP: MIN_1, MIN_5, MIN_15, HOUR_1,
 # HOUR_4, DAY. moomoo has no historical 4h K-line, so HOUR_4 is built
 # from 60-minute bars (4 per group, per trading day).
 # Note: each distinct symbol you pull history for uses moomoo's 7-day
 # historical K-line quota.
-timeframe: "DAY"
+timeframe: "MIN_1"
 
 # Kronos offline model configuration
 kronos:
@@ -56,10 +59,11 @@ finetune:
 
 # How many closed bars to keep in the rolling lookback window fed to
 # Kronos. Kronos-small/base support up to 512 context bars.
-lookback_bars: 200
+lookback_bars: 300
 
-# How many bars ahead to forecast for the confirmation signal.
-forecast_horizon: 6
+# How many bars ahead to forecast for the confirmation signal. Scalps live
+# for a few candles, so a short horizon.
+forecast_horizon: 3
 
 # Minimum Kronos confidence (0-1, probability price moves in the
 # pattern's implied direction) required to confirm a trade.
@@ -103,7 +107,7 @@ order_type: "LIMIT"
 
 # Cancel an entry that is still completely unfilled after this many
 # minutes, so a stale limit doesn't block the symbol for the session.
-entry_timeout_minutes: 15
+entry_timeout_minutes: 3
 
 # false (recommended): only evaluate signals and submit entries while the
 # exchange session is open. A bar that closes after hours is evaluated at
@@ -116,12 +120,12 @@ trade_outside_market_hours: false
 # stop in the favorable direction as price moves, and closes the
 # position if price crosses the stop or reaches the target.
 trailing_stop:
-  enabled: false
-  check_interval_seconds: 20
+  enabled: true
+  check_interval_seconds: 5   # scalps: watch open trades every few seconds
   trigger_points: 2.00   # price units - profit distance before trailing engages
   trail_distance: 3.00   # price units - fixed trail distance behind the best price
-  trigger_pct:           # % of entry - replaces trigger_points when set, e.g. 0.5
-  trail_pct:             # % of the best price - replaces trail_distance when set, e.g. 0.4
+  trigger_pct: 0.3       # % of entry - replaces trigger_points when set
+  trail_pct: 0.2         # % of the best price - replaces trail_distance when set
   use_atr: false
   atr_multiplier: 3.0
 
@@ -227,7 +231,7 @@ risk:
   # The day rolls over at midnight in the exchange's timezone.
   max_daily_loss: 300.0
   # Minimum minutes between trades on the same symbol (persists across restarts)
-  min_minutes_between_trades: 240
+  min_minutes_between_trades: 5
   # false: SELL signals are rejected rather than opening a short position
   # (shorting needs a margin account with borrow at moomoo).
   allow_short: false
@@ -245,35 +249,35 @@ risk:
   # quantity = max_loss_per_trade / stop distance, capped by
   # max_stake_per_point, max_position_pct and cash_buffer_pct, rounded
   # down to lot_size. A stop too wide for even one lot skips the trade.
-  max_loss_per_trade: null          # e.g. 50 (account currency)
+  max_loss_per_trade: 50            # account currency
   max_position_pct: null            # e.g. 75  (% of account value in one position)
   cash_buffer_pct: null             # e.g. 10  (% of account value always left in cash)
   # Skip trades whose target is closer than this many times the stop.
-  min_reward_risk: null             # e.g. 1.0
-  max_trades_per_day: null          # e.g. 3   (new entries per exchange day)
+  min_reward_risk: 1.0
+  max_trades_per_day: 20            # new entries per exchange day
   # true: the daily cap counts closed P&L + what every open position loses
   # if its stop fills + the new trade's max loss (not just closed P&L).
   daily_loss_includes_open_risk: false
   # Stop = K x ATR of the signal bars (replaces the % / points stop), and
   # target = R x the stop distance (replaces the % / points target).
-  stop_atr_multiple: null           # e.g. 1.5
+  stop_atr_multiple: 1.0           # stop = 1 ATR of the 1-minute candles
   atr_period: 14
-  target_r_multiple: null           # e.g. 2.0  (2R)
+  target_r_multiple: 1.5           # target = 1.5 x the stop distance
   # Refuse stops tighter than this % of the price (spread and noise).
-  min_stop_pct: null                # e.g. 0.05
+  min_stop_pct: 0.05                # spread and noise
   # Entry window: no new entries in the first / last N minutes of the
   # regular session (holidays and 1 pm early closes handled).
-  no_entries_first_minutes: null    # e.g. 15  (09:45 ET on US)
-  no_entries_last_minutes: null     # e.g. 30  (15:30 ET on US)
+  no_entries_first_minutes: 5       # 09:35 ET on US: skip the opening print
+  no_entries_last_minutes: 20       # 15:40 ET on US
   # Day-trade mode: close every agent position N minutes before the close,
   # win or lose - no overnight holds. Needs an intraday timeframe. Leave
   # empty for swing trading.
-  flat_by_minutes_before_close: null  # e.g. 5  (15:55 ET on US)
+  flat_by_minutes_before_close: 10    # scalps never hold overnight
   # Per stock, per exchange day: no new entries in a symbol once its closed
   # trades today lost this much in total, or after this many losing trades in
   # it. Other symbols keep trading; exits are never blocked.
   max_symbol_loss_per_day: null       # e.g. 150 (account currency)
-  max_losses_per_symbol_per_day: null # e.g. 2
+  max_losses_per_symbol_per_day: 3
   # Daily profit target: once today's CLOSED P&L reaches it, no new entries
   # until tomorrow. Patterns, indicators, your rules and Kronos keep being
   # evaluated and logged, candles are still collected, and open positions
@@ -318,14 +322,25 @@ unmanaged_positions:
   # for them. Set true only if you want to close them from the dashboard.
   allow_manual_close: false
 
-polling_interval_seconds: 60
+polling_interval_seconds: 15
+
+# Scalp trade management (every agent trade, Kronos or skill file).
+scalp:
+  # Time stop: close a trade that hasn't hit its stop or target after this
+  # many minutes, at the market. Empty = off.
+  max_hold_minutes: 15
+  # Break-even: once a trade is this many R in profit (R = its initial
+  # risk), move the stop to the entry. Empty = off.
+  breakeven_at_r: 1.0
+  # ...plus this % beyond the entry, so a break-even exit still covers costs.
+  breakeven_offset_pct: 0.02
 
 # Market Sentiment Meter (dashboard only - never affects trading).
 # Reads benchmark ETFs for the broker's market and labels the market
 # Up trend / Down trend / Sideways / Stable with a -100..100 needle.
 sentiment:
   enabled: true
-  timeframe: DAY             # DAY = the market's trend; HOUR_1 / MIN_15 for intraday mood
+  timeframe: MIN_15          # intraday mood for scalping; DAY = the market's trend
   lookback_bars: 250
   refresh_minutes: 15        # cached between readings (broker data limits)
   adx_trend: 20              # ADX at or above this counts as trending
@@ -384,9 +399,10 @@ brokers:
     # data_source: angel
     default_quantity: 5      # shares - no paper account, start small
     risk:
-      allow_short: false     # CNC delivery can't short
+      allow_short: false     # not tested yet for MIS shorts
       lot_size: 1
       max_daily_loss: 2000.0 # INR
+      flat_by_minutes_before_close: 15   # before Zerodha's ~15:20 MIS square-off
     screener:
       candidate_symbols: [NSE.RELIANCE, NSE.HDFCBANK, NSE.ICICIBANK, NSE.INFY, NSE.TCS,
                           NSE.SBIN, NSE.LT, NSE.AXISBANK, NSE.BHARTIARTL, NSE.ITC]
@@ -399,9 +415,10 @@ brokers:
     market: NSE
     default_quantity: 5
     risk:
-      allow_short: false     # DELIVERY can't short
+      allow_short: false     # not tested yet for INTRADAY shorts
       lot_size: 1
       max_daily_loss: 2000.0 # INR
+      flat_by_minutes_before_close: 15   # before Angel One's intraday square-off
     screener:
       candidate_symbols: [NSE.RELIANCE, NSE.HDFCBANK, NSE.ICICIBANK, NSE.INFY, NSE.TCS,
                           NSE.SBIN, NSE.LT, NSE.AXISBANK, NSE.BHARTIARTL, NSE.ITC]

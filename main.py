@@ -20,7 +20,7 @@ def _stop(signum, frame):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Kronos swing trading agent (multi-broker)")
+    parser = argparse.ArgumentParser(description="Kronos scalp trading agent (multi-broker)")
     parser.add_argument("--config", default="config/config.yaml")
     args = parser.parse_args()
 

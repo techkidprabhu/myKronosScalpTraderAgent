@@ -1264,6 +1264,67 @@ def _trading_mode_payload() -> dict:
     return out
 
 
+@app.route("/api/scalp_stats")
+def api_scalp_stats():
+    """Today's scalping figures for the selected broker: trades, win rate,
+    average R and hold time, how trades ended, and what is open now."""
+    day_start = _market_day_start()
+    out = {"trades": 0, "wins": 0, "losses": 0, "win_rate": None, "pnl": 0.0, "avg_win": None,
+           "avg_loss": None, "avg_r": None, "avg_hold_min": None, "exits": {}, "per_hour": None,
+           "open": [], "last": []}
+    try:
+        conn = get_db()
+    except sqlite3.Error:
+        return jsonify(out)
+    try:
+        rows = conn.execute("SELECT ts, epic, pnl, details FROM trade_results WHERE ts >= ? ORDER BY ts",
+                            (day_start,)).fetchall()
+        wins, losses, rs, holds = [], [], [], []
+        for r in rows:
+            pnl = float(r["pnl"] or 0.0)
+            d = json.loads(r["details"] or "{}")
+            (wins if pnl > 0 else losses).append(pnl)
+            reason = str(d.get("reason") or "other").replace("_", " ")
+            key = ("time stop" if reason.startswith("time stop") else "skill exit" if reason.startswith("skill") else reason)
+            out["exits"][key] = out["exits"].get(key, 0) + 1
+            try:
+                risk = abs(float(d["entry"]) - float(d["initial_stop"])) * float(d["quantity"])
+                if risk > 0:
+                    rs.append(pnl / risk)
+            except (KeyError, TypeError, ValueError):
+                pass
+            if d.get("opened_ts") and d.get("closed_ts"):
+                holds.append((float(d["closed_ts"]) - float(d["opened_ts"])) / 60)
+            out["last"].append({"ts": r["ts"], "symbol": r["epic"], "pnl": round(pnl, 2), "reason": reason,
+                                "hold_min": round(holds[-1], 1) if d.get("opened_ts") and d.get("closed_ts") else None,
+                                "r": round(rs[-1], 2) if rs and d.get("initial_stop") else None})
+        n = len(rows)
+        out.update(trades=n, wins=len(wins), losses=len(losses), pnl=round(sum(wins) + sum(losses), 2),
+                   win_rate=round(100 * len(wins) / n, 1) if n else None,
+                   avg_win=round(sum(wins) / len(wins), 2) if wins else None,
+                   avg_loss=round(sum(losses) / len(losses), 2) if losses else None,
+                   avg_r=round(sum(rs) / len(rs), 2) if rs else None,
+                   avg_hold_min=round(sum(holds) / len(holds), 1) if holds else None)
+        if n and rows:
+            span = max((rows[-1]["ts"] - rows[0]["ts"]) / 3600, 1.0)
+            out["per_hour"] = round(n / span, 1)
+        out["last"] = out["last"][-8:][::-1]
+        for p in conn.execute("SELECT symbol, direction, quantity, entry_price, current_stop, initial_stop, target, "
+                              "opened_ts FROM positions WHERE status='open'").fetchall():
+            out["open"].append({"symbol": p["symbol"], "direction": p["direction"], "entry": p["entry_price"],
+                                "stop": p["current_stop"], "target": p["target"],
+                                "age_min": round((time.time() - float(p["opened_ts"])) / 60, 1),
+                                "breakeven": p["current_stop"] is not None and p["initial_stop"] is not None and
+                                ((p["direction"] == "BUY" and p["current_stop"] >= p["entry_price"]) or
+                                 (p["direction"] == "SELL" and p["current_stop"] <= p["entry_price"]))})
+    finally:
+        conn.close()
+    cfg = (load_config() or {}).get("scalp") or {}
+    out["max_hold_minutes"] = cfg.get("max_hold_minutes")
+    out["breakeven_at_r"] = cfg.get("breakeven_at_r")
+    return jsonify(out)
+
+
 @app.route("/api/trading_mode", methods=["GET", "POST"])
 def api_trading_mode():
     """Who decides trades: Kronos (default) or a skill file. One switch for
@@ -2405,11 +2466,11 @@ def handle_settings():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="moomoo Swing Agent Web Dashboard")
+    parser = argparse.ArgumentParser(description="Kronos Scalp Agent Web Dashboard")
     parser.add_argument("--host", default="127.0.0.1",
                         help="Interface to bind (default: this machine only). Prefer an SSH "
                              "tunnel over binding 0.0.0.0 for remote access.")
-    parser.add_argument("--port", type=int, default=5000, help="Port to listen on")
+    parser.add_argument("--port", type=int, default=5010, help="Port to listen on (5010: runs beside the swing agent on 5000)")
     args = parser.parse_args()
 
     try:

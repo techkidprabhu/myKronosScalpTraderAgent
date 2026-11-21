@@ -154,6 +154,14 @@ SECTIONS = [
         ("risk.allow_short", "Allow short selling", "bool", {}),
         ("risk.lot_size", "Lot size", "int", {"min": 1, "max": 100000}),
     ]},
+    {"id": "scalp", "title": "Scalp trade management", "fields": [
+        ("scalp.max_hold_minutes", "Time stop: close a trade after (min)", "int", {"min": 1, "max": 390, "nullable": True,
+         "help": "A trade that hits neither its stop nor its target in this time is closed at the market. Empty = off"}),
+        ("scalp.breakeven_at_r", "Move the stop to break-even at (R in profit)", "float", {"min": 0.1, "max": 10, "nullable": True,
+         "help": "R = the trade's initial risk. 1 = once the trade is up as much as it risked. Empty = off"}),
+        ("scalp.breakeven_offset_pct", "Break-even stop beyond the entry by (%)", "float", {"min": 0, "max": 1,
+         "help": "So a break-even exit still covers fees, e.g. 0.02"}),
+    ]},
     {"id": "daily", "title": "Daily limits (loss cap, profit target, per stock)", "fields": [
         ("risk.max_daily_loss", "Max daily loss", "float", {"min": 1, "unit": "money"}),
         ("risk.daily_loss_includes_open_risk", "Daily cap counts open risk at the stops", "bool", {
@@ -187,7 +195,7 @@ SECTIONS = [
         ("risk.no_entries_first_minutes", "No entries in first N min of session", "int", {"min": 0, "max": 240, "nullable": True}),
         ("risk.no_entries_last_minutes", "No entries in last N min of session", "int", {"min": 0, "max": 240, "nullable": True}),
         ("risk.flat_by_minutes_before_close", "Intraday only: close all agent positions N min before close", "int",
-         {"min": 1, "max": 240, "nullable": True, "help": "Day-trade mode: no overnight holds. Empty = swing (hold)"}),
+         {"min": 1, "max": 240, "nullable": True, "help": "Scalps: close every agent trade this long before the close. Empty = hold overnight (not for scalping)"}),
         ("risk.blocked_symbols", "Never trade these symbols", "list", {"nullable": True}),
     ]},
     {"id": "sentiment", "title": "Market sentiment meter (display only)", "fields": [

@@ -15,6 +15,36 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added - scalp agent (new repository, from the swing agent's history)
+- **Scalp trade management** on every agent trade: a time stop
+  (`scalp.max_hold_minutes`, closed at the market) and a break-even stop
+  (`scalp.breakeven_at_r`, `breakeven_offset_pct`). A position's `opened_ts`
+  now records when the entry filled, so the hold clock starts at the fill.
+- **Starter scalp skill engine** `scalp_vwap_orb` (`src/scalp_engine.py`,
+  `config/ScalpStarterSkill.md`): opening-range breakout on volume and VWAP /
+  9 EMA pullback, long and short, 1.5R targets, VWAP-cross and
+  max-hold-candles exits. Skill-file trading now handles shorts (entries,
+  fills, stale-order checks, exits). Praga price action stays available.
+- **Scalp session today** panel on the Command Center (`/api/scalp_stats`):
+  trades, wins / losses, win rate, average R, average hold, trades an hour,
+  how trades ended, open scalps with their age and break-even state, the
+  last closed trades. Closed trades now record direction, initial stop,
+  open and close times.
+- Config & Risk: *Scalp trade management* section.
+
+### Changed
+- Scalp defaults in `config.example.yaml`: MIN_1 candles, 300-candle
+  lookback, Kronos horizon 3, 1 ATR stop / 1.5R target, 3-minute entry
+  timeout, trailing stop on (0.3% / 0.2%) checked every 5 s, scans every
+  15 s, max 20 trades a day, 5-minute cooldown, flat 10 minutes before the
+  close, no entries in the first 5 / last 20 minutes, sentiment on MIN_15.
+- Zerodha and Angel One default to intraday products (MIS / INTRADAY); Zerodha
+  exits default to SL-M / limit orders with MIS (no GTT for intraday), and
+  both NSE brokers go flat 15 minutes before the close (before the brokers'
+  own intraday square-off).
+- Names: Kronos Scalp Agent; dashboard on port 5010 so it runs beside the
+  swing agent's 5000. Default skill file: `config/ScalpStarterSkill.md`.
+
 ### Changed
 - **Strategies & Tactics covers skill-file trading.** New card 6b explains
   the Who-decides-trades switch and the Praga engine (setup, retest entry,

@@ -26,6 +26,7 @@ import logging
 import os
 import threading
 import time
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -165,6 +166,11 @@ class SymbolWorker:
         )
         self._trail_atr = None   # ATR of the latest closed candles, for use_atr (refreshed by poll_once)
         self.trail_enabled = trail_cfg.get("enabled", False)
+        # Scalping: a time stop and a break-even stop on every agent trade.
+        scalp = global_cfg.get("scalp") or {}
+        self.max_hold_minutes = scalp.get("max_hold_minutes")
+        self.breakeven_at_r = scalp.get("breakeven_at_r")
+        self.breakeven_offset_pct = float(scalp.get("breakeven_offset_pct") or 0.0)
 
         # Indicator confirmation between pattern and Kronos (off unless
         # config has `indicators: {enabled: true}`).
@@ -534,56 +540,59 @@ class SymbolWorker:
         key = SKILL_DONE_KEY.format(symbol=self.symbol)
         if self.audit_log.get_kv(key, None) == setup.details.get("breakout"):
             return                       # this breakout was already traded or tried
-        name = "praga_setup" if settings.strategy == "praga_price_action" else settings.strategy
+        name = "praga_setup" if settings.strategy == "praga_price_action" else \
+            "scalp " + str(setup.details.get("setup") or settings.strategy)
+        direction = setup.direction
 
         def reject(reason, details=None):
             self.audit_log.set_kv(key, setup.details.get("breakout"))
-            self.audit_log.log_decision(self.symbol, name, "BUY", float(setup.quality), None, None, False,
+            self.audit_log.log_decision(self.symbol, name, direction, float(setup.quality), None, None, False,
                                         reason, "rejected",
                                         details={"engine": "skill", "file": switch["file"], "setup": setup.summary(),
                                                  **(details or {})})
             self.reporter.report_rejected(self.symbol, name, f"risk: {reason}")
 
-        allowed, risk_reason = self._risk_check("BUY")
+        allowed, risk_reason = self._risk_check(direction)
         if not allowed:
             return reject(risk_reason)
         round_price = self.broker.round_price
         entry = round_price(setup.entry)
         stop, target = round_price(setup.stop), round_price(setup.target)
-        plan = self._plan(entry, self.quantity, df, stop_distance=entry - stop, target_distance=target - entry)
+        plan = self._plan(entry, self.quantity, df, stop_distance=abs(entry - stop), target_distance=abs(target - entry))
         if not plan.allowed:
             return reject(plan.reason, {"risk_plan": plan.details})
         try:
-            entry_id = self.broker.create_entry(self.symbol, "BUY", plan.quantity, entry)   # resting limit: the retest
+            entry_id = self.broker.create_entry(self.symbol, direction, plan.quantity, entry)   # limit at the skill's price
         except Exception as exc:
             logger.exception("Skill entry order failed for %s", self.symbol)
-            self.audit_log.log_decision(self.symbol, name, "BUY", float(setup.quality), None, None, True,
+            self.audit_log.log_decision(self.symbol, name, direction, float(setup.quality), None, None, True,
                                         risk_reason, "error", details={"engine": "skill", "error": str(exc)})
             self.reporter.report_error(f"entry order ({self.symbol})", str(exc))
             return
-        self.audit_log.record_pending_entry(self.symbol, "BUY", plan.quantity, float(entry), float(stop),
+        self.audit_log.record_pending_entry(self.symbol, direction, plan.quantity, float(entry), float(stop),
                                             float(target), entry_order_id=str(entry_id))
         self.risk_manager.mark_trade_opened(self.symbol)
         self.audit_log.set_kv(key, setup.details.get("breakout"))
         self.audit_log.set_kv(SKILL_TRADE_KEY.format(symbol=self.symbol), {
-            "file": switch["file"], "strategy": settings.strategy, "entry": float(entry), "stop": float(stop),
+            "file": switch["file"], "strategy": settings.strategy, "direction": direction,
+            "entry": float(entry), "stop": float(stop),
             "target": float(target), "breakout": setup.details.get("breakout"),
             "max_wait_candles": settings.max_wait_candles, "use_trailing_stop": settings.use_trailing_stop,
             "quality": setup.quality, "opened_bar": None})
         self.audit_log.log_decision(
-            self.symbol, name, "BUY", float(setup.quality), None, None, True, risk_reason, "opened",
+            self.symbol, name, direction, float(setup.quality), None, None, True, risk_reason, "opened",
             deal_id=str(entry_id),
             details={"engine": "skill", "file": switch["file"], "status": "entry_submitted", "entry": float(entry),
                      "stop": float(stop), "target": float(target), "quantity": plan.quantity,
                      "sized_by": plan.sized_by, "max_loss": round(plan.max_loss, 2),
                      "reward_risk": round(plan.reward_risk, 2), "setup": setup.summary()})
         self.audit_log.log_snapshot(self.symbol, last_close, "entry_submitted",
-                                    {"direction": "BUY", "entry": float(entry), "stop": float(stop),
+                                    {"direction": direction, "entry": float(entry), "stop": float(stop),
                                      "target": float(target), "engine": "skill"})
         self.reporter.send(
             f"<b>Entry submitted (skill)</b> <code>{esc(self.symbol)}</code>\n"
-            f"BUY {plan.quantity} - limit {entry} on the retest  SL: {stop}  TP: {target}\n"
-            f"Setup: {esc(name)} (quality {setup.quality}/2)")
+            f"{direction} {plan.quantity} - limit {entry}  SL: {stop}  TP: {target}\n"
+            f"Setup: {esc(name)} (quality {setup.quality})")
 
     def _skill_manage(self, df: pd.DataFrame, trade: dict, last_close: float):
         """On each new closed candle: drop a stale retest order, or exit an
@@ -594,8 +603,9 @@ class SymbolWorker:
             return
         if pos["status"] == "pending_entry":
             reason = None
-            if last_close < float(trade["stop"]):
-                reason = "a close fell below the setup's stop"
+            sell = (trade.get("direction") or pos["direction"]) == "SELL"
+            if (last_close > float(trade["stop"])) if sell else (last_close < float(trade["stop"])):
+                reason = "a close went past the setup's stop"
             elif trade.get("breakout"):
                 try:
                     since = int((df.index > pd.Timestamp(trade["breakout"])).sum())
@@ -611,7 +621,7 @@ class SymbolWorker:
         settings, _ = load_skill(trade.get("file") or trading_mode.DEFAULT_FILE)
         if settings is None:
             return                       # the bracket still protects the trade
-        sig = skill_strategy.exit_signal(df, settings, trade.get("opened_bar"))
+        sig = skill_strategy.exit_signal(df, settings, trade.get("opened_bar"), pos["direction"])
         if sig is None:
             return
         if sig.kind == "close_now":
@@ -773,7 +783,8 @@ class SymbolWorker:
             # Skill trades keep the setup's own levels (below the breakout
             # candle, under the swing high) when the fill is between them.
             s_stop, s_target = float(trade["stop"]), float(trade["target"])
-            if s_stop < float(fill_price) < s_target:
+            lo, hi = (s_stop, s_target) if pos["direction"] == "BUY" else (s_target, s_stop)
+            if lo < float(fill_price) < hi:
                 stop_price, target_price = self.broker.round_price(s_stop), self.broker.round_price(s_target)
             trade["opened_bar"] = self._last_seen_timestamp.isoformat() if self._last_seen_timestamp is not None else None
             self.audit_log.set_kv(SKILL_TRADE_KEY.format(symbol=self.symbol), trade)
@@ -847,6 +858,15 @@ class SymbolWorker:
             atr=self._trail_atr,
         )
         exiting = update.exit_triggered or update.target_hit
+        update = self._breakeven(pos, current_price, update)
+
+        # Scalp time stop: a trade that hasn't worked within max_hold_minutes
+        # is closed at the market - scalps that sit become swing trades.
+        if not exiting and self.max_hold_minutes and pos.get("opened_ts") and \
+                time.time() - float(pos["opened_ts"]) >= float(self.max_hold_minutes) * 60:
+            self._software_exit({**pos, "current_stop": update.new_stop},
+                                f"time stop ({self.max_hold_minutes:g} min)", current_price)
+            return
 
         # A close the agent already started (its exit orders were cancelled
         # for it) is finished now - never re-place those orders, which is
@@ -898,6 +918,24 @@ class SymbolWorker:
             else:
                 reason = "target"
             self._software_exit({**pos, "current_stop": update.new_stop}, reason, current_price)
+
+    def _breakeven(self, pos: dict, price: float, update):
+        """Move the stop to the entry (plus a small offset for costs) once the
+        trade is breakeven_at_r times its initial risk in profit."""
+        if not self.breakeven_at_r:
+            return update
+        sign = 1 if pos["direction"] == "BUY" else -1
+        entry, initial = float(pos["entry_price"]), float(pos["initial_stop"])
+        risk = abs(entry - initial)
+        if risk <= 0 or sign * (float(price) - entry) < float(self.breakeven_at_r) * risk:
+            return update
+        be = self.broker.round_price(entry * (1 + sign * self.breakeven_offset_pct / 100))
+        if sign * (be - float(update.new_stop)) <= 0:
+            return update                 # the stop is already at or past break-even
+        if self.audit_log.get_kv(f"breakeven:{self.symbol}", None) != pos.get("opened_ts"):
+            self.audit_log.set_kv(f"breakeven:{self.symbol}", pos.get("opened_ts"))
+            self.reporter.send(f"<code>{esc(self.symbol)}</code>: {float(self.breakeven_at_r):g}R in profit - stop moved to break-even {be}")
+        return replace(update, new_stop=be, stop_changed=True)
 
     def _software_exit(self, pos: dict, reason: str, current_price: float):
         """Close the position ourselves without ever selling more than we
@@ -1098,7 +1136,9 @@ class SymbolWorker:
         deal_id = str(pos.get("entry_order_id"))
         self.audit_log.log_trade_result(
             self.symbol, deal_id, pnl,
-            {"reason": reason, "entry": pos["entry_price"], "exit": avg_exit, "quantity": exit_qty},
+            {"reason": reason, "entry": pos["entry_price"], "exit": avg_exit, "quantity": exit_qty,
+             "direction": pos.get("direction"), "initial_stop": pos.get("initial_stop"),
+             "opened_ts": pos.get("opened_ts"), "closed_ts": time.time()},
         )
         self.audit_log.log_snapshot(self.symbol, avg_exit, "position_closed", {"reason": reason, "pnl": pnl})
         self.reporter.report_trade_closed(self.symbol, deal_id, pnl)
