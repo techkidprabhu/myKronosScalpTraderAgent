@@ -1797,8 +1797,14 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .ver-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-green); }
 .ver-chip.warn { color: var(--warn-text); border-color: var(--accent-amber); }
 .ver-chip.warn .ver-dot { background: var(--accent-amber); }
-.ver-pop { position: absolute; left: 0; top: calc(100% + 6px); z-index: 80; width: min(420px, 90vw); padding: 12px 14px;
+.ver-pop { width: min(420px, calc(100vw - 24px)); padding: 12px 14px; color: var(--text-primary);
   background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 12px; box-shadow: var(--shadow-card); font-size: 12px; }
+.ver-chip { anchor-name: --ver-chip; }
+@supports (anchor-name: --a) {
+  .ver-pop { position-anchor: --ver-chip; inset: auto; margin: 6px 12px 0 0;
+    position-area: block-end span-inline-end; position-try-fallbacks: flip-inline, flip-block; }
+}
+@supports not (anchor-name: --a) { .ver-pop { inset: 64px 12px auto; margin: 0 auto; } }
 .ver-table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
 .ver-table th { text-align: left; font-weight: 600; color: var(--text-secondary); padding: 6px 12px 6px 0; vertical-align: top; white-space: nowrap; }
 .ver-table td { padding: 6px 0; border-bottom: 1px solid var(--hairline); color: var(--text-primary); }
@@ -1808,7 +1814,6 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .ver-table td { white-space: normal !important; overflow-wrap: anywhere; }
 .ver-table { table-layout: fixed; }
 .ver-table th { width: 72px; }
-@media (max-width: 640px) { .ver-pop { position: fixed; left: 12px; right: 12px; top: 64px; width: auto; } }
 
 /* ---- Today's P&L %, profit target ---- */
 .cc-big-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
@@ -1871,3 +1876,67 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .field-error { margin-top: 4px; font-size: 12px; color: var(--neg-text); }
 .field-error::before { content: "⚠ "; }
 .field-error[hidden] { display: none; }
+
+/* ---- Data tables: sticky header, sortable columns, cards when the table is narrow ---- */
+.tk-wrap { container-type: inline-size; }
+.tk-wrap:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.tk-wrap.tk-tall { max-block-size: min(70vh, 720px); overflow: auto; overscroll-behavior: contain; }
+.tk-table { border-collapse: separate; border-spacing: 0; }
+.tk-table thead th { position: sticky; inset-block-start: 0; z-index: 1; background: var(--bg-secondary); }
+.tk-table th:has(> .tk-sort) { padding: 0; }
+.tk-sort {
+  display: inline-flex; align-items: center; gap: 6px; inline-size: 100%; min-block-size: 32px;
+  padding: 8px 14px; border: 0; background: none; color: inherit; font: inherit;
+  text-transform: inherit; letter-spacing: inherit; text-align: start; cursor: pointer; white-space: nowrap;
+}
+.cc-mini-table .tk-sort { padding: 4px; min-block-size: 28px; }
+.tk-sort:hover { color: var(--text-primary); }
+.tk-sort:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; border-radius: 4px; }
+.tk-sort-icon { inline-size: 0.8em; flex: none; opacity: 0; font-size: 10px; line-height: 1; }
+.tk-sort-icon::before { content: "▲" / ""; }
+.tk-sort:hover .tk-sort-icon { opacity: .4; }
+th[aria-sort] { color: var(--text-primary); }
+th[aria-sort] .tk-sort-icon { opacity: 1; color: var(--accent-blue); }
+th[aria-sort="descending"] .tk-sort-icon::before { content: "▼" / ""; }
+.tk-table th:has(> .tip-btn) > .tk-sort { inline-size: auto; padding-inline-end: 2px; }
+.tk-table th .tip-btn { margin-inline: 2px 8px; }
+
+@container (width < 600px) {
+  .tk-table, .tk-table tbody, .tk-table tr, .tk-table td { display: block; }
+  .tk-table thead { display: none; }
+  .tk-table { min-width: 0 !important; }
+  .tk-table tbody tr { margin: 0 0 10px; padding: 6px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card); }
+  .tk-table tbody td { display: flow-root; padding: 5px 0; border-bottom: 1px solid var(--hairline);
+    white-space: normal !important; text-align: end; }
+  .tk-table tbody td:last-child { border-bottom: 0; }
+  .tk-table tbody td[data-label]::before { content: attr(data-label); float: inline-start; max-inline-size: 45%;
+    margin-inline-end: 12px; color: var(--text-muted); font-size: 11px; text-align: start; }
+  .tk-table tbody td[data-label=""]::before { content: none; }
+  .tk-table tbody td[colspan] { display: block; text-align: center; border: 0; }
+  .tk-table tbody tr:has(> td[colspan]) { border: 0; background: none; }
+  .tk-wrap { border: 0; }
+}
+
+/* ---- Toggletips: a "?" that explains the thing next to it (tap, click, hover or focus) ---- */
+.tip-btn {
+  display: inline-grid; place-items: center; inline-size: 18px; block-size: 18px; margin-inline-start: 4px;
+  padding: 0; border: 1px solid var(--border-light); border-radius: 50%; background: transparent;
+  color: var(--text-muted); font-family: inherit; font-size: 11px; font-weight: 600; line-height: 1; text-transform: none; letter-spacing: 0;
+  cursor: help; vertical-align: middle; position: relative;
+}
+.tip-btn::after { content: ""; position: absolute; inset: -8px; }     /* 34px touch target */
+.tip-btn:hover, .tip-btn[aria-expanded="true"] { color: var(--accent-blue); border-color: var(--accent-blue); }
+.tip-btn:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+[interestfor] { interest-delay-start: 0.3s; }
+.tip-pop {
+  max-inline-size: min(320px, calc(100vw - 24px)); padding: 8px 10px; margin: 0;
+  background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, .45); font-size: 12px; font-weight: 400; line-height: 1.45;
+  text-transform: none; letter-spacing: 0; white-space: normal; text-align: start;
+}
+@supports (anchor-name: --a) {
+  .tip-pop { inset: auto; margin: 6px 12px 6px 0; position-area: block-end span-inline-end;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline; }
+}
+/* Cards on a phone: let the page scroll, not a box inside it. */
+@media (max-width: 640px) { .tk-wrap.tk-tall { max-block-size: none; } }

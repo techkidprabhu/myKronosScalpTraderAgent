@@ -27,10 +27,10 @@
         <div class="brand-title">Kronos Scalp Agent <span style="color:var(--accent-cyan); font-weight:400; font-size:14px;">Terminal</span></div>
         <div class="brand-sub">Powered by Kronos Offline K-Line Foundation Model (AAAI 2026)</div>
         <div class="ver-wrap">
-          <button type="button" class="ver-chip" id="ver-chip" aria-expanded="false" aria-controls="ver-pop" onclick="toggleVersion()" title="Which version is running">
+          <button type="button" class="ver-chip" id="ver-chip" popovertarget="ver-pop" title="Which version is running">
             <span class="ver-dot" aria-hidden="true"></span><span id="ver-chip-text">version…</span>
           </button>
-          <div class="ver-pop" id="ver-pop" role="dialog" aria-label="Running version" hidden></div>
+          <div class="ver-pop" id="ver-pop" popover role="dialog" aria-label="Running version"></div>
         </div>
       </div>
     </div>
@@ -314,7 +314,7 @@
              aria-controls="cc-today-detail" title="Show what makes up today's P&amp;L"
              onclick="toggleTodayDetail()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleTodayDetail();}">
           <div class="cc-tile-head"><span>Today's P&amp;L <span class="cc-ccy"></span></span><span id="cc-today-sub" class="cc-muted"></span></div>
-          <div class="cc-big-row"><div class="cc-big" id="cc-today">—</div><span class="cc-pct" id="cc-today-pct" title="Today's P&amp;L as a % of the account value at the start of the day"></span></div>
+          <div class="cc-big-row"><div class="cc-big" id="cc-today">—</div><span class="cc-pct" id="cc-today-pct"></span><span data-tip="Today's P&amp;L as a % of the account value at the start of the day" data-tip-name="today's P&amp;L %"></span></div>
           <div class="cc-muted" id="cc-today-split">closed — · open today —</div>
           <div class="cc-target" id="cc-target" hidden>
             <div class="cc-target-bar" aria-hidden="true"><div id="cc-target-fill"></div></div>
@@ -375,7 +375,7 @@
           <span class="cc-muted" id="scr-sub"></span>
         </div>
         <div class="cc-muted ig24-status" id="scr-stream" hidden></div>
-        <div class="scr-wrap"><table class="cc-mini-table scr-table">
+        <div class="scr-wrap tk-tall"><table class="cc-mini-table scr-table" id="scr-table" data-name="Screener ranking">
           <thead id="scr-head"><tr>
             <th>#</th><th>Symbol</th>
             <th title="Weighted blend of the three readings, 0 to 100">Score</th>
@@ -436,7 +436,7 @@
           <!-- Chart view controls: change only what the chart shows, never what the agent trades -->
           <div class="chart-controls">
             <label>Candles
-              <select id="chart-tf" class="chart-select" title="Chart-only timeframe. The agent keeps trading on the timeframe in config.yaml.">
+              <select id="chart-tf" class="chart-select" data-tip="Chart-only timeframe. The agent keeps trading on the timeframe in config.yaml." data-tip-name="chart timeframe">
                 <option value="">Agent setting</option>
                 <option value="MIN_1">1 min</option>
                 <option value="MIN_3">3 min</option>
@@ -457,7 +457,7 @@
               </select>
             </label>
             <label>Refresh
-              <select id="chart-refresh" class="chart-select" title="Reloads candles only. The Kronos forecast reruns when you change symbol or timeframe.">
+              <select id="chart-refresh" class="chart-select" data-tip="Reloads candles only. The Kronos forecast reruns when you change symbol or timeframe." data-tip-name="chart refresh">
                 <option value="0">Off</option>
                 <option value="30">30 s</option>
                 <option value="60">1 min</option>
@@ -468,7 +468,7 @@
               <label><input type="checkbox" id="ov-ma"> MAs</label>
               <label><input type="checkbox" id="ov-vwap"> VWAP</label>
               <label><input type="checkbox" id="ov-rsi"> RSI</label>
-              <label title="Support and resistance: prices where the market has turned before. Redrawn from the latest candles on every refresh. Display only."><input type="checkbox" id="ov-sr"> S/R</label>
+              <label data-tip="Support and resistance: prices where the market has turned before. Redrawn from the latest candles on every refresh. Display only." data-tip-name="S/R lines"><input type="checkbox" id="ov-sr"> S/R</label>
             </span>
             <span id="chart-tf-note" class="chart-tf-note"></span>
             <span id="chart-updated" class="chart-updated"></span>
@@ -601,8 +601,8 @@
           <button type="button" class="cc-chip" data-stage="error" onclick="dsFilter('error')">Errors</button>
         </div>
 
-        <div class="table-container">
-          <table>
+        <div class="table-container tk-tall">
+          <table id="ds-table" data-name="Decisions">
             <thead>
               <tr>
                 <th>Timestamp</th>
@@ -614,7 +614,7 @@
                 <th>Kronos Confidence</th>
                 <th>Action Taken</th>
                 <th title="Price when the agent decided (entry price for opened orders) and the live price now. The % is the move in the signal's direction: green = price went the way the signal said.">Price at Decision → Now</th>
-                <th>Details</th>
+                <th data-sort="off">Details</th>
               </tr>
             </thead>
             <tbody id="decisions-table-body">
@@ -661,7 +661,7 @@
         <div class="cc-muted" id="pc-rules" style="margin:-4px 0 12px"></div>
         <div id="pc-grid" class="pc-grid"></div>
         <div class="table-container" id="positions-table-wrap">
-          <table>
+          <table id="pos-table" data-name="Positions">
             <thead>
               <tr>
                 <th>Symbol</th>
@@ -675,7 +675,7 @@
                 <th>Trail</th>
                 <th>Unrealized P&L</th>
                 <th>Management</th>
-                <th>Action</th>
+                <th data-sort="off">Action</th>
               </tr>
             </thead>
             <tbody id="positions-table-body">
@@ -706,7 +706,7 @@
           <span class="mono" id="orders-updated" style="color:var(--text-muted); font-size:11px;"></span>
         </div>
         <div class="table-container">
-          <table>
+          <table id="orders-table" data-name="Working orders at broker">
             <thead>
               <tr>
                 <th>Placed</th>
@@ -786,8 +786,8 @@
 
       <section class="cc-card" aria-label="Closed trades">
         <div class="cc-card-head"><h2>Closed trades</h2><span class="cc-muted">newest first · up to 100</span></div>
-        <div class="table-container">
-          <table>
+        <div class="table-container tk-tall">
+          <table id="pf-table" data-name="Closed trades">
             <thead><tr><th>Closed</th><th>Symbol</th><th>Pattern</th><th>Side</th><th>Entry → exit</th><th>Held</th><th>Exit</th><th>R</th><th>P&amp;L</th></tr></thead>
             <tbody id="pf-trades"><tr><td colspan="9" class="cc-empty">Loading…</td></tr></tbody>
           </table>
@@ -835,7 +835,7 @@
           </div>
 
           <div class="table-container">
-            <table>
+            <table id="sim-table" data-name="Forecast bars" data-sort="off">
               <thead>
                 <tr>
                   <th>Future Bar</th>
@@ -884,20 +884,20 @@
         <h3 class="cc-sub-h" style="margin-top:16px">Shadow test <span class="cc-muted" style="text-transform:none;letter-spacing:0" id="ft-shadow-model"></span></h3>
         <div id="ft-shadow"></div>
         <h3 class="cc-sub-h" style="margin-top:16px">Training runs</h3>
-        <div class="scr-wrap"><table class="cc-mini-table ft-table">
+        <div class="scr-wrap"><table class="cc-mini-table ft-table" id="ft-runs-table" data-name="Training runs">
           <thead><tr>
             <th>Run</th><th>Data</th>
             <th title="Next-candle prediction loss on held-out candles. Lower is better">Loss: original → new</th>
             <th title="How often the forecast direction over the horizon was right, on held-out candles">Direction right: original → new</th>
-            <th>Result</th><th></th>
+            <th>Result</th><th data-sort="off"></th>
           </tr></thead>
           <tbody id="ft-runs"></tbody>
         </table></div>
         <h3 class="cc-sub-h" style="margin-top:16px">Saved versions <span class="cc-muted" style="text-transform:none;letter-spacing:0" id="ft-ver-repo"></span></h3>
         <p class="cc-muted" style="margin:0 0 8px">Models you keep for later, stored as GitHub Releases on your private repository. Old training runs on this computer are cleaned up; saved versions stay and can be downloaded again at any time.</p>
         <div id="ft-ver-job" role="status"></div>
-        <div class="scr-wrap"><table class="cc-mini-table ft-table">
-          <thead><tr><th>Version</th><th>Saved</th><th>Loss: original → new</th><th>Direction right: original → new</th><th>Note</th><th></th></tr></thead>
+        <div class="scr-wrap"><table class="cc-mini-table ft-table" id="ft-ver-table" data-name="Saved versions">
+          <thead><tr><th>Version</th><th>Saved</th><th>Loss: original → new</th><th>Direction right: original → new</th><th>Note</th><th data-sort="off"></th></tr></thead>
           <tbody id="ft-versions"><tr><td colspan="6" class="cc-empty">Loading…</td></tr></tbody>
         </table></div>
       </section>
@@ -1634,6 +1634,7 @@
   <!-- Notifications: errors stay until closed, routine messages fade after a few seconds. -->
   <section id="toast-stack" class="toast-stack" popover="manual" role="region" aria-label="Notifications"></section>
   <div id="toast" class="sr-only" role="status" aria-live="polite"></div>
+  <div id="tk-status" class="sr-only" role="status"></div>
 
   <!-- Command palette (Ctrl+K) -->
   <div id="cp-overlay" class="cp-overlay" style="display:none" onclick="if (event.target === this) closePalette()">
@@ -4032,14 +4033,8 @@
         `Dashboard ${esc(d.label || "?")} · Agent ${esc(a ? a.label : "not reported yet")}` +
         (v.restart_needed ? ` · <b class="ver-warn-text">newer code on disk, restart to run it</b>` : "");
     }
-    function toggleVersion(force) {
-      const pop = document.getElementById("ver-pop"), chip = document.getElementById("ver-chip");
-      const open = force !== undefined ? force : pop.hidden;
-      pop.hidden = !open; chip.setAttribute("aria-expanded", String(open));
-      if (open) loadVersion();
-    }
-    document.addEventListener("click", e => { if (!e.target.closest(".ver-wrap")) toggleVersion(false); });
-    document.addEventListener("keydown", e => { if (e.key === "Escape") toggleVersion(false); });
+    // The version details are a native popover: a click outside or Esc closes it.
+    document.getElementById("ver-pop").addEventListener("toggle", e => { if (e.newState === "open") loadVersion(); });
     loadVersion();
     setInterval(() => { if (!document.hidden) loadVersion(); }, 300000);
 
@@ -6099,6 +6094,184 @@
       uiAlert("Recent notifications", toastHistory.map(t =>
         `${new Date(t.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}  ${t.kind === "error" ? "⚠ " : ""}${t.msg}`).join("\n"));
     }
+
+    // ================= Tables: sticky headers, sort by column, cards on narrow screens =================
+    // Each data table is enhanced in place. Rows are still rendered by their own
+    // code (innerHTML); a MutationObserver re-labels them and re-applies the chosen
+    // sort after every refresh, by moving the existing <tr>s, never rebuilding them.
+    const TK_TYPES = {                     // how each column compares; anything else sorts as text
+      "#": "number", "Score": "number", "Rel. strength": "number", "Rel. volume": "number", "Squeeze": "number",
+      "ATR %": "number", "Spread": "number", "Range": "number", "Today": "number",
+      "Timestamp": "date", "Placed": "date", "Closed": "date", "Saved": "date",
+      "Pattern Strength": "number", "Kronos Confidence": "number", "Price at Decision → Now": "number",
+      "Quantity": "number", "Avg Cost": "number", "Last Price": "number", "Stop Loss": "number",
+      "Target Price": "number", "High Water": "number", "Unrealized P&L": "number",
+      "Qty (Filled)": "number", "Limit": "number", "Stop Trigger": "number",
+      "Held": "duration", "R": "number", "P&L": "number",
+      "Loss: original → new": "last", "Direction right: original → new": "last",
+    };
+    const tkCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+    const TK_MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+    function tkNumber(text, last) {
+      const hits = [...text.replace(/,/g, "").matchAll(/([−\-+])?\s*(?:[A-Za-z$€£₹¥]{1,4}\s*)?(\d*\.?\d+)/g)];
+      if (!hits.length) return NaN;
+      const m = last ? hits[hits.length - 1] : hits[0];
+      return (m[1] === "-" || m[1] === "−" ? -1 : 1) * parseFloat(m[2]);
+    }
+    function tkDate(text) {
+      // "Sun 22 Nov, 10:30[:05]" or "Sun 22 Nov 2025, 10:30" (fmtDateTime), or ISO "2026-11-22 10:30:00".
+      const m = text.match(/(\d{1,2}) ([A-Za-z]{3})(?: (\d{4}))?, (\d{1,2}):(\d{2})(?::(\d{2}))?/);
+      if (m && m[2].toLowerCase() in TK_MONTHS) {
+        const now = new Date();
+        let d = new Date(m[3] ? +m[3] : now.getFullYear(), TK_MONTHS[m[2].toLowerCase()], +m[1], +m[4], +m[5], +(m[6] || 0));
+        if (!m[3] && d - now > 86400000) d.setFullYear(d.getFullYear() - 1);   // "31 Dec" seen in January
+        return d.getTime();
+      }
+      const iso = Date.parse(text.trim().slice(0, 19).replace(" ", "T"));
+      return isNaN(iso) ? NaN : iso;
+    }
+    function tkDuration(text) {
+      const part = u => +((text.match(new RegExp(`(\\d+)\\s*${u}`)) || [])[1] || 0);
+      const v = part("d") * 1440 + part("h") * 60 + part("m");
+      return v || /\d/.test(text) ? v : NaN;
+    }
+    function tkValue(cell, type) {
+      if (cell.dataset.value !== undefined) return type === "text" ? cell.dataset.value : parseFloat(cell.dataset.value);
+      const text = cell.textContent.trim();
+      if (type === "number") return tkNumber(text, false);
+      if (type === "last") return tkNumber(text, true);
+      if (type === "date") return tkDate(text);
+      if (type === "duration") return tkDuration(text);
+      return text;
+    }
+    function tkLabel(th) { return th.dataset.label ?? th.textContent.trim(); }
+
+    let tipSeq = 0;
+    // A toggletip: "?" next to the thing it explains. Hover/focus shows it where the
+    // browser supports interestfor; click, tap and Enter show it everywhere.
+    function makeToggletip(text, name) {
+      const id = `tip-${++tipSeq}`;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "tip-btn";
+      btn.textContent = "?";
+      btn.setAttribute("aria-label", `More about ${name}`);
+      btn.setAttribute("aria-expanded", "false");
+      btn.setAttribute("popovertarget", id);
+      btn.setAttribute("popovertargetaction", "show");
+      btn.setAttribute("interestfor", id);
+      btn.style.setProperty("anchor-name", `--${id}`);
+      const tip = document.createElement("div");
+      tip.id = id;
+      tip.className = "tip-pop";
+      tip.setAttribute("popover", "hint");
+      if (tip.popover !== "hint") tip.setAttribute("popover", "auto");   // browsers without hint popovers
+      tip.setAttribute("role", "tooltip");
+      tip.style.setProperty("position-anchor", `--${id}`);
+      tip.textContent = text;
+      return [btn, tip];
+    }
+    // Keep aria-expanded on each "?" in step with its popover (toggle doesn't bubble: capture it).
+    document.addEventListener("toggle", e => {
+      const t = e.target;
+      if (!t.classList || !t.classList.contains("tip-pop")) return;
+      document.querySelectorAll(`.tip-btn[popovertarget="${t.id}"]`).forEach(b => b.setAttribute("aria-expanded", String(e.newState === "open")));
+    }, true);
+    function tipsInit(root = document) {
+      root.querySelectorAll("[data-tip]:not([data-tip-done])").forEach(el => {
+        el.setAttribute("data-tip-done", "");
+        const [btn, tip] = makeToggletip(el.dataset.tip, el.dataset.tipName || "this");
+        el.after(btn, tip);
+      });
+    }
+
+    function tkHead(table) {
+      if (!table.tHead) return;
+      for (const th of table.tHead.querySelectorAll("th")) {
+        if (th.dataset.tk) continue;
+        th.dataset.tk = "1";
+        th.scope = "col";
+        const label = th.textContent.trim();
+        th.dataset.label = label;
+        const tipText = th.getAttribute("title");
+        th.removeAttribute("title");
+        if (label && table.dataset.sort !== "off" && th.dataset.sort !== "off") {
+          th.dataset.type = th.dataset.type || TK_TYPES[label] || "text";
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "tk-sort";
+          btn.append(...th.childNodes);
+          const icon = document.createElement("span");
+          icon.className = "tk-sort-icon";
+          icon.setAttribute("aria-hidden", "true");
+          btn.append(icon);
+          btn.addEventListener("click", () => tkSortBy(table, th));
+          th.append(btn);
+          th.classList.add("tk-sortable");
+        }
+        if (tipText) th.append(...makeToggletip(tipText, label || "this column"));
+      }
+      // A header rebuilt by its own code (the 24-hour screener) keeps the chosen sort.
+      const st = table._tkSort;
+      if (st) for (const th of table.tHead.querySelectorAll("th")) {
+        if (tkLabel(th) === st.label) th.setAttribute("aria-sort", st.dir); else th.removeAttribute("aria-sort");
+      }
+    }
+    function tkRows(table) {
+      return [...table.tBodies[0].rows].filter(r => !r.querySelector("td[colspan]"));
+    }
+    function tkLabels(table) {
+      const heads = [...table.tHead.querySelectorAll("th")];
+      for (const row of tkRows(table)) {
+        [...row.cells].forEach((cell, i) => { const h = heads[i]; if (h && !cell.dataset.label) cell.dataset.label = tkLabel(h); });
+      }
+    }
+    function tkApplySort(table) {
+      const th = table.tHead && table.tHead.querySelector("th[aria-sort]");
+      if (!th) return;
+      const dir = th.getAttribute("aria-sort") === "ascending" ? 1 : -1, idx = th.cellIndex, type = th.dataset.type;
+      const rows = tkRows(table);
+      const keyed = rows.map(r => ({ r, v: r.cells[idx] ? tkValue(r.cells[idx], type) : NaN }));
+      keyed.sort((a, b) => {
+        if (type === "text") return dir * tkCollator.compare(String(a.v), String(b.v));
+        const an = isNaN(a.v), bn = isNaN(b.v);
+        if (an || bn) return an === bn ? 0 : an ? 1 : -1;        // blanks ("—") always last
+        return dir * (a.v - b.v);
+      });
+      if (keyed.every((k, i) => k.r === rows[i])) return;        // already in order: no DOM writes
+      const body = table.tBodies[0];
+      for (const { r } of keyed) body.moveBefore ? body.moveBefore(r, null) : body.appendChild(r);
+    }
+    function tkSortBy(table, th) {
+      const dir = th.getAttribute("aria-sort") === "ascending" ? "descending" : "ascending";
+      table.tHead.querySelectorAll("th[aria-sort]").forEach(h => h.removeAttribute("aria-sort"));
+      th.setAttribute("aria-sort", dir);
+      table._tkSort = { label: tkLabel(th), dir };
+      try { localStorage.setItem("tkSort:" + table.id, JSON.stringify(table._tkSort)); } catch (e) {}
+      tkApplySort(table);
+      document.getElementById("tk-status").textContent =
+        `${table.dataset.name} sorted by ${tkLabel(th)}, ${dir}, ${tkRows(table).length} rows`;
+    }
+    function tkInit(table) {
+      if (!table || table.dataset.tkReady) return;
+      table.dataset.tkReady = "1";
+      table.classList.add("tk-table");
+      const wrap = table.closest(".table-container, .scr-wrap");
+      if (wrap) {
+        wrap.classList.add("tk-wrap");
+        wrap.tabIndex = 0;                                    // keyboard users can scroll it
+        wrap.setAttribute("role", "region");
+        wrap.setAttribute("aria-label", table.dataset.name || "Table");
+      }
+      try { table._tkSort = JSON.parse(localStorage.getItem("tkSort:" + table.id) || "null"); } catch (e) {}
+      tkHead(table);
+      tkLabels(table); tkApplySort(table);
+      new MutationObserver(() => tkHead(table)).observe(table.tHead, { childList: true, subtree: true });
+      new MutationObserver(() => { tkLabels(table); tkApplySort(table); }).observe(table.tBodies[0], { childList: true });
+    }
+    ["scr-table", "ds-table", "pos-table", "orders-table", "pf-table", "sim-table", "ft-runs-table", "ft-ver-table"]
+      .forEach(id => tkInit(document.getElementById(id)));
+    tipsInit();
 
     // ---- Market bar: exchange clocks, sessions and agent phase ----
     let marketData = null, marketFetchedAt = 0, serverSkew = 0;
