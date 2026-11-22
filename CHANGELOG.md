@@ -15,6 +15,24 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Fixed
+- IG: "exceeded-api-key-allowance" (403) lock-outs. IG allows 60 non-trading
+  requests a minute per API key and 30 per account, shared by the agent and the
+  dashboard, and both were going over:
+  - the dashboard fetched each market's price with its own request every few
+    seconds; now one request covers all of them, refreshed every 15 s, with
+    positions/orders every 30 s, account figures every 60 s, and a health check
+    every 2 minutes;
+  - each order-status check fetched every position and working order; checks in
+    the same few seconds now share one fetch (refreshed after any order);
+  - each login with an encrypted-password account first sent a login IG was
+    sure to refuse; the account's need for encryption is now remembered;
+  - each process keeps to a share of the allowance (agent 20 a minute, dashboard
+    8; `IG_REQUESTS_PER_MIN`), waiting for room rather than going over;
+  - when IG does say an allowance is used up, the process pauses its non-order
+    requests (1, 2, 4 ... up to 15 minutes) instead of retrying into a longer
+    block. Orders are never held back.
+
 ### Added
 - `kronos_scalp:` options for reading Kronos on scalps, all off by default (the
   default is exactly the original rule):
