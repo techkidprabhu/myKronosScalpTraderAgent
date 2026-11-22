@@ -50,6 +50,16 @@ SECTIONS = [
          "help": "Shared Kronos model - one value for every broker"}),
         ("kronos.temperature", "Sampling temperature", "float", {"min": 0.05, "max": 2.0, "scope": "shared"}),
         ("kronos.top_p", "Top-p", "float", {"min": 0.1, "max": 1.0, "scope": "shared"}),
+        ("kronos_scalp.confidence_method", "How confidence is measured", "select", {"options": ["bars", "paths"],
+         "help": "bars (default) = share of the averaged forecast's candles beyond the last close, the original rule. "
+                 "paths = share of separate forecasts that end beyond it"}),
+        ("kronos_scalp.paths", "Separate forecasts for 'paths'", "int", {"min": 2, "max": 50,
+         "help": "Default 10. More = steadier answer, slower (each one is a full forecast)"}),
+        ("kronos_scalp.shadow_paths", "Also record the 'paths' confidence", "bool", {
+         "help": "Recorded only, never decides a trade. Kronos Model Lab scores it next to the rule in use"}),
+        ("kronos_scalp.min_move_pct", "Min forecast move (%)", "float", {"min": 0.0, "max": 5.0,
+         "help": "A forecast close only counts if it's at least this far beyond the last close. "
+                 "Set it to cover spread + fees. Blank or 0 = off (default)"}),
     ]},
     {"id": "selflearning", "title": "Self-learning (fine-tuning Kronos)", "fields": [
         ("finetune.enabled", "Collect candles automatically", "bool", {"scope": "shared",

@@ -262,6 +262,7 @@
           </div>
           <div class="tm-switch" role="radiogroup" aria-labelledby="tm-h">
             <button type="button" role="radio" id="tm-kronos" aria-checked="true" onclick="tmSet('kronos')">Kronos model</button>
+            <button type="button" role="radio" id="tm-skill-kronos" aria-checked="false" onclick="tmSet('skill_kronos')">Skill + Kronos</button>
             <button type="button" role="radio" id="tm-skill" aria-checked="false" onclick="tmSet('skill')">Skill file</button>
           </div>
         </div>
@@ -887,6 +888,7 @@
           <thead><tr><th>Group</th><th>Verdicts</th><th>Checked</th><th title="Share of checked verdicts where price went the signal's way">Right</th><th title="Average price change in the signal's direction, from the close Kronos saw to the close N candles later">Avg move</th></tr></thead>
           <tbody id="kq-body"><tr><td colspan="5" class="cc-empty">Loading…</td></tr></tbody>
         </table></div>
+        <p class="kq-verdict" id="kq-paths" hidden style="margin:10px 0 0"></p>
         <p class="cc-muted" id="kq-timing" style="margin:10px 0 0"></p>
       </section>
 
@@ -4475,6 +4477,14 @@
                `Disagreed signals did better by ${-e} points: worth reviewing the threshold.`);
           }
         }
+        const pp = document.getElementById("kq-paths"), P = d.paths;
+        if (P && P.verdicts) {
+          const [, pa, pr] = P.groups;
+          pp.hidden = false;
+          pp.textContent = `Path confidence (recorded only, ${P.verdicts} verdicts): when ${P.paths || ""} separate forecasts mostly agreed, price went the signal's way ` +
+            `${pa.right_pct ?? "–"}% of the time (${pa.scored} checked); when they didn't, ${pr.right_pct ?? "–"}% (${pr.scored} checked). ` +
+            (P.edge_points != null && d.edge_points != null ? `Edge ${P.edge_points >= 0 ? "+" : ""}${P.edge_points} points vs ${d.edge_points >= 0 ? "+" : ""}${d.edge_points} for the rule trading now.` : "");
+        } else pp.hidden = true;
         const t = d.timing;
         document.getElementById("kq-timing").textContent = t && t.calls
           ? `Kronos speed on this computer today: about ${(t.avg_ms_per_symbol / 1000).toFixed(1)} s per symbol, slowest pass ${(t.max_ms / 1000).toFixed(1)} s` +
@@ -4901,9 +4911,10 @@
     function tmEsc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
     function tmRender(d) {
       tmData = d;
-      const skill = d.mode === "skill";
+      const skill = d.mode === "skill" || d.mode === "skill_kronos", both = d.mode === "skill_kronos";
       document.getElementById("tm-kronos").setAttribute("aria-checked", String(!skill));
-      document.getElementById("tm-skill").setAttribute("aria-checked", String(skill));
+      document.getElementById("tm-skill-kronos").setAttribute("aria-checked", String(both));
+      document.getElementById("tm-skill").setAttribute("aria-checked", String(skill && !both));
       document.getElementById("tm-card").classList.toggle("tm-on", skill);
       const sel = document.getElementById("tm-file");
       const files = d.files || [];
@@ -4914,11 +4925,13 @@
       const probs = (d.problems || []).filter(p => !/^Unknown setting/.test(p) || true);
       document.getElementById("tm-file-note").textContent = probs.length ? probs.join("; ") : "";
       const since = d.changed_ts ? ` since ${new Date(d.changed_ts * 1000).toLocaleString()}` : "";
-      document.getElementById("tm-explain").innerHTML = skill
+      document.getElementById("tm-explain").innerHTML = both
+        ? `<b>${tmEsc(name)}</b> finds setups and sets entry, stop, target and exits${tmEsc(since)}; Kronos must agree with each setup's direction before the entry goes in. Your risk limits still apply.`
+        : skill
         ? `<b>${tmEsc(name)}</b> opens and closes new trades${tmEsc(since)}. Kronos is not called. Your risk limits still apply to every entry.`
-        : `Kronos confirms every pattern before a trade${tmEsc(since)}. Switch to a skill file to let its rules open and close trades instead.`;
+        : `Kronos confirms every pattern before a trade${tmEsc(since)}. Switch to a skill file to let its rules open and close trades instead, or Skill + Kronos to have Kronos confirm the skill's setups.`;
       const hero = document.getElementById("kr-hero");
-      if (hero) hero.hidden = skill;
+      if (hero) hero.hidden = skill && !both;
       const box = document.getElementById("tm-setups");
       const rows = d.setups || [];
       const trades = d.skill_trades || [];
@@ -4954,6 +4967,10 @@
         ? await uiConfirm(`Let ${name} open and close trades on every broker?`,
             "Kronos will not be called. Your risk limits (max loss per trade, daily limits, per-stock limits, flat-by-close) still apply. Takes effect on the agent's next scan; open positions keep the manager they were opened with.",
             { ok: "Use skill file", danger: true })
+        : mode === "skill_kronos"
+        ? await uiConfirm(`Let ${name} trade, with Kronos confirming each setup?`,
+            `The skill file finds setups and sets entry, stop, target and exits. Before each entry Kronos must agree with the setup's direction (at least ${Math.round((tmData.threshold ?? 0.62) * 100)}% confidence); it can stop an entry but never start one. Your risk limits still apply. Takes effect on the agent's next scan.`,
+            { ok: "Use skill + Kronos", danger: true })
         : await uiConfirm("Go back to Kronos deciding trades on every broker?",
             "Trades the skill already opened keep the skill's exits until they close.", { ok: "Use Kronos" });
       if (!ok) { tmRender(tmData); return; }
@@ -4962,10 +4979,10 @@
     async function tmFileChanged() {
       if (!tmData) return;
       const file = document.getElementById("tm-file").value;
-      if (tmData.mode !== "skill") { tmData.file = file; return; }
+      if (tmData.mode === "kronos") { tmData.file = file; return; }
       if (!await uiConfirm(`Switch trading to ${file.replace(/^config\//, "")}?`,
           "New trades follow its settings from the next scan.", { ok: "Switch skill file", danger: true })) { tmRender(tmData); return; }
-      tmPost("skill", file);
+      tmPost(tmData.mode, file);
     }
     loadTradingMode();
     setInterval(() => { if (!document.hidden) loadTradingMode(); }, 30000);
@@ -5597,10 +5614,12 @@
       // 6b who decides trades (skill-file trading)
       const tm = STRAT.mode;
       if (tm) {
-        const fname = (tm.file || "").replace(/^config\//, ""), sk = tm.mode === "skill", s = tm.settings;
-        v.tm_mode = sk ? `Skill file: ${fname}` : "Kronos model";
-        v.k_deciding = sk ? `Skill file (${fname}): Kronos is not called` : "Kronos";
-        v.tm_now = sk ? `right now ${fname} is deciding` : "right now Kronos is deciding";
+        const fname = (tm.file || "").replace(/^config\//, ""), both = tm.mode === "skill_kronos",
+              sk = tm.mode === "skill" || both, s = tm.settings;
+        v.tm_mode = both ? `Skill + Kronos: ${fname}` : sk ? `Skill file: ${fname}` : "Kronos model";
+        v.k_deciding = both ? `Skill file (${fname}) finds setups; Kronos must agree before each entry`
+          : sk ? `Skill file (${fname}): Kronos is not called` : "Kronos";
+        v.tm_now = both ? `right now ${fname} is deciding, with Kronos confirming` : sk ? `right now ${fname} is deciding` : "right now Kronos is deciding";
         v.tm_file = fname + (s ? ` (${s.strategy})` : (tm.problems || []).length ? `: ${tm.problems[0]}` : "");
         if (s && s.strategy === "scalp_vwap_orb") {
           const setups = { both: "ORB + VWAP pullback", orb: "ORB only", pullback: "VWAP pullback only" }[s.setups] || s.setups;

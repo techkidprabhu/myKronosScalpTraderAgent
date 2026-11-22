@@ -39,7 +39,7 @@ from src import ig_hours
 from src import skill_strategy
 from src import trading_mode
 from src import version as code_version
-from src.kronos_agent import KronosAgent
+from src.kronos_agent import DEFAULT_OPTIONS, KronosAgent, is_default, kronos_options
 from src.market import BAR_DURATION, drop_unclosed_bar, is_market_open, market_timezone
 from src.patterns import scan
 from src.kronos_indicators.indicators import atr as atr_series
@@ -123,6 +123,25 @@ def _opposite(direction: str) -> str:
     return "SELL" if direction == "BUY" else "BUY"
 
 
+def note_kronos_time(audit_log, ms: float, symbols: int):
+    """Keep a small running record of how long Kronos takes on this
+    computer, for the dashboard (Kronos Model Lab)."""
+    try:
+        rec = audit_log.get_kv(KRONOS_TIMING_KEY) or {}
+        day = time.strftime("%Y-%m-%d")
+        if rec.get("day") != day:
+            rec = {"day": day, "calls": 0, "symbols": 0, "total_ms": 0.0, "max_ms": 0.0}
+        rec["calls"] += 1
+        rec["symbols"] += symbols
+        rec["total_ms"] += ms
+        rec["max_ms"] = max(rec["max_ms"], ms)
+        rec.update(last_ms=round(ms), last_symbols=symbols, last_ts=time.time(),
+                   avg_ms_per_symbol=round(rec["total_ms"] / max(1, rec["symbols"])))
+        audit_log.set_kv(KRONOS_TIMING_KEY, rec)
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not record Kronos timing", exc_info=True)
+
+
 class SymbolWorker:
     def __init__(
         self,
@@ -141,6 +160,7 @@ class SymbolWorker:
         self.lookback_bars = global_cfg["lookback_bars"]
         self.forecast_horizon = global_cfg["forecast_horizon"]
         self.confidence_threshold = global_cfg["kronos_confidence_threshold"]
+        self.kronos_opts = kronos_options(global_cfg)        # kronos_scalp: (defaults = original rule)
         self.global_cfg = global_cfg
         self.order_type = global_cfg.get("order_type", "LIMIT").upper()
         # Cancel an entry still completely unfilled after this many minutes
@@ -221,13 +241,48 @@ class SymbolWorker:
         ctx = self.prepare_signal()
         if ctx is None:
             return
+        result, ctx["kronos_extra"], ms = self.ask_kronos(ctx["df"], ctx["signal"].direction)
+        self.finish_signal(ctx, result, ms)
+
+    def kronos_extra_base(self) -> dict:
+        """What to record with a decision about how Kronos's answer was read
+        (only when the kronos_scalp options differ from the original rule)."""
+        o = self.kronos_opts if isinstance(getattr(self, "kronos_opts", None), dict) else DEFAULT_OPTIONS
+        if is_default(o):
+            return {}
+        return {"kronos_method": o["method"], **({"paths": o["paths"]} if o["method"] == "paths" else {}),
+                **({"min_move_pct": o["min_move_pct"]} if o["min_move_pct"] else {})}
+
+    def ask_kronos(self, df: pd.DataFrame, direction: str):
+        """Ask Kronos about one signal, honouring the kronos_scalp options.
+        Returns (result, extra details to record, milliseconds); result is
+        (confirmed, confidence) or the exception Kronos raised."""
+        o = self.kronos_opts if isinstance(getattr(self, "kronos_opts", None), dict) else DEFAULT_OPTIONS
         t0 = time.perf_counter()
         try:
-            result = self.kronos_agent.confirm_direction(
-                ctx["df"], ctx["signal"].direction, self.forecast_horizon, bar_duration=self.bar_duration)
-        except Exception as exc:  # noqa: BLE001 - reported by finish_signal
+            if is_default(o):
+                result = self.kronos_agent.confirm_direction(
+                    df, direction, self.forecast_horizon, bar_duration=self.bar_duration)
+            else:
+                result = self.kronos_agent.confirm_many(
+                    [(df, direction)], self.forecast_horizon, bar_duration=self.bar_duration,
+                    method=o["method"], paths=o["paths"], min_move_pct=o["min_move_pct"])[0]
+        except Exception as exc:  # noqa: BLE001 - reported by the caller
             result = exc
-        self.finish_signal(ctx, result, (time.perf_counter() - t0) * 1000.0)
+        ms = (time.perf_counter() - t0) * 1000.0
+        extra = self.kronos_extra_base()
+        if not isinstance(result, BaseException):
+            note_kronos_time(self.audit_log, ms, 1)
+            if o["shadow_paths"] and o["method"] == "bars":
+                try:
+                    sp = self.kronos_agent.confirm_many(
+                        [(df, direction)], self.forecast_horizon, bar_duration=self.bar_duration,
+                        method="paths", paths=o["paths"], min_move_pct=o["min_move_pct"])[0]
+                    if isinstance(sp, tuple):
+                        extra["paths_confidence"] = round(float(sp[1]), 3)
+                except Exception:  # noqa: BLE001 - recorded only, never affects the trade
+                    logger.debug("Shadow paths confidence failed for %s", self.symbol, exc_info=True)
+        return result, extra, ms
 
     def prepare_signal(self):
         """Everything before Kronos: fetch candles, find a pattern, run the
@@ -266,7 +321,7 @@ class SymbolWorker:
         trade = self._skill_trade()
         if trade is not None:
             self._skill_manage(df, trade, float(last_close))
-        if trading_mode.read()["mode"] == "skill":
+        if trading_mode.read()["mode"] in trading_mode.SKILL_MODES:
             self._skill_entry(df, float(last_close))   # Kronos is not called in this mode
             return
 
@@ -307,6 +362,7 @@ class SymbolWorker:
             return
 
         confirmed, confidence = result
+        kx = ctx.get("kronos_extra") or {}
         self.audit_log.log_snapshot(
             self.symbol, float(last_close), "kronos_result",
             {"confirmed": confirmed, "confidence": confidence,
@@ -327,7 +383,7 @@ class SymbolWorker:
             reason = f"kronos confidence {confidence:.2f} below threshold {self.confidence_threshold}"
             self.audit_log.log_decision(
                 self.symbol, signal.name, signal.direction, signal.strength,
-                confirmed, confidence, None, reason, "rejected",
+                confirmed, confidence, None, reason, "rejected", details=kx or None,
             )
             self.reporter.report_rejected(self.symbol, signal.name, reason)
             return
@@ -337,7 +393,7 @@ class SymbolWorker:
         if not allowed:
             self.audit_log.log_decision(
                 self.symbol, signal.name, signal.direction, signal.strength,
-                confirmed, confidence, False, risk_reason, "rejected",
+                confirmed, confidence, False, risk_reason, "rejected", details=kx or None,
             )
             self.reporter.report_rejected(self.symbol, signal.name, f"risk: {risk_reason}")
             return
@@ -350,7 +406,7 @@ class SymbolWorker:
         if not plan.allowed:
             self.audit_log.log_decision(
                 self.symbol, signal.name, signal.direction, signal.strength,
-                confirmed, confidence, False, plan.reason, "rejected", details={"risk_plan": plan.details},
+                confirmed, confidence, False, plan.reason, "rejected", details={"risk_plan": plan.details, **kx},
             )
             self.reporter.report_rejected(self.symbol, signal.name, f"risk: {plan.reason}")
             return
@@ -377,7 +433,7 @@ class SymbolWorker:
             self.audit_log.log_decision(
                 self.symbol, signal.name, signal.direction, signal.strength,
                 confirmed, confidence, True, risk_reason, "error",
-                details={"error": str(exc)},
+                details={"error": str(exc), **kx},
             )
             self.reporter.report_error(f"entry order ({self.symbol})", str(exc))
             return
@@ -395,7 +451,7 @@ class SymbolWorker:
             self.symbol, signal.name, signal.direction, signal.strength,
             confirmed, confidence, True, risk_reason, "opened",
             deal_id=str(entry_id),
-            details={"status": "entry_submitted", "entry": float(entry_limit_price or last_close),
+            details={**kx, "status": "entry_submitted", "entry": float(entry_limit_price or last_close),
                      "stop": float(stop_price), "target": float(limit_price), "quantity": quantity,
                      "sized_by": plan.sized_by, "max_loss": round(plan.max_loss, 2),
                      "reward_risk": round(plan.reward_risk, 2),
@@ -582,14 +638,34 @@ class SymbolWorker:
         name = "praga_setup" if settings.strategy == "praga_price_action" else \
             "scalp " + str(setup.details.get("setup") or settings.strategy)
         direction = setup.direction
+        with_kronos = switch["mode"] == "skill_kronos"
+        engine = "skill+kronos" if with_kronos else "skill"
+        k_ok, k_conf, kx = None, None, {}
 
-        def reject(reason, details=None):
+        def reject(reason, details=None, prefix="risk: "):
             self.audit_log.set_kv(key, setup.details.get("breakout"))
-            self.audit_log.log_decision(self.symbol, name, direction, float(setup.quality), None, None, False,
+            self.audit_log.log_decision(self.symbol, name, direction, float(setup.quality), k_ok, k_conf, False,
                                         reason, "rejected",
-                                        details={"engine": "skill", "file": switch["file"], "setup": setup.summary(),
-                                                 **(details or {})})
-            self.reporter.report_rejected(self.symbol, name, f"risk: {reason}")
+                                        details={"engine": engine, "file": switch["file"], "setup": setup.summary(),
+                                                 **kx, **(details or {})})
+            self.reporter.report_rejected(self.symbol, name, f"{prefix}{reason}")
+
+        if with_kronos:
+            # The skill found the setup; Kronos must agree with its direction
+            # before the entry goes in. It can only say no.
+            result, kx, ms = self.ask_kronos(df, direction)
+            if isinstance(result, BaseException):
+                logger.error("Kronos check of skill setup failed for %s: %s", self.symbol, result)
+                self.audit_log.log_decision(self.symbol, name, direction, float(setup.quality), None, None, None,
+                                            None, "error", details={"engine": engine, "error": str(result), **kx})
+                self.reporter.report_error(f"kronos_agent ({self.symbol})", str(result))
+                return
+            k_ok, k_conf = result
+            self.audit_log.log_snapshot(self.symbol, last_close, "kronos_result",
+                                        {"confirmed": k_ok, "confidence": k_conf, "ms": round(ms), "engine": engine})
+            if not k_ok or k_conf < self.confidence_threshold:
+                return reject(f"kronos confidence {k_conf:.2f} below threshold {self.confidence_threshold}",
+                              prefix="")
 
         allowed, risk_reason = self._risk_check(direction)
         if not allowed:
@@ -604,8 +680,8 @@ class SymbolWorker:
             entry_id = self.broker.create_entry(self.symbol, direction, plan.quantity, entry)   # limit at the skill's price
         except Exception as exc:
             logger.exception("Skill entry order failed for %s", self.symbol)
-            self.audit_log.log_decision(self.symbol, name, direction, float(setup.quality), None, None, True,
-                                        risk_reason, "error", details={"engine": "skill", "error": str(exc)})
+            self.audit_log.log_decision(self.symbol, name, direction, float(setup.quality), k_ok, k_conf, True,
+                                        risk_reason, "error", details={"engine": engine, "error": str(exc), **kx})
             self.reporter.report_error(f"entry order ({self.symbol})", str(exc))
             return
         self.audit_log.record_pending_entry(self.symbol, direction, plan.quantity, float(entry), float(stop),
@@ -619,19 +695,20 @@ class SymbolWorker:
             "max_wait_candles": settings.max_wait_candles, "use_trailing_stop": settings.use_trailing_stop,
             "quality": setup.quality, "opened_bar": None})
         self.audit_log.log_decision(
-            self.symbol, name, direction, float(setup.quality), None, None, True, risk_reason, "opened",
+            self.symbol, name, direction, float(setup.quality), k_ok, k_conf, True, risk_reason, "opened",
             deal_id=str(entry_id),
-            details={"engine": "skill", "file": switch["file"], "status": "entry_submitted", "entry": float(entry),
+            details={"engine": engine, **kx, "file": switch["file"], "status": "entry_submitted", "entry": float(entry),
                      "stop": float(stop), "target": float(target), "quantity": plan.quantity,
                      "sized_by": plan.sized_by, "max_loss": round(plan.max_loss, 2),
                      "reward_risk": round(plan.reward_risk, 2), "setup": setup.summary()})
         self.audit_log.log_snapshot(self.symbol, last_close, "entry_submitted",
                                     {"direction": direction, "entry": float(entry), "stop": float(stop),
-                                     "target": float(target), "engine": "skill"})
+                                     "target": float(target), "engine": engine})
         self.reporter.send(
-            f"<b>Entry submitted (skill)</b> <code>{esc(self.symbol)}</code>\n"
+            f"<b>Entry submitted ({'skill + Kronos' if with_kronos else 'skill'})</b> <code>{esc(self.symbol)}</code>\n"
             f"{direction} {plan.quantity} - limit {entry}  SL: {stop}  TP: {target}\n"
-            f"Setup: {esc(name)} (quality {setup.quality})")
+            f"Setup: {esc(name)} (quality {setup.quality})"
+            + (f"\nKronos: {k_conf:.0%} agree" if with_kronos else ""))
 
     def _skill_manage(self, df: pd.DataFrame, trade: dict, last_close: float):
         """On each new closed candle: drop a stale retest order, or exit an
@@ -1751,14 +1828,22 @@ class Orchestrator:
             return
         groups: dict = {}
         for worker, ctx in pending:
-            groups.setdefault((worker.forecast_horizon, worker.bar_duration), []).append((worker, ctx))
-        for (horizon, bar), items in groups.items():
+            o = worker.kronos_opts if isinstance(getattr(worker, "kronos_opts", None), dict) else DEFAULT_OPTIONS
+            key = (worker.forecast_horizon, worker.bar_duration, tuple(sorted(o.items())))
+            groups.setdefault(key, []).append((worker, ctx))
+        for (horizon, bar, okey), items in groups.items():
+            o = dict(okey)
+            custom = not is_default(o)
             results, per_ms = None, None
             many = getattr(self.kronos_agent, "confirm_many", None)
-            if len(items) > 1 and callable(many):
+            jobs = [(c["df"], c["signal"].direction) for _, c in items]
+            if (len(items) > 1 or custom) and callable(many):
                 t0 = time.perf_counter()
+                kw = {"bar_duration": bar}
+                if custom:
+                    kw.update(method=o["method"], paths=o["paths"], min_move_pct=o["min_move_pct"])
                 try:
-                    results = many([(c["df"], c["signal"].direction) for _, c in items], horizon, bar_duration=bar)
+                    results = many(jobs, horizon, **kw)
                 except Exception:  # noqa: BLE001
                     logger.exception("Kronos batch failed; asking one symbol at a time")
                     results = None
@@ -1767,10 +1852,28 @@ class Orchestrator:
                 else:
                     per_ms = (time.perf_counter() - t0) * 1000.0 / len(items)
                     self._note_kronos_time(per_ms * len(items), len(items))
+            extras = [None] * len(items)
+            if results is not None:
+                extras = [w.kronos_extra_base() if isinstance(getattr(w, "kronos_opts", None), dict) else {}
+                          for w, _ in items]
+                if o["shadow_paths"] and o["method"] == "bars":
+                    try:          # recorded only: the 'paths' confidence, for the scorecard
+                        sp = many(jobs, horizon, bar_duration=bar, method="paths", paths=o["paths"],
+                                  min_move_pct=o["min_move_pct"])
+                        for k, r in enumerate(sp if isinstance(sp, list) else []):
+                            if isinstance(r, tuple):
+                                extras[k]["paths_confidence"] = round(float(r[1]), 3)
+                    except Exception:  # noqa: BLE001
+                        logger.debug("Shadow paths confidence failed", exc_info=True)
             for i, (worker, ctx) in enumerate(items):
                 try:
                     if results is not None:
+                        ctx["kronos_extra"] = extras[i]
                         worker.finish_signal(ctx, results[i], per_ms)
+                        continue
+                    if custom:
+                        res, ctx["kronos_extra"], ms = worker.ask_kronos(ctx["df"], ctx["signal"].direction)
+                        worker.finish_signal(ctx, res, ms)
                         continue
                     t0 = time.perf_counter()
                     try:
@@ -1786,22 +1889,7 @@ class Orchestrator:
                     logger.exception("Worker error for %s", worker.symbol)
 
     def _note_kronos_time(self, ms: float, symbols: int):
-        """Keep a small running record of how long Kronos takes on this
-        computer, for the dashboard (Kronos Model Lab)."""
-        try:
-            rec = self.audit_log.get_kv(KRONOS_TIMING_KEY) or {}
-            day = time.strftime("%Y-%m-%d")
-            if rec.get("day") != day:
-                rec = {"day": day, "calls": 0, "symbols": 0, "total_ms": 0.0, "max_ms": 0.0}
-            rec["calls"] += 1
-            rec["symbols"] += symbols
-            rec["total_ms"] += ms
-            rec["max_ms"] = max(rec["max_ms"], ms)
-            rec.update(last_ms=round(ms), last_symbols=symbols, last_ts=time.time(),
-                       avg_ms_per_symbol=round(rec["total_ms"] / max(1, rec["symbols"])))
-            self.audit_log.set_kv(KRONOS_TIMING_KEY, rec)
-        except Exception:  # noqa: BLE001
-            logger.debug("Could not record Kronos timing", exc_info=True)
+        note_kronos_time(self.audit_log, ms, symbols)
 
     def flat_by_close(self):
         """Day-trade mode: in the last N minutes of the session, close every
