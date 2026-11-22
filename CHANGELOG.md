@@ -15,6 +15,21 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Changed
+- Dashboard: every "are you sure?" question (orders, risk-model save, fine-tuning,
+  skill file switch, rules discard, risk limits, settings scope) now uses one native
+  dialog. Focus starts on Cancel, Esc or a click outside cancels, and the page behind
+  can't be clicked or scrolled.
+- Dashboard: notifications stack in the corner. Errors stay until you close them;
+  routine messages fade after 5 s (paused while the pointer is on them). Messages that
+  arrive while a dialog is open wait until it closes. The last 20 are under
+  "Recent notifications" in the command palette (Ctrl K).
+- Dashboard: nothing polls the server while the browser tab is hidden; it refreshes
+  straight away when you come back.
+- Config & Risk: a number outside its allowed range is flagged with a written reason
+  once you leave the field, the message clears as soon as it's fixed, and Save is
+  refused (focusing the field) until it is.
+
 ### Fixed
 - **24-hour markets card stayed empty while every market was closed** (the
   weekend). The agent sleeps then, and the screener only ran while awake.
