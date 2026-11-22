@@ -194,7 +194,8 @@ def test_active_phase_scans(tmp_path, monkeypatch):
     o.workers = {"AAPL": worker}
     monkeypatch.setattr(o, "update_phase", lambda: "active")
     o.run_cycle({}, now=1000.0)
-    worker.poll_once.assert_called_once()
+    worker.prepare_signal.assert_called_once()        # the scan (Kronos is asked by the orchestrator)
+    worker.finish_signal.assert_called_once()
     worker.monitor_position.assert_called_once()
 
 

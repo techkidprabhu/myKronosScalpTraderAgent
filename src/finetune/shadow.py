@@ -26,6 +26,8 @@ import pandas as pd
 from . import ROOT, settings
 from .data import bars_path
 
+from src.market import BAR_DURATION
+
 logger = logging.getLogger(__name__)
 SHADOW_DB = ROOT / "data" / "shadow.db"
 SCHEMA = """
@@ -78,7 +80,8 @@ class ShadowRunner:
             if job is None:
                 break
             try:
-                confirmed, conf = self.agent.confirm_direction(job["df"], job["direction"], job["horizon"])
+                confirmed, conf = self.agent.confirm_direction(
+                    job["df"], job["direction"], job["horizon"], bar_duration=BAR_DURATION.get(job["timeframe"]))
                 conn.execute(
                     "INSERT INTO shadow (ts, broker, symbol, timeframe, direction, horizon, last_close, threshold, "
                     "main_conf, main_pass, shadow_conf, shadow_pass, shadow_model) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",

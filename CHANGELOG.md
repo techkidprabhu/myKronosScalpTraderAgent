@@ -15,6 +15,27 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Fixed
+- Kronos forecast timestamps: the future candles' times were taken from the gap
+  between the last two candles. On the first candle after the open (or after a
+  weekend, IG's daily break or a missing candle) that gap is the whole night, so
+  Kronos was told it was forecasting candles a day ahead. It now uses the
+  timeframe's own candle length (agent, shadow model, dashboard forecast and scan).
+
+### Changed
+- The agent also scans 3 seconds after every candle closes (1-15 minute
+  candles), instead of only every `polling_interval_seconds`. Turn off with
+  `candle_close_poll: false`.
+- Symbols that signal on the same candle are confirmed by Kronos together, in one
+  batched pass of the same model (Kronos's own `predict_batch`), instead of one
+  after another. Same settings and the same confirmation rule; older Kronos
+  copies without batching are asked one at a time as before.
+
+### Added
+- Kronos Model Lab: "Is Kronos right?" - every Kronos verdict checked against the
+  close `forecast_horizon` candles later: agreed vs disagreed, by confidence band,
+  with the average move. Plus how long Kronos takes per symbol on this computer.
+
 ### Changed
 - Theme: new **Auto** setting, now the default. It follows your computer: Light
   when the OS is light, Chronos when it's dark, switching live when the OS does.

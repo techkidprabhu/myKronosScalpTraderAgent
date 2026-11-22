@@ -324,6 +324,14 @@ unmanaged_positions:
 
 polling_interval_seconds: 15
 
+# Also scan a few seconds after every candle closes (1-15 minute candles), so
+# a 3-minute signal is acted on ~3 s after its candle closes instead of up to
+# polling_interval_seconds later. Symbols that signal on the same candle are
+# confirmed by Kronos in one batched pass. The delay gives the broker time to
+# deliver the finished candle.
+candle_close_poll: true
+candle_close_delay_seconds: 3
+
 # Scalp trade management (every agent trade, Kronos or skill file).
 scalp:
   # Time stop: close a trade that hasn't hit its stop or target after this

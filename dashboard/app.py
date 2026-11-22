@@ -28,15 +28,16 @@ from dashboard import auth
 from src.kronos_agent import KronosAgent, _ensure_kronos_importable
 from src import market_calendar as cal
 from dashboard import analytics
-from src.orchestrator import (IG_STREAM_KEY, SCREENER_REPORT_KEY, ACTIVE_SYMBOLS_KEY, BROKER_HEALTH_KEY, PHASE_KEY, UNMANAGED_KEY,
+from src.orchestrator import (KRONOS_TIMING_KEY, IG_STREAM_KEY, SCREENER_REPORT_KEY, ACTIVE_SYMBOLS_KEY, BROKER_HEALTH_KEY, PHASE_KEY, UNMANAGED_KEY,
                               bars_to_df)
 from src.patterns import scan
 from src import indicator_gate
 from src import rules as rules_gate
 from src import version as code_version
 from src.kronos_indicators import indicators as ind_lib
-from src.market import drop_unclosed_bar, market_timezone
+from src.market import BAR_DURATION, drop_unclosed_bar, market_timezone
 from src import sentiment
+from src import kronos_scorecard
 from src import brokers as broker_registry
 from src.audit_log import AuditLog
 from src.broker_config import broker_specs, spec_for
@@ -702,6 +703,7 @@ def run_forecast():
             forecast_horizon=horizon,
             sample_count=sample_count,
             temperature=temperature,
+            bar_duration=BAR_DURATION.get(timeframe),
         )
 
         last_close = float(df["close"].iloc[-1])
@@ -1327,6 +1329,34 @@ def api_scalp_stats():
     return jsonify(out)
 
 
+@app.route("/api/kronos_scorecard")
+def api_kronos_scorecard():
+    """How often Kronos's verdicts were right `forecast_horizon` candles
+    later, for the selected broker, plus how long Kronos takes here."""
+    cfg = load_config() or {}
+    tf = cfg.get("timeframe", "MIN_3")
+    bar = BAR_DURATION.get(tf)
+    days = _int_param(request.args, "days", 30, 1, 365)
+    out = {"timing": None}
+    try:
+        conn = get_db()
+    except sqlite3.Error:
+        return jsonify({**out, "error": "No audit database yet"})
+    try:
+        out.update(kronos_scorecard.score(
+            conn, horizon=int(cfg.get("forecast_horizon", 3)),
+            bar_seconds=bar.total_seconds() if bar is not None else 180.0,
+            threshold=float(cfg.get("kronos_confidence_threshold", 0.62)), days=days))
+        out["timeframe"] = tf
+        row = conn.execute("SELECT value FROM kv WHERE key = ?", (KRONOS_TIMING_KEY,)).fetchone()
+        out["timing"] = json.loads(row[0]) if row else None
+    except sqlite3.Error as exc:
+        out["error"] = str(exc)
+    finally:
+        conn.close()
+    return jsonify(out)
+
+
 @app.route("/api/trading_mode", methods=["GET", "POST"])
 def api_trading_mode():
     """Who decides trades: Kronos (default) or a skill file. One switch for
@@ -1507,7 +1537,8 @@ def _scan_symbols(cfg, client, kronos, audit):
                     })
                     continue
 
-            confirmed, conf = kronos.confirm_direction(df, top_sig.direction, horizon)
+            confirmed, conf = kronos.confirm_direction(df, top_sig.direction, horizon,
+                                                       bar_duration=BAR_DURATION.get(timeframe))
             audit.log_snapshot(sym, last_close, "kronos_result", {
                 "confirmed": confirmed, "confidence": conf,
             })

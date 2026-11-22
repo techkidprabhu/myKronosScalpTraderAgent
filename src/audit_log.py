@@ -78,6 +78,9 @@ CREATE TABLE IF NOT EXISTS positions (
     target_order_id TEXT
 );
 
+-- Lets the Kronos scorecard find "the price N candles later" quickly.
+CREATE INDEX IF NOT EXISTS idx_snapshots_stage_ts ON snapshots (stage, ts);
+
 CREATE TABLE IF NOT EXISTS kv (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

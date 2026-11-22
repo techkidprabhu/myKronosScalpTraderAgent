@@ -33,6 +33,8 @@ SECTIONS = [
     {"id": "schedule", "title": "Timeframe & schedule", "fields": [
         ("timeframe", "Candle timeframe", "select", {"options": TIMEFRAMES}),
         ("polling_interval_seconds", "Scan interval (s)", "int", {"min": 10, "max": 3600}),
+        ("candle_close_poll", "Also scan right after each candle closes", "bool", {}),
+        ("candle_close_delay_seconds", "Wait after the close for the finished candle (s)", "int", {"min": 1, "max": 30}),
         ("lookback_bars", "Lookback bars fed to Kronos", "int", {"min": 20, "max": 512}),
         ("trade_outside_market_hours", "Trade outside market hours", "bool", {}),
         ("schedule.follow_market", "Follow the exchange session (sleep when closed)", "bool", {}),

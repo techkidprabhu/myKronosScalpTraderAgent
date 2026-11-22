@@ -277,7 +277,7 @@ class FakeAgent:
     def __init__(self, answer):
         self.answer, self.calls = answer, 0
 
-    def confirm_direction(self, df, direction, horizon):
+    def confirm_direction(self, df, direction, horizon, **kw):
         self.calls += 1
         if isinstance(self.answer, Exception):
             raise self.answer

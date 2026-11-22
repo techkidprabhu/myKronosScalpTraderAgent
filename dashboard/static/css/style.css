@@ -1991,3 +1991,12 @@ th[aria-sort="descending"] .tk-sort-icon::before { content: "▼" / ""; }
    between phone and wide-laptop widths). The Chronos icon rail is unaffected. */
 .nav-bar { min-width: 0; max-width: 100%; }
 .tabs-list { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+
+/* Kronos scorecard (Kronos Model Lab) */
+.kq-days { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.kq-verdict { margin: 0 0 10px; font-size: 13px; color: var(--text-primary); }
+.kq-verdict:empty { display: none; }
+#kq-table tr.kq-total td { font-weight: 600; }
+#kq-table tr.kq-sep td { padding-top: 10px; color: var(--text-muted); font-size: 11px; border-bottom: 0; }
+#kq-table td.pos { color: var(--pos-text, var(--accent-green)); }
+#kq-table td.neg { color: var(--neg-text); }
