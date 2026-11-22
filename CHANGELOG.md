@@ -16,6 +16,20 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Changed
+- Dashboard tables (decisions, positions, working orders, closed trades, screener,
+  training runs, saved versions): click a column name to sort it, click again to
+  reverse. Numbers, prices, P&L, dates and hold times sort by value, empty cells
+  go last, and the order holds through every refresh and is remembered per table.
+- Long tables (decisions, closed trades, screener) keep their column names in view
+  while you scroll them.
+- On a phone, or wherever a table is too narrow, each row becomes a card that
+  shows every column name next to its value, so there's no sideways scrolling.
+- Column explanations and a few chart settings have a "?" you can tap, click,
+  focus or hover (hover works in browsers that support it). Esc or a tap outside closes it.
+- The version details under the title close with Esc or a click outside, and stay
+  on screen on a phone.
+
+### Changed
 - Dashboard: every "are you sure?" question (orders, risk-model save, fine-tuning,
   skill file switch, rules discard, risk limits, settings scope) now uses one native
   dialog. Focus starts on Cancel, Esc or a click outside cancels, and the page behind
