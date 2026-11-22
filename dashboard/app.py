@@ -47,6 +47,11 @@ from dashboard import config_writer
 from dashboard.schema import schema as settings_schema
 
 load_dotenv(ROOT_DIR / ".env")
+# IG: the dashboard and the agent share the API key's request allowance (60 a
+# minute per key, 30 per account). The dashboard takes the smaller share and
+# never waits long for room - it shows the last known figures instead.
+os.environ.setdefault("IG_REQUESTS_PER_MIN", "8")
+os.environ.setdefault("IG_REQUEST_MAX_WAIT", "2")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -253,7 +258,8 @@ def get_broker(name: str | None = None):
     with _broker_init_lock:
         st = _client_state(spec.name)
         now = time.time()
-        if st["client"] is not None and now - st["checked_at"] >= BROKER_PING_SECONDS:
+        ping_every = SLOW_CACHE.get(spec.adapter, {}).get("ping", BROKER_PING_SECONDS)
+        if st["client"] is not None and now - st["checked_at"] >= ping_every:
             st["checked_at"] = now
             ok, detail = st["client"].ping()
             if not ok:
@@ -867,6 +873,15 @@ def get_snapshots():
 _broker_cache: dict = {}   # broker name -> {"ts", "data"}
 _broker_cache_lock = threading.Lock()
 BROKER_CACHE_SECONDS = 10  # the page polls every 5s; stay well inside moomoo's rate limits
+# IG counts every request against a small shared allowance: refresh less often.
+SLOW_CACHE = {"ig": {"broker": 30, "quotes": 15, "funds": 60, "ping": 120}}
+
+
+def _cache_seconds(kind: str, default: float) -> float:
+    try:
+        return SLOW_CACHE.get(current_spec().adapter, {}).get(kind, default)
+    except Exception:  # noqa: BLE001
+        return default
 _funds_cache: dict = {}    # broker name -> {"ts", "data"}
 
 
@@ -875,7 +890,7 @@ def _broker_snapshot(client):
     with _broker_cache_lock:
         now = time.time()
         cache = _broker_cache.setdefault(current_spec().name, {"ts": 0.0, "data": None})
-        if cache["data"] is not None and now - cache["ts"] < BROKER_CACHE_SECONDS:
+        if cache["data"] is not None and now - cache["ts"] < _cache_seconds("broker", BROKER_CACHE_SECONDS):
             return cache["data"]
         positions = client.get_open_positions()
         orders = client.get_open_orders()
@@ -900,10 +915,11 @@ def _live_prices(client, symbols: list[str]) -> dict:
     if not symbols:
         return {}
     now = time.time()
+    ttl = _cache_seconds("quotes", QUOTE_CACHE_SECONDS)
     with _broker_cache_lock:
         cache = _quote_cache.setdefault(current_spec().name, {})
         prices = {base_symbol(s): cache[base_symbol(s)][1] for s in symbols
-                  if base_symbol(s) in cache and now - cache[base_symbol(s)][0] < QUOTE_CACHE_SECONDS}
+                  if base_symbol(s) in cache and now - cache[base_symbol(s)][0] < ttl}
     stale = [s for s in symbols if base_symbol(s) not in prices]
     if not stale:
         return prices
@@ -989,7 +1005,7 @@ def _account_summary(client):
     with _broker_cache_lock:
         now = time.time()
         cache = _funds_cache.setdefault(current_spec().name, {"ts": 0.0, "data": None})
-        if cache["data"] is None or now - cache["ts"] >= BROKER_CACHE_SECONDS:
+        if cache["data"] is None or now - cache["ts"] >= _cache_seconds("funds", BROKER_CACHE_SECONDS):
             cache.update(ts=now, data=client.get_account_summary())
         return cache["data"]
 

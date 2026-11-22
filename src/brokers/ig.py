@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -99,6 +100,99 @@ def _mid(price: dict | None) -> float | None:
     return price.get("lastTraded")
 
 
+class RequestGuard:
+    """Keeps this process inside IG's request allowances.
+
+    IG allows each API key 60 non-trading requests a minute, and each
+    account 30, shared by everything that uses them - here the agent and the
+    dashboard. Going over returns error.public-api.exceeded-*-allowance, and
+    a key that keeps knocking while over can stay blocked for hours. So:
+
+    - non-trading requests come out of a per-process budget
+      (IG_REQUESTS_PER_MIN; the agent defaults to 20, the dashboard sets 8),
+      waiting up to IG_REQUEST_MAX_WAIT seconds for room;
+    - when IG says an allowance is used up, every non-trading request from
+      this process stops for a while (1, 2, 4 ... up to 15 minutes) instead
+      of retrying, so the allowance can reset;
+    - orders (create/amend/close positions and working orders) are never held
+      back: they have their own, larger allowance and must always go out.
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.sent: list[float] = []
+        self.paused_until = 0.0
+        self.strikes = 0
+        self.reason = ""
+
+    @staticmethod
+    def per_min() -> int:
+        try:
+            return max(1, int(os.environ.get("IG_REQUESTS_PER_MIN", "20")))
+        except ValueError:
+            return 20
+
+    @staticmethod
+    def max_wait() -> float:
+        try:
+            return max(0.0, float(os.environ.get("IG_REQUEST_MAX_WAIT", "20")))
+        except ValueError:
+            return 20.0
+
+    def paused_message(self) -> str:
+        until = time.strftime("%H:%M:%S", time.localtime(self.paused_until))
+        return (f"IG request allowance used up ({self.reason}) - pausing IG requests until {until} so it can "
+                f"reset. The agent and the dashboard share the API key's allowance.")
+
+    def acquire(self):
+        """Wait for room in the budget; raise while paused or if the wait
+        would be longer than IG_REQUEST_MAX_WAIT."""
+        deadline = time.time() + self.max_wait()
+        while True:
+            with self.lock:
+                now = time.time()
+                if now < self.paused_until:
+                    raise BrokerError(self.paused_message())
+                self.sent = [t for t in self.sent if now - t < 60.0]
+                if len(self.sent) < self.per_min():
+                    self.sent.append(now)
+                    return
+                wait = 60.0 - (now - self.sent[0]) + 0.05
+            if time.time() + wait > deadline:
+                raise BrokerError(f"IG request budget ({self.per_min()} a minute for this process) is full - "
+                                  "try again shortly")
+            time.sleep(min(wait, 1.0))
+
+    def exceeded(self, error_code: str):
+        with self.lock:
+            self.strikes += 1
+            pause = min(900.0, 60.0 * 2 ** (self.strikes - 1))
+            self.paused_until = max(self.paused_until, time.time() + pause)
+            self.reason = error_code.replace("error.public-api.", "")
+        logger.warning("IG says %s - pausing IG requests for %.0f s", error_code, pause)
+
+    def ok(self):
+        if self.strikes:
+            with self.lock:
+                self.strikes = 0
+
+    def status(self) -> dict:
+        now = time.time()
+        with self.lock:
+            used = len([t for t in self.sent if now - t < 60.0])
+        return {"per_min": self.per_min(), "used_last_min": used,
+                "paused_until": self.paused_until if self.paused_until > now else None, "reason": self.reason}
+
+
+GUARD = RequestGuard()           # one per process: every IGClient here shares it
+ALLOWANCE_CODES = ("error.public-api.exceeded-api-key-allowance", "error.public-api.exceeded-account-allowance")
+ACCOUNT_CACHE_SECONDS = 4.0      # positions / working orders / accounts, reused within one agent cycle
+
+
+def _is_trading(method: str, path: str) -> bool:
+    return method != "GET" and (path.startswith("/positions") or path.startswith("/workingorders"))
+
+
 class IGClient(BrokerClient):
     name = "ig"
     label = "IG"
@@ -121,6 +215,7 @@ class IGClient(BrokerClient):
         self.expiry = os.environ.get("IG_EXPIRY", "-")
         self.account = os.environ.get("IG_ACC_ID", "")
         self._tokens: dict = {}
+        self._cache: dict = {}            # GET path -> (time, data) for the account endpoints
         if session is None:
             import requests
             session = requests.Session()
@@ -139,15 +234,24 @@ class IGClient(BrokerClient):
         if missing:
             raise BrokerError(f"IG credentials missing in .env: {', '.join(missing)}")
         self._tokens = {}
-        body = {"identifier": os.environ["IG_USERNAME"], "password": os.environ["IG_PASSWORD"]}
-        resp = self.http.post(f"{self.base}/session", headers=self._headers(2), timeout=self.timeout, json=body)
-        if resp.status_code != 200 and "encryption.required" in (resp.text or ""):
+        self._cache = {}
+        resp = None
+        if not IGClient._needs_encryption:
+            GUARD.acquire()
+            body = {"identifier": os.environ["IG_USERNAME"], "password": os.environ["IG_PASSWORD"]}
+            resp = self.http.post(f"{self.base}/session", headers=self._headers(2), timeout=self.timeout, json=body)
+            if resp.status_code != 200 and "encryption.required" in (resp.text or ""):
+                IGClient._needs_encryption = True     # remember: later logins skip the doomed first try
+        if IGClient._needs_encryption:
             # Some IG accounts only accept an RSA-encrypted password.
-            body = {"identifier": os.environ["IG_USERNAME"], "password": self._encrypted_password(),
-                    "encryptedPassword": True}
+            password = self._encrypted_password()
+            GUARD.acquire()
+            body = {"identifier": os.environ["IG_USERNAME"], "password": password, "encryptedPassword": True}
             resp = self.http.post(f"{self.base}/session", headers=self._headers(2), timeout=self.timeout, json=body)
         if resp.status_code != 200:
+            self._check_allowance(resp)
             raise BrokerError(f"IG login failed ({resp.status_code}): {resp.text[:200]}")
+        GUARD.ok()
         self._tokens = {"CST": resp.headers.get("CST", ""),
                         "X-SECURITY-TOKEN": resp.headers.get("X-SECURITY-TOKEN", "")}
         body = resp.json() if resp.content else {}
@@ -161,14 +265,41 @@ class IGClient(BrokerClient):
         """IG's encrypted login: GET /session/encryptionKey gives an RSA public
         key (base64 DER) and a timestamp; the password is
         base64(RSA-PKCS1v1.5(base64("password|timestamp")))."""
+        GUARD.acquire()
         resp = self.http.get(f"{self.base}/session/encryptionKey", headers=self._headers(1), timeout=self.timeout)
         if resp.status_code != 200:
+            self._check_allowance(resp)
             raise BrokerError(f"IG encryption key request failed ({resp.status_code}): {resp.text[:200]}")
         data = resp.json()
         return encrypt_password(os.environ["IG_PASSWORD"], data["encryptionKey"], data["timeStamp"])
 
+    _needs_encryption = False          # learnt at the first login, for the life of the process
+
+    @staticmethod
+    def _check_allowance(resp):
+        """Pause this process's IG requests when IG says an allowance is used up."""
+        if resp is not None and resp.status_code == 403:
+            text = resp.text or ""
+            for code in ALLOWANCE_CODES:
+                if code in text:
+                    GUARD.exceeded(code)
+                    return
+
+    def request_guard_status(self) -> dict:
+        return GUARD.status()
+
     def _request(self, method: str, path: str, version: int = 1, body: dict | None = None,
                  params: dict | None = None, retry: bool = True) -> dict:
+        cacheable = method == "GET" and not params and path in ("/positions", "/workingorders", "/accounts")
+        if cacheable:
+            hit = self._cache.get(path)
+            if hit and time.time() - hit[0] < ACCOUNT_CACHE_SECONDS:
+                return hit[1]
+        trading = _is_trading(method, path)
+        if not trading:
+            GUARD.acquire()
+        else:
+            self._cache = {}                              # positions / orders are about to change
         headers = self._headers(version)
         if method == "DELETE" and body is not None:      # IG wants DELETE-with-body as POST + _method
             method, headers["_method"] = "POST", "DELETE"
@@ -179,8 +310,13 @@ class IGClient(BrokerClient):
             return self._request(method if "_method" not in headers else "DELETE", path, version,
                                  body, params, retry=False)
         if resp.status_code >= 400:
+            self._check_allowance(resp)
             raise BrokerError(f"IG {method} {path} failed ({resp.status_code}): {resp.text[:300]}")
-        return resp.json() if resp.content else {}
+        GUARD.ok()
+        data = resp.json() if resp.content else {}
+        if cacheable:
+            self._cache[path] = (time.time(), data)
+        return data
 
     def _confirm(self, deal_reference: str) -> dict:
         """Deal confirmation - IG accepts the request first and decides a
@@ -429,6 +565,24 @@ class IGClient(BrokerClient):
                     except Exception as exc:
                         logger.debug("IG catch-up for %s failed: %s", epic, exc)
 
+    def get_snapshots(self, symbols: list[str]) -> pd.DataFrame:
+        """Prices for many markets in one request (instead of one per market),
+        streamed prices first when the agent's stream has them."""
+        rows, need = [], []
+        stream = getattr(self, "stream", None)
+        for s in symbols:
+            live = stream.price(s) if stream is not None else None
+            if live:
+                rows.append({"code": s, "last_price": float(live), "volume": None})
+            else:
+                need.append(s)
+        if need:
+            for epic, snap in self.market_snapshots(need).items():
+                price = _mid({"bid": snap.get("bid"), "offer": snap.get("offer")})
+                if price:
+                    rows.append({"code": epic, "last_price": float(price), "volume": None})
+        return pd.DataFrame(rows, columns=["code", "last_price", "volume"])
+
     def market_snapshots(self, epics: list[str]) -> dict[str, dict]:
         """Live status and prices, 50 markets per request (no history
         allowance used)."""
@@ -485,9 +639,10 @@ class IGClient(BrokerClient):
                         res = self._request("GET", "/markets", 1, params={"searchTerm": term}).get("markets") or []
                         break
                     except BrokerError as exc:
-                        if attempt == 1 and "exceeded" in str(exc) and delay_s:
-                            logger.info("IG request limit reached - pausing the market search for 60 s")
-                            time.sleep(60)        # IG's limits are per minute
+                        if attempt == 1 and ("exceeded" in str(exc) or "allowance used up" in str(exc)) and delay_s:
+                            wait = max(60.0, GUARD.paused_until - time.time())   # IG's limits are per minute
+                            logger.info("IG request limit reached - pausing the market search for %.0f s", wait)
+                            time.sleep(wait)
                             continue
                         logger.warning("IG market search %r: %s", term, exc)
                 if res is None:

@@ -425,7 +425,14 @@ def test_search_pauses_and_retries_when_ig_limit_is_hit(monkeypatch):
     client = IGClient(market="IG24", session=http)
     sleeps = []
     import src.brokers.ig as igmod
-    monkeypatch.setattr(igmod.time, "sleep", lambda s: sleeps.append(s))
+    clock = {"t": 1_000_000.0}
+
+    def fake_sleep(s):
+        sleeps.append(s)
+        clock["t"] += s
+
+    monkeypatch.setattr(igmod.time, "sleep", fake_sleep)
+    monkeypatch.setattr(igmod.time, "time", lambda: clock["t"])
     state = {"n": 0}
     orig = http.request
 
