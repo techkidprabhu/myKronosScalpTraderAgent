@@ -88,7 +88,10 @@ def test_page_opens_on_command_center(client):  # noqa: F811
 def test_chronos_look_is_served_with_bundled_fonts(client):  # noqa: F811
     page = client.get("/", headers=AUTH).get_data(as_text=True)
     assert '/static/css/chronos.css' in page and 'id="kr-hero"' in page
-    assert 'localStorage.getItem("ui-theme") || "chronos"' in page          # Chronos unless you picked another
+    # Auto by default: Chronos on a dark-mode computer, Light on a light one, unless you picked a look.
+    assert 'localStorage.getItem("ui-theme-pick")' in page
+    assert 'matchMedia("(prefers-color-scheme: light)").matches ? "light" : "chronos"' in page
+    assert '<meta name="color-scheme"' in page
     assert "fonts.googleapis" not in page                                   # works without internet
     css = client.get("/static/css/chronos.css").get_data(as_text=True)
     for font in ("unbounded-latin-500-normal.woff2", "instrument-sans-latin-400-normal.woff2"):
