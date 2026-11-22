@@ -987,9 +987,7 @@ tbody tr:hover {
 .alert-banner.warning { background: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.45); color: #fde68a; }
 .alert-banner .alert-sub { display: block; color: var(--text-secondary); font-size: 12px; }
 
-@media (max-width: 760px) {
-  .market-bar { grid-template-columns: 1fr; }
-}
+
 
 /* Indicator overlay toggles + legend */
 .chart-overlay-toggles { display: flex; gap: 10px; align-items: center; }
@@ -1083,7 +1081,7 @@ tbody tr:hover {
 .sent-foot { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 11px;
   color: var(--text-muted); font-family: var(--font-mono); max-width: 140px; text-align: right; }
 .btn-sm { padding: 3px 9px; font-size: 13px; }
-@media (max-width: 1100px) { .sentiment-bar { grid-template-columns: 170px 1fr; } .sent-benchmarks, .sent-foot { grid-column: 1 / -1; } .sent-foot { flex-direction: row; max-width: none; } }
+
 
 /* Full-screen live chart */
 .chart-fs-btn {
@@ -1544,9 +1542,6 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
   .tab-btn { padding: 10px 12px; font-size: 13px; min-height: 44px; }
   .main-content { padding: 10px !important; }
   .cc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .cc-tile { padding: 12px; }
-  .cc-big { font-size: 19px; }
-  .cc-tile-row { flex-direction: column; align-items: flex-start; }
   .cc-strip { padding: 12px; }
   .cc-live { width: 100%; justify-content: center; }
   .cc-stage-wrap { flex: 1 1 100%; min-width: 0; }
@@ -1555,8 +1550,6 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
   .cc-row > .cc-grow, .rm-grid, .ds-grid { flex-basis: 100%; grid-template-columns: minmax(0, 1fr); }
   .pc-grid { grid-template-columns: minmax(0, 1fr); }
   .pf-top, .rm-top { flex-direction: column; align-items: flex-start; }
-  .pf-bar-row { grid-template-columns: minmax(70px, 1fr) minmax(70px, 1.4fr) auto; column-gap: 8px; }
-  .ds-fun-row { grid-template-columns: 110px 1fr 64px; }
   .manual-bar input#manual-symbol, .manual-bar input#manual-qty { flex: 1 1 120px; width: auto; }
   .manual-bar .btn { flex: 1 1 auto; min-height: 44px; }
   .rm-savebar { flex-direction: column; align-items: stretch; }
@@ -1694,10 +1687,7 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .kr-fan { transform-box: fill-box; transform-origin: left center; animation: krfan 1.2s cubic-bezier(.2, .8, .2, 1) both; }
 @keyframes krfan { from { transform: scaleY(.05); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .kr-fan { animation: none; } .kr-gauge-fg { transition: none; } }
-@media (max-width: 900px) {
-  .kr-hero { grid-template-columns: minmax(0, 1fr); }
-  .kr-verdict { border-left: 0; border-top: 1px solid var(--border-color); }
-}
+
 .brand-orb { display: none; }
 :root[data-theme="light"] .kr-gate.ok .kr-gate-n, :root[data-theme="light"] .kr-gate.kr .kr-gate-n,
 :root[data-theme="light"] .kr-gate.no .kr-gate-n { color: #ffffff; }
@@ -1940,3 +1930,64 @@ th[aria-sort="descending"] .tk-sort-icon::before { content: "▼" / ""; }
 }
 /* Cards on a phone: let the page scroll, not a box inside it. */
 @media (max-width: 640px) { .tk-wrap.tk-tall { max-block-size: none; } }
+
+/* ---- Cards sized by their own width (container queries), not the window's.
+   The same card lays out the same way whether it sits beside the icon rail on a
+   laptop, in a narrow column, or full-width on a phone. ---- */
+.cq, .cc-tile, .pc-card, .pf-bars, #ds-funnel { container-type: inline-size; }
+@container (width < 720px) { .market-bar { grid-template-columns: 1fr; } }
+@container (width < 1040px) {
+  .sentiment-bar { grid-template-columns: 170px 1fr; }
+  .sent-benchmarks, .sent-foot { grid-column: 1 / -1; }
+  .sent-foot { flex-direction: row; max-width: none; }
+}
+@container (width < 860px) {
+  .kr-hero { grid-template-columns: minmax(0, 1fr); }
+  .kr-verdict { border-left: 0; border-top: 1px solid var(--border-color); }
+}
+/* KPI tiles: the big number scales with the tile; a narrow tile stacks its row. */
+.cc-tile .cc-big { font-size: clamp(19px, 13cqi, 26px); }
+@container (width < 240px) {
+  .cc-tile-row { flex-direction: column; align-items: flex-start; }
+  .cc-tile-head { flex-wrap: wrap; }
+}
+/* Position cards: four figures across when the card is wide, two when it isn't. */
+@container (width >= 520px) {
+  .pc-figs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .pc-sub { max-width: 30ch; }
+}
+@container (width < 300px) { .pc-actions { flex-wrap: wrap; } .pc-actions .btn { flex: 1 1 auto; } }
+/* Bar lists inside cards (performance by pattern, the signal funnel). */
+@container (width < 420px) {
+  .pf-bar-row { grid-template-columns: minmax(70px, 1fr) minmax(70px, 1.4fr) auto; column-gap: 8px; }
+  .ds-fun-row { grid-template-columns: 110px 1fr 64px; }
+}
+
+/* ---- Tab changes: the content cross-fades; header, rail and market bar stay still ---- */
+.tab-panel.active { view-transition-name: tab-panel; }
+::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+::view-transition-group(tab-panel) { animation: none; }
+::view-transition-old(tab-panel) { animation: 90ms ease-in both vt-out; }
+::view-transition-new(tab-panel) { animation: 180ms ease-out 40ms both vt-in; }
+::view-transition-old(tab-panel), ::view-transition-new(tab-panel) { block-size: auto; overflow: clip; }
+@keyframes vt-out { to { opacity: 0; } }
+@keyframes vt-in { from { opacity: 0; translate: 0 6px; } }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
+
+/* ---- Theme button: a small "A" while it follows the computer ---- */
+.theme-btn { position: relative; }
+.theme-auto-badge { position: absolute; inset-block-end: 1px; inset-inline-end: 1px; min-inline-size: 11px; block-size: 11px;
+  padding: 0 2px; border-radius: 6px; background: var(--accent-blue); color: var(--bg-primary);
+  font-size: 8px; font-weight: 700; line-height: 11px; text-align: center; pointer-events: none; }
+.theme-auto-badge[hidden] { display: none; }
+
+/* Header wraps instead of spilling past the window in every theme (Chronos had
+   this; Classic and Light overflowed between phone and wide-laptop widths). */
+.header { flex-wrap: wrap; gap: 10px 18px; }
+.header-badges, .header-actions { flex-wrap: wrap; min-width: 0; }
+/* The tab bar scrolls sideways when the tabs don't fit (it pushed the page wider
+   between phone and wide-laptop widths). The Chronos icon rail is unaffected. */
+.nav-bar { min-width: 0; max-width: 100%; }
+.tabs-list { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
