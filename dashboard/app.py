@@ -1237,7 +1237,8 @@ def _skill_files() -> list[dict]:
 def _trading_mode_payload() -> dict:
     from src import skill_strategy, trading_mode
     sw = trading_mode.read()
-    out = {**sw, "files": _skill_files(), "settings": None, "problems": [], "setups": [], "skill_trades": []}
+    out = {**sw, "files": _skill_files(), "settings": None, "problems": [], "setups": [], "skill_trades": [],
+           "threshold": float((load_config() or {}).get("kronos_confidence_threshold", 0.62))}
     try:
         s, problems = skill_strategy.load(trading_mode.resolve_file(sw["file"]))
         out["settings"], out["problems"] = (s.summary() if s else None), problems
@@ -1348,6 +1349,13 @@ def api_kronos_scorecard():
             bar_seconds=bar.total_seconds() if bar is not None else 180.0,
             threshold=float(cfg.get("kronos_confidence_threshold", 0.62)), days=days))
         out["timeframe"] = tf
+        # kronos_scalp.shadow_paths: the 'paths' confidence, recorded only - scored the same way.
+        paths = kronos_scorecard.score(
+            conn, horizon=out["horizon"], bar_seconds=out["bar_seconds"], threshold=out["threshold"], days=days,
+            conf_key="paths_confidence")
+        if paths["verdicts"]:
+            paths["paths"] = ((cfg.get("kronos_scalp") or {}).get("paths") or 10)
+            out["paths"] = paths
         row = conn.execute("SELECT value FROM kv WHERE key = ?", (KRONOS_TIMING_KEY,)).fetchone()
         out["timing"] = json.loads(row[0]) if row else None
     except sqlite3.Error as exc:
@@ -1367,9 +1375,9 @@ def api_trading_mode():
     data = request.get_json(silent=True) or {}
     mode = str(data.get("mode") or "").lower()
     if mode not in trading_mode.MODES:
-        return jsonify({"error": "mode must be kronos or skill"}), 400
+        return jsonify({"error": "mode must be kronos, skill or skill_kronos"}), 400
     file = data.get("file") or trading_mode.read()["file"]
-    if mode == "skill":
+    if mode in trading_mode.SKILL_MODES:
         try:
             path = trading_mode.resolve_file(str(file))
         except ValueError as exc:

@@ -42,6 +42,46 @@ except ImportError:  # pragma: no cover
     Kronos = KronosPredictor = KronosTokenizer = None
 
 
+METHODS = ("bars", "paths")
+DEFAULT_OPTIONS = {"method": "bars", "paths": 10, "shadow_paths": False, "min_move_pct": 0.0}
+
+
+def kronos_options(cfg: dict | None) -> dict:
+    """Optional scalp settings for how Kronos's answer is read (config
+    `kronos_scalp:`). The defaults are exactly the original behaviour:
+
+      confidence_method: bars   share of the averaged forecast's candles that
+                                close beyond the last close (original rule)
+                         paths  share of `paths` separate forecasts that end
+                                beyond the last close - a real probability
+      paths: 10                 forecasts for the 'paths' method (2-50)
+      shadow_paths: false       also work out the 'paths' confidence and only
+                                record it (Kronos Model Lab scores both)
+      min_move_pct: 0           a close only counts as agreeing if it is at
+                                least this % beyond the last close (0 = off);
+                                set it to cover spread + fees
+    """
+    raw = (cfg or {}).get("kronos_scalp") or {}
+    out = dict(DEFAULT_OPTIONS)
+    m = str(raw.get("confidence_method") or "bars").lower()
+    out["method"] = m if m in METHODS else "bars"
+    try:
+        out["paths"] = max(2, min(50, int(raw.get("paths", 10))))
+    except (TypeError, ValueError):
+        pass
+    out["shadow_paths"] = bool(raw.get("shadow_paths", False))
+    try:
+        out["min_move_pct"] = max(0.0, min(5.0, float(raw.get("min_move_pct") or 0.0)))
+    except (TypeError, ValueError):
+        pass
+    return out
+
+
+def is_default(opts: dict | None) -> bool:
+    o = opts or DEFAULT_OPTIONS
+    return o.get("method", "bars") == "bars" and not o.get("min_move_pct")
+
+
 class KronosAgent:
     def __init__(
         self,
@@ -147,11 +187,14 @@ class KronosAgent:
         return pred_df
 
     @staticmethod
-    def agreement(pred_close, last_close: float, direction: str) -> tuple[bool, float]:
-        """Share of the forecast path's closes beyond the last close in the
-        signal's direction, and whether that's a majority."""
+    def agreement(pred_close, last_close: float, direction: str, min_move_pct: float = 0.0) -> tuple[bool, float]:
+        """Share of the forecast closes beyond the last close in the signal's
+        direction, and whether that's a majority. With min_move_pct, a close
+        must be at least that % beyond the last close to count (0 = the
+        original rule)."""
         deltas = np.asarray(pred_close, dtype=float) - float(last_close)
-        agree = np.mean(deltas > 0) if direction == "BUY" else np.mean(deltas < 0)
+        edge = abs(float(last_close)) * float(min_move_pct or 0.0) / 100.0
+        agree = np.mean(deltas > edge) if direction == "BUY" else np.mean(deltas < -edge)
         return bool(agree > 0.5), float(agree)
 
     def confirm_direction(
@@ -180,13 +223,20 @@ class KronosAgent:
         )
         return self.agreement(pred_df["close"].to_numpy(), df["close"].iloc[-1], direction)
 
-    def confirm_many(self, jobs: list, forecast_horizon: int, bar_duration=None) -> list:
+    def confirm_many(self, jobs: list, forecast_horizon: int, bar_duration=None, method: str = "bars",
+                     paths: int = 10, min_move_pct: float = 0.0) -> list:
         """confirm_direction for several symbols that signalled on the same
         candle, in as few model passes as possible: series with the same
         number of candles go through Kronos's own predict_batch together.
         Same model, same settings and the same answer rule as
         confirm_direction. `jobs` is [(df, direction), ...]; returns
-        [(confirmed, confidence) or an Exception, ...] in the same order."""
+        [(confirmed, confidence) or an Exception, ...] in the same order.
+
+        method="paths" asks for `paths` separate forecasts per symbol (one
+        sample each, in one batched pass) and reports the share whose final
+        close is beyond the last close - see kronos_options()."""
+        if method == "paths":
+            return self._confirm_paths(jobs, forecast_horizon, bar_duration, paths, min_move_pct)
         out: list = [None] * len(jobs)
         groups: dict[int, list[int]] = {}
         prepared = {}
@@ -206,13 +256,63 @@ class KronosAgent:
                         T=self.temperature, top_p=self.top_p, sample_count=self.sample_count,
                         verbose=self.verbose)
                     for i, pred in zip(idx, preds):
-                        out[i] = self.agreement(pred["close"].to_numpy(), jobs[i][0]["close"].iloc[-1], jobs[i][1])
+                        out[i] = self.agreement(pred["close"].to_numpy(), jobs[i][0]["close"].iloc[-1], jobs[i][1],
+                                                min_move_pct)
                     continue
                 except Exception:  # noqa: BLE001 - fall back to one at a time
                     logger.warning("Kronos batch of %d failed; running them one at a time", len(idx), exc_info=True)
             for i in idx:
                 try:
-                    out[i] = self.confirm_direction(jobs[i][0], jobs[i][1], forecast_horizon, bar_duration=bar_duration)
+                    if min_move_pct:
+                        pred = self.forecast(jobs[i][0], forecast_horizon, bar_duration=bar_duration)
+                        out[i] = self.agreement(pred["close"].to_numpy(), jobs[i][0]["close"].iloc[-1], jobs[i][1],
+                                                min_move_pct)
+                    else:
+                        out[i] = self.confirm_direction(jobs[i][0], jobs[i][1], forecast_horizon,
+                                                        bar_duration=bar_duration)
                 except Exception as exc:  # noqa: BLE001
                     out[i] = exc
+        return out
+
+    def _confirm_paths(self, jobs, forecast_horizon, bar_duration, paths, min_move_pct):
+        """`paths` independent forecasts per symbol (sample_count=1 each, so
+        Kronos doesn't average them away); confidence = share whose close at
+        the end of the horizon is beyond the last close (+ min_move_pct)."""
+        paths = max(2, int(paths))
+        out: list = [None] * len(jobs)
+        ends: dict[int, list] = {}
+        groups: dict[int, list[int]] = {}
+        prepared = {}
+        for i, (df, _direction) in enumerate(jobs):
+            try:
+                prepared[i] = self._inputs(df, forecast_horizon, bar_duration)
+                groups.setdefault(len(prepared[i][0]), []).append(i)
+            except Exception as exc:  # noqa: BLE001
+                out[i] = exc
+        kw = dict(pred_len=forecast_horizon, T=self.temperature, top_p=self.top_p, sample_count=1, verbose=self.verbose)
+        for idx in groups.values():
+            done = False
+            if hasattr(self.predictor, "predict_batch"):
+                flat = [i for i in idx for _ in range(paths)]
+                try:
+                    preds = self.predictor.predict_batch([prepared[i][0] for i in flat], [prepared[i][1] for i in flat],
+                                                         [prepared[i][2] for i in flat], **kw)
+                    for i, pred in zip(flat, preds):
+                        ends.setdefault(i, []).append(float(pred["close"].iloc[-1]))
+                    done = True
+                except Exception:  # noqa: BLE001
+                    logger.warning("Kronos paths batch failed; running them one at a time", exc_info=True)
+                    for i in idx:
+                        ends.pop(i, None)
+            if not done:
+                for i in idx:
+                    try:
+                        d, x, y = prepared[i]
+                        ends[i] = [float(self.predictor.predict(df=d, x_timestamp=x, y_timestamp=y, **kw)["close"].iloc[-1])
+                                   for _ in range(paths)]
+                    except Exception as exc:  # noqa: BLE001
+                        out[i] = exc
+        for i, vals in ends.items():
+            if out[i] is None:
+                out[i] = self.agreement(vals, jobs[i][0]["close"].iloc[-1], jobs[i][1], min_move_pct)
         return out

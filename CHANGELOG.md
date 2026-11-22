@@ -15,6 +15,23 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added
+- `kronos_scalp:` options for reading Kronos on scalps, all off by default (the
+  default is exactly the original rule):
+  - `confidence_method: paths` - confidence is the share of `paths` (default 10)
+    separate Kronos forecasts whose last close is beyond the last close, instead
+    of the share of the averaged forecast's candles (which, with a 3-candle
+    horizon, can only be 0, 33, 67 or 100 %). One batched pass; more CPU.
+  - `shadow_paths: true` - also work out the 'paths' confidence and only record
+    it. Kronos Model Lab's "Is Kronos right?" scores it next to the rule in use.
+  - `min_move_pct` - a forecast close only counts as agreeing if it is at least
+    this % beyond the last close; set it to cover spread + fees.
+  All editable under Config & Risk -> Kronos confirmation.
+- "Skill + Kronos" in Who decides trades: the skill file finds setups and sets
+  entry, stop, target and exits; Kronos must agree with each setup's direction
+  (same threshold and options) before the entry goes in. It can stop an entry,
+  never start one or change its levels. Verdicts appear in the scorecard too.
+
 ### Fixed
 - Kronos forecast timestamps: the future candles' times were taken from the gap
   between the last two candles. On the first candle after the open (or after a

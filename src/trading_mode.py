@@ -1,5 +1,6 @@
 """
-Who makes the trading decisions: Kronos (the default) or a skill file.
+Who makes the trading decisions: Kronos (the default), a skill file, or a
+skill file with Kronos confirming its setups.
 
 One switch for every broker, kept in data/trading_mode.json so it can be
 flipped from the dashboard without a restart. The agent re-reads it each
@@ -12,6 +13,11 @@ Kronos - the switch can only ever be turned on on purpose.
 In "skill" mode Kronos is not called at all. The skill file's settings
 block decides entries, stops, targets and exits; your risk limits (max
 loss per trade, daily limits, per-stock limits, flat-by-close) still apply.
+
+"skill_kronos" is the same, except that before each entry Kronos must agree
+with the setup's direction (same threshold and kronos_scalp options as
+Kronos mode). Kronos can only stop a skill entry, never start one or change
+its price, stop, target or exits.
 Positions keep the manager they were opened with when the switch changes.
 """
 from __future__ import annotations
@@ -25,7 +31,8 @@ logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent
 SWITCH_PATH = ROOT / "data" / "trading_mode.json"
-MODES = ("kronos", "skill")
+MODES = ("kronos", "skill", "skill_kronos")
+SKILL_MODES = ("skill", "skill_kronos")
 DEFAULT_FILE = "config/ScalpStarterSkill.md"
 
 _cache: dict = {"mtime": None, "path": None, "value": None}

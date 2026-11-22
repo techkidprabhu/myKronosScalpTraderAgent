@@ -69,6 +69,23 @@ forecast_horizon: 3
 # pattern's implied direction) required to confirm a trade.
 kronos_confidence_threshold: 0.62
 
+# Optional ways to read Kronos's answer for scalping. All off by default,
+# which is exactly the original rule. Try them with shadow_paths first and
+# compare in Kronos Model Lab ("Is Kronos right?") before switching.
+kronos_scalp:
+  # bars  = share of the averaged forecast's candles that close beyond the
+  #         last close (original; with a 3-candle horizon it can only be
+  #         0, 33, 67 or 100 %)
+  # paths = share of `paths` separate forecasts whose last close is beyond
+  #         it - a real probability, about paths/sample_count times the CPU
+  confidence_method: bars
+  paths: 10
+  shadow_paths: false     # also work out 'paths' and only record it
+  # A forecast close only counts as agreeing if it is at least this % beyond
+  # the last close. Set it to cover spread + fees (e.g. 0.05 for a 0.03 %
+  # spread plus commission). 0 = off. Can differ per broker.
+  min_move_pct: 0
+
 # Indicator confirmation - runs after a candlestick pattern fires and
 # BEFORE Kronos, so setups that fight the indicators are dropped without
 # a forecast. Uses EMA 9/20/50/200, ADX, Supertrend, RSI, MACD,
