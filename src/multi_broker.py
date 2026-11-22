@@ -51,6 +51,10 @@ class SharedKronos:
         with self._lock:
             return self._agent.forecast(*args, **kwargs)
 
+    def confirm_many(self, *args, **kwargs):
+        with self._lock:
+            return self._agent.confirm_many(*args, **kwargs)
+
     def __getattr__(self, name):
         return getattr(self._agent, name)
 

@@ -40,7 +40,7 @@ from src import skill_strategy
 from src import trading_mode
 from src import version as code_version
 from src.kronos_agent import KronosAgent
-from src.market import drop_unclosed_bar, is_market_open, market_timezone
+from src.market import BAR_DURATION, drop_unclosed_bar, is_market_open, market_timezone
 from src.patterns import scan
 from src.kronos_indicators.indicators import atr as atr_series
 from src.risk import RiskConfig, RiskManager, open_risk_at_stops
@@ -85,6 +85,7 @@ NO_TRAIL = TrailConfig(trigger_points=float("inf"), trail_distance=0.0)
 # A trade opened by skill-file trading (trading_mode "skill"): its setup,
 # so it keeps the skill's exits even if the switch is flipped back.
 IG_STREAM_KEY = "ig_stream"          # around-the-clock IG: stream / allowance status for the dashboard
+KRONOS_TIMING_KEY = "kronos_timing"      # how long Kronos takes on this computer (dashboard)
 SKILL_TRADE_KEY = "skill_trade:{symbol}"
 SKILL_DONE_KEY = "skill_done:{symbol}"
 _skill_cache: dict = {}
@@ -206,7 +207,33 @@ class SymbolWorker:
         """True if resting exits survive the session close (GTC)."""
         return getattr(self.broker, "exit_time_in_force", "GTC") == "GTC"
 
+    @property
+    def bar_duration(self):
+        """One candle's length, so Kronos's forecast timestamps are right even
+        on the first candle after a gap (the open, a weekend, IG's break)."""
+        return BAR_DURATION.get(self.timeframe)
+
     def poll_once(self):
+        """Check the latest closed candle and act on it. The orchestrator
+        normally calls prepare_signal / finish_signal itself so it can ask
+        Kronos about every symbol that signalled on the same candle at once;
+        this does the same for one symbol."""
+        ctx = self.prepare_signal()
+        if ctx is None:
+            return
+        t0 = time.perf_counter()
+        try:
+            result = self.kronos_agent.confirm_direction(
+                ctx["df"], ctx["signal"].direction, self.forecast_horizon, bar_duration=self.bar_duration)
+        except Exception as exc:  # noqa: BLE001 - reported by finish_signal
+            result = exc
+        self.finish_signal(ctx, result, (time.perf_counter() - t0) * 1000.0)
+
+    def prepare_signal(self):
+        """Everything before Kronos: fetch candles, find a pattern, run the
+        indicator and rules gates. Returns the context Kronos needs, or None
+        when there is nothing to ask it (no new candle, no pattern, rejected
+        earlier, skill-file mode, ...)."""
         if self.monitor_only:
             return
         if not self.trade_outside_hours and not self._market_open():
@@ -262,13 +289,16 @@ class SymbolWorker:
         rules_verdict = self._rules_check(df, signal, float(last_close))
         if rules_verdict is not None and not rules_verdict.passed:
             return
+        return {"df": df, "signal": signal, "last_close": float(last_close), "ind_verdict": ind_verdict}
 
-        try:
-            confirmed, confidence = self.kronos_agent.confirm_direction(
-                df, signal.direction, self.forecast_horizon
-            )
-        except Exception as exc:
-            logger.exception("Kronos confirmation failed for %s", self.symbol)
+    def finish_signal(self, ctx: dict, result, kronos_ms: float | None = None):
+        """Everything after Kronos answered (or failed): threshold, risk,
+        sizing and the entry order. `result` is (confirmed, confidence) or
+        the exception Kronos raised."""
+        df, signal, last_close, ind_verdict = ctx["df"], ctx["signal"], ctx["last_close"], ctx["ind_verdict"]
+        if isinstance(result, BaseException):
+            exc = result
+            logger.error("Kronos confirmation failed for %s: %s", self.symbol, exc)
             self.audit_log.log_decision(
                 self.symbol, signal.name, signal.direction, signal.strength,
                 None, None, None, None, "error", details={"error": str(exc)},
@@ -276,9 +306,11 @@ class SymbolWorker:
             self.reporter.report_error(f"kronos_agent ({self.symbol})", str(exc))
             return
 
+        confirmed, confidence = result
         self.audit_log.log_snapshot(
             self.symbol, float(last_close), "kronos_result",
-            {"confirmed": confirmed, "confidence": confidence},
+            {"confirmed": confirmed, "confidence": confidence,
+             **({"ms": round(kronos_ms)} if kronos_ms is not None else {})},
         )
         # Shadow mode (finetune.shadow_model): a second model sees the same
         # candles in the background. Its answer is only recorded.
@@ -1649,12 +1681,9 @@ class Orchestrator:
             self._last_closed_report = now
             self._refresh_symbols_from_screener()
 
-        if phase in ("active", "always") and now - state.get("last_full_poll", 0.0) >= interval:
-            for worker in list(self.workers.values()):
-                try:
-                    worker.poll_once()
-                except Exception:
-                    logger.exception("Worker error for %s", worker.symbol)
+        candle_due = self._candle_closed_since(state, now)
+        if phase in ("active", "always") and (candle_due or now - state.get("last_full_poll", 0.0) >= interval):
+            self.poll_workers()
             state["last_full_poll"] = now
 
         # Positions: every cycle while awake; at a slow cadence while the
@@ -1673,6 +1702,106 @@ class Orchestrator:
 
         self.process_manual_orders()
         self.flat_by_close()
+
+    # ---- candle-close timing and one Kronos pass per candle ------------------
+
+    def _candle_seconds(self) -> float | None:
+        """Length of the trading candle when it's short enough for its closes
+        to line up with the clock (1-15 minutes); None otherwise."""
+        d = BAR_DURATION.get(self.config.get("timeframe", ""))
+        secs = d.total_seconds() if d is not None else None
+        return secs if secs and secs <= 900 else None
+
+    def _candle_closed_since(self, state: dict, now: float) -> bool:
+        """True once per candle, a few seconds after it closes (so the broker
+        has the finished bar). Polling then happens right away instead of
+        up to polling_interval_seconds later."""
+        secs = self._candle_seconds()
+        if not secs or not self.config.get("candle_close_poll", True):
+            return False
+        settle = float(self.config.get("candle_close_delay_seconds", 3))
+        boundary = (now - settle) // secs * secs
+        last = state.get("last_candle_boundary")
+        state["last_candle_boundary"] = boundary
+        return last is not None and boundary > last
+
+    def seconds_until_next_candle(self, now: float | None = None) -> float | None:
+        secs = self._candle_seconds()
+        if not secs or not self.config.get("candle_close_poll", True):
+            return None
+        now = now if now is not None else time.time()
+        settle = float(self.config.get("candle_close_delay_seconds", 3))
+        return (now - settle) // secs * secs + secs + settle - now
+
+    def poll_workers(self):
+        """Poll every symbol for its latest closed candle. Symbols whose
+        pattern survived the gates are confirmed by Kronos together - one
+        batched model pass where possible - so the tenth symbol to signal on
+        a candle isn't kept waiting behind the first nine."""
+        pending = []
+        for worker in list(self.workers.values()):
+            try:
+                ctx = worker.prepare_signal()
+            except Exception:
+                logger.exception("Worker error for %s", worker.symbol)
+                continue
+            if ctx is not None:
+                pending.append((worker, ctx))
+        if not pending:
+            return
+        groups: dict = {}
+        for worker, ctx in pending:
+            groups.setdefault((worker.forecast_horizon, worker.bar_duration), []).append((worker, ctx))
+        for (horizon, bar), items in groups.items():
+            results, per_ms = None, None
+            many = getattr(self.kronos_agent, "confirm_many", None)
+            if len(items) > 1 and callable(many):
+                t0 = time.perf_counter()
+                try:
+                    results = many([(c["df"], c["signal"].direction) for _, c in items], horizon, bar_duration=bar)
+                except Exception:  # noqa: BLE001
+                    logger.exception("Kronos batch failed; asking one symbol at a time")
+                    results = None
+                if not (isinstance(results, list) and len(results) == len(items)):
+                    results = None
+                else:
+                    per_ms = (time.perf_counter() - t0) * 1000.0 / len(items)
+                    self._note_kronos_time(per_ms * len(items), len(items))
+            for i, (worker, ctx) in enumerate(items):
+                try:
+                    if results is not None:
+                        worker.finish_signal(ctx, results[i], per_ms)
+                        continue
+                    t0 = time.perf_counter()
+                    try:
+                        res = worker.kronos_agent.confirm_direction(
+                            ctx["df"], ctx["signal"].direction, horizon, bar_duration=bar)
+                    except Exception as exc:  # noqa: BLE001
+                        res = exc
+                    ms = (time.perf_counter() - t0) * 1000.0
+                    if not isinstance(res, BaseException):
+                        self._note_kronos_time(ms, 1)
+                    worker.finish_signal(ctx, res, ms)
+                except Exception:
+                    logger.exception("Worker error for %s", worker.symbol)
+
+    def _note_kronos_time(self, ms: float, symbols: int):
+        """Keep a small running record of how long Kronos takes on this
+        computer, for the dashboard (Kronos Model Lab)."""
+        try:
+            rec = self.audit_log.get_kv(KRONOS_TIMING_KEY) or {}
+            day = time.strftime("%Y-%m-%d")
+            if rec.get("day") != day:
+                rec = {"day": day, "calls": 0, "symbols": 0, "total_ms": 0.0, "max_ms": 0.0}
+            rec["calls"] += 1
+            rec["symbols"] += symbols
+            rec["total_ms"] += ms
+            rec["max_ms"] = max(rec["max_ms"], ms)
+            rec.update(last_ms=round(ms), last_symbols=symbols, last_ts=time.time(),
+                       avg_ms_per_symbol=round(rec["total_ms"] / max(1, rec["symbols"])))
+            self.audit_log.set_kv(KRONOS_TIMING_KEY, rec)
+        except Exception:  # noqa: BLE001
+            logger.debug("Could not record Kronos timing", exc_info=True)
 
     def flat_by_close(self):
         """Day-trade mode: in the last N minutes of the session, close every
@@ -1797,4 +1926,8 @@ class Orchestrator:
             if not self.broker_ok:
                 time.sleep(10)
             else:
-                time.sleep(min(monitor_interval, interval))
+                wait = min(monitor_interval, interval)
+                to_candle = self.seconds_until_next_candle()
+                if to_candle is not None:
+                    wait = max(0.5, min(wait, to_candle))   # wake just after the candle closes
+                time.sleep(wait)
