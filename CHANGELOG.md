@@ -16,6 +16,24 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Changed
+- Theme: new **Auto** setting, now the default. It follows your computer: Light
+  when the OS is light, Chronos when it's dark, switching live when the OS does.
+  The theme button cycles Auto → Chronos → Classic → Light (a small "A" shows
+  Auto); a look you pick stays even if the OS setting changes later. The command
+  palette (Ctrl K) lists all four. Existing Classic or Light choices are kept;
+  the old automatic "Chronos" default becomes Auto.
+- Changing tab cross-fades the content (header, tab bar and market bar stay
+  still); instant with reduced motion or in browsers without View Transitions.
+- Cards lay out by their own width instead of the window's: the market clocks,
+  sentiment meter and Kronos verdict card stack when they're narrow, the big
+  numbers in the Command Center tiles scale with the tile, position cards show
+  four figures across when wide, and the pattern/funnel bars tighten in narrow cards.
+
+### Fixed
+- Classic and Light themes: the header and tab bar no longer push the page
+  wider than the window between phone and wide-laptop widths (900–1180 px).
+
+### Changed
 - Dashboard tables (decisions, positions, working orders, closed trades, screener,
   training runs, saved versions): click a column name to sort it, click again to
   reverse. Numbers, prices, P&L, dates and hold times sort by value, empty cells
