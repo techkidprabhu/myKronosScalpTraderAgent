@@ -613,22 +613,33 @@ tbody tr:hover {
   gap: 16px;
 }
 
-/* Toast alert */
-#toast {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  padding: 12px 20px;
-  background: var(--bg-card);
-  border: 1px solid var(--accent-blue);
-  border-radius: 8px;
-  color: var(--text-primary);
-  font-size: 13px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
-  display: none;
-  z-index: 100;
-  animation: fadeIn 0.2s ease;
+/* Notifications: a stack in a manual popover (top layer). */
+.toast-stack {
+  position: fixed; inset: auto 24px 24px auto; margin: 0; padding: 0; border: 0;
+  background: transparent; overflow: visible; width: min(380px, calc(100vw - 32px));
+  display: flex; flex-direction: column; gap: 8px; z-index: 2100;
 }
+.toast-stack:empty { display: none; }
+.toast {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 10px 10px 14px;
+  background: var(--bg-card); border: 1px solid var(--accent-blue); border-left-width: 4px;
+  border-radius: 8px; color: var(--text-primary); font-size: 13px; line-height: 1.4;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  opacity: 1; translate: 0 0;
+  transition: opacity .2s ease, translate .2s ease;
+  @starting-style { opacity: 0; translate: 0 10px; }
+}
+.toast.leaving { opacity: 0; translate: 0 10px; }
+.toast-error { border-color: var(--accent-red); }
+.toast-text { flex: 1; overflow-wrap: anywhere; }
+.toast-close {
+  flex: none; width: 28px; height: 28px; margin: -4px -2px -4px 0; border: 0; border-radius: 6px;
+  background: transparent; color: var(--text-muted); font-size: 18px; line-height: 1; cursor: pointer;
+}
+.toast-close:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+.toast-close:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 1px; }
+@media (max-width: 600px) { .toast-stack { inset: auto 16px 16px 16px; width: auto; } }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
@@ -1128,8 +1139,21 @@ body.chart-fs-open { overflow: hidden; }
 .manual-orders-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
 .manual-order-row { display: flex; gap: 10px; align-items: center; font-size: 12px; padding: 3px 0; flex-wrap: wrap; }
 .manual-order-result { color: var(--text-muted); }
-.manual-modal { position: fixed; inset: 0; background: rgba(2, 6, 23, 0.72); display: flex;
-  align-items: center; justify-content: center; z-index: 2000; }
+/* Native <dialog> modals (orders, risk saves, every confirm). The box styling
+   lives on the inner .manual-modal-box; the dialog itself is just the frame. */
+dialog.ui-dialog { margin: auto; padding: 0; border: 0; background: transparent; color: inherit;
+  max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow: auto; }
+dialog.ui-dialog:modal { overscroll-behavior: contain; }
+dialog.ui-dialog::backdrop { background: rgba(2, 6, 23, 0.72); overflow: hidden; overscroll-behavior: contain; }
+dialog.ui-dialog[open] { opacity: 1; transition: opacity .15s ease, overlay .15s allow-discrete, display .15s allow-discrete;
+  @starting-style { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { dialog.ui-dialog[open] { transition: none; } }
+.ui-dialog-text { white-space: pre-line; font-size: 13px; color: var(--text-secondary); line-height: 1.45; }
+.ui-dialog-field { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
+.ui-dialog-field[hidden] { display: none; }
+.ui-dialog-field input { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border-light);
+  background: var(--bg-secondary); color: var(--text-primary); font: inherit; font-size: 13px; }
+.manual-modal-actions .btn[hidden] { display: none; }
 .manual-modal-box { background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 12px;
   padding: 20px 22px; width: min(460px, 92vw); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
 .manual-modal-box h3 { margin: 0 0 10px; font-size: 16px; color: var(--text-strong); }
@@ -1482,7 +1506,7 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 :root[data-theme="light"] .pf-zero { stroke: rgba(15, 23, 42, .3); }
 :root[data-theme="light"] .pf-grid { stroke: rgba(15, 23, 42, .07); }
 :root[data-theme="light"] .pc-price, :root[data-theme="light"] .cc-track .dot { background: #0f172a; }
-:root[data-theme="light"] .manual-modal { background: rgba(15, 23, 42, .45); }
+:root[data-theme="light"] dialog.ui-dialog::backdrop { background: rgba(15, 23, 42, .45); }
 :root[data-theme="light"] .ds-filters .cc-chip.active { color: var(--text-strong); }
 :root[data-theme="light"] .btn-buy, :root[data-theme="light"] .btn-sell, :root[data-theme="light"] .btn-primary { color: #fff; }
 :root[data-theme="light"] .cc-session-bar .now { border-right-color: #0369a1; }
@@ -1838,3 +1862,12 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 /* IG around the clock */
 .ig24-status { margin: 4px 0 10px; font-size: .82rem; line-height: 1.5; }
 .scr-table tr.scr-out td { opacity: .6; }
+
+/* Config & Risk: a field is marked only after it has been changed (:user-invalid),
+   never while the page loads, and always with a written reason, not colour alone. */
+#settings-form input:user-invalid,
+#settings-form input[aria-invalid="true"],
+#tab-risk-model input.form-control:user-invalid { border-color: var(--accent-red); outline-color: var(--accent-red); }
+.field-error { margin-top: 4px; font-size: 12px; color: var(--neg-text); }
+.field-error::before { content: "⚠ "; }
+.field-error[hidden] { display: none; }

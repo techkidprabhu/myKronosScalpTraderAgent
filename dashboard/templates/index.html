@@ -686,16 +686,16 @@
         <div id="manual-orders" class="manual-orders" style="display:none;"></div>
       </div>
 
-      <div id="manual-modal" class="manual-modal" style="display:none;" onclick="if (event.target === this) closeManualConfirm()">
-        <div class="manual-modal-box" role="dialog" aria-modal="true" aria-labelledby="manual-modal-title">
+      <dialog id="manual-modal" class="ui-dialog" closedby="any" aria-labelledby="manual-modal-title" aria-describedby="manual-modal-body">
+        <div class="manual-modal-box">
           <h3 id="manual-modal-title">Confirm order</h3>
           <div id="manual-modal-body" class="manual-modal-body"></div>
           <div class="manual-modal-actions">
-            <button class="btn" onclick="closeManualConfirm()">Cancel</button>
+            <button class="btn" autofocus onclick="closeManualConfirm()">Cancel</button>
             <button class="btn" id="manual-modal-go" onclick="submitManualOrder()">Place order</button>
           </div>
         </div>
-      </div>
+      </dialog>
 
       <div class="panel-card" style="margin-top:16px;">
         <div class="panel-header">
@@ -1575,16 +1575,16 @@
         </div>
       </div>
 
-      <div id="rm-modal" class="manual-modal" style="display:none;" onclick="if (event.target === this) rmCloseModal()">
-        <div class="manual-modal-box" role="dialog" aria-modal="true" aria-labelledby="rm-modal-title">
+      <dialog id="rm-modal" class="ui-dialog" closedby="any" aria-labelledby="rm-modal-title" aria-describedby="rm-modal-body">
+        <div class="manual-modal-box">
           <h3 id="rm-modal-title">Save risk changes?</h3>
           <div id="rm-modal-body" class="manual-modal-body"></div>
           <div class="manual-modal-actions">
-            <button class="btn" onclick="rmCloseModal()">Cancel</button>
+            <button class="btn" autofocus onclick="rmCloseModal()">Cancel</button>
             <button class="btn btn-primary" id="rm-modal-go" onclick="rmSave()">Save</button>
           </div>
         </div>
-      </div>
+      </dialog>
     </div>
 
     <div id="tab-settings" class="tab-panel">
@@ -1615,7 +1615,25 @@
     <footer class="app-version" id="app-version" aria-label="Running version"></footer>
   </main>
 
-  <div id="toast" role="status" aria-live="polite">Notification message</div>
+  <!-- One shared dialog for every "are you sure?" / message / short-text question. -->
+  <dialog id="ui-dialog" class="ui-dialog" closedby="any" aria-labelledby="ui-dialog-title" aria-describedby="ui-dialog-body">
+    <form method="dialog" class="manual-modal-box">
+      <h3 id="ui-dialog-title"></h3>
+      <div id="ui-dialog-body" class="manual-modal-body ui-dialog-text"></div>
+      <label id="ui-dialog-field" class="ui-dialog-field" hidden>
+        <span id="ui-dialog-field-label">Note</span>
+        <input id="ui-dialog-input" type="text" maxlength="200" autocomplete="off">
+      </label>
+      <div class="manual-modal-actions">
+        <button class="btn" value="cancel" id="ui-dialog-cancel">Cancel</button>
+        <button class="btn btn-primary" value="ok" id="ui-dialog-ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Notifications: errors stay until closed, routine messages fade after a few seconds. -->
+  <section id="toast-stack" class="toast-stack" popover="manual" role="region" aria-label="Notifications"></section>
+  <div id="toast" class="sr-only" role="status" aria-live="polite"></div>
 
   <!-- Command palette (Ctrl+K) -->
   <div id="cp-overlay" class="cp-overlay" style="display:none" onclick="if (event.target === this) closePalette()">
@@ -2636,14 +2654,11 @@
       go.className = `btn ${action === "BUY" ? "btn-buy" : "btn-sell"}`;
       go.disabled = false;
       go.textContent = action === "CLOSE" ? "Close position" : `Place ${action}`;
-      document.getElementById("manual-modal").style.display = "flex";
-      go.focus();
+      document.getElementById("manual-modal").showModal();   // focus lands on Cancel
     }
 
-    function closeManualConfirm() {
-      document.getElementById("manual-modal").style.display = "none";
-      manualPending = null;
-    }
+    function closeManualConfirm() { document.getElementById("manual-modal").close(); }
+    document.getElementById("manual-modal").addEventListener("close", () => { manualPending = null; flushToasts(); });
 
     async function submitManualOrder() {
       if (!manualPending) return;
@@ -2679,14 +2694,10 @@
         </div>`).join("");
     }
 
-    document.addEventListener("keydown", e => {
-      if (e.key === "Escape" && document.getElementById("manual-modal").style.display === "flex") closeManualConfirm();
-    });
-
     // The positions tab refreshes faster while it's on screen (the server
     // caches broker queries, so this doesn't add broker load).
     setInterval(() => {
-      if (autoRefresh && document.getElementById("tab-positions").classList.contains("active")) loadPositions();
+      if (autoRefresh && !document.hidden && document.getElementById("tab-positions").classList.contains("active")) loadPositions();
     }, 2500);
 
     // ================= Risk Model screen =================
@@ -2941,7 +2952,7 @@
     }
 
     async function rmLiveTick() {
-      if (RM.mode !== "live" || RM.live.busy || RM.drag) return;
+      if (RM.mode !== "live" || RM.live.busy || RM.drag || document.hidden) return;
       if (!document.getElementById("tab-risk-model").classList.contains("active")) return;
       RM.live.busy = true;
       try {
@@ -3545,11 +3556,11 @@
         `<p>Write these to <b>config.yaml</b> for <b>${esc(scopeLabel)}</b>:</p>` +
         `<p>${dirty.map(k => `${esc((RM.schema[k] || {}).label || k)}: ${esc(rmShow(RM.orig[k]))} → <b>${esc(rmShow(RM.cur[k]))}</b>`).join("<br>")}</p>` +
         `<p>A backup of the current file is kept. The agent uses the new limits after it's restarted.</p>`;
-      document.getElementById("rm-modal").style.display = "flex";
       document.getElementById("rm-modal-go").disabled = false;
-      document.getElementById("rm-modal-go").focus();
+      document.getElementById("rm-modal").showModal();       // focus lands on Cancel
     }
-    function rmCloseModal() { document.getElementById("rm-modal").style.display = "none"; }
+    function rmCloseModal() { document.getElementById("rm-modal").close(); }
+    document.getElementById("rm-modal").addEventListener("close", flushToasts);
 
     async function rmSave() {
       const go = document.getElementById("rm-modal-go");
@@ -3570,12 +3581,9 @@
       }
     }
 
-    document.addEventListener("keydown", e => {
-      if (e.key === "Escape" && document.getElementById("rm-modal").style.display === "flex") rmCloseModal();
-    });
     window.addEventListener("beforeunload", e => { if (RM.loaded && rmDirty().length) { e.preventDefault(); e.returnValue = ""; } });
     setInterval(() => {
-      if (document.getElementById("tab-risk-model").classList.contains("active")) rmLoadState();
+      if (!document.hidden && document.getElementById("tab-risk-model").classList.contains("active")) rmLoadState();
     }, 10000);
     window.addEventListener("resize", () => { if (RM.loaded) rmDraw(); });
 
@@ -4033,7 +4041,7 @@
     document.addEventListener("click", e => { if (!e.target.closest(".ver-wrap")) toggleVersion(false); });
     document.addEventListener("keydown", e => { if (e.key === "Escape") toggleVersion(false); });
     loadVersion();
-    setInterval(loadVersion, 300000);
+    setInterval(() => { if (!document.hidden) loadVersion(); }, 300000);
 
     // ================= Theme =================
     const THEMES = ["chronos", "dark", "light"];
@@ -4095,6 +4103,7 @@
         { group: "Actions", label: "Decisions: rejected by Kronos", run: () => { switchTab("decisions"); dsFilter("kronos"); } },
         { group: "Actions", label: "Decisions: rejected by risk rules", run: () => { switchTab("decisions"); dsFilter("risk"); } },
         { group: "Actions", label: "Decisions: orders opened", run: () => { switchTab("decisions"); dsFilter("opened"); } },
+        { group: "Actions", label: "Recent notifications", sub: "The last 20 messages, including ones that faded", run: () => showToastHistory() },
         { group: "Actions", label: "Reload the dashboard", run: () => location.reload() },
       );
       return cmds;
@@ -4177,7 +4186,7 @@
         return;
       }
       if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (document.querySelector(".manual-modal[style*='flex']")) return;      // a confirm dialog is open
+      if (document.querySelector("dialog[open]")) return;                       // a dialog is open
       if (e.key === "/") { e.preventDefault(); openPalette(); return; }
       if (/^[1-9]$/.test(e.key) && CP_TABS[Number(e.key) - 1] && document.getElementById("cp-overlay").style.display !== "flex") {
         switchTab(CP_TABS[Number(e.key) - 1][0]);
@@ -4494,14 +4503,18 @@
     let ftVerWasRunning = false;
 
     async function ftRelease(runId) {
-      const note = prompt(`Save ${runId} as a new version on GitHub?\n\nAdd a short note for later (optional), e.g. what data it was trained on:`, "");
+      const note = await uiPrompt(`Save ${runId} as a new version on GitHub?`,
+        "Add a short note for later (optional), e.g. what data it was trained on.",
+        { label: "Note", ok: "Save version" });
       if (note === null) return;
       await ftAction("release", { run_id: runId, note });
       setTimeout(() => loadVersions(true), 600);
     }
 
     async function ftRestore(version) {
-      if (!confirm(`Download v${version} from GitHub to this computer?\n\nIt appears under Training runs, where you can Shadow test it or Use this model. Nothing changes for trading until you do.`)) return;
+      if (!await uiConfirm(`Download v${version} from GitHub?`,
+          "It appears under Training runs, where you can Shadow test it or Use this model. Nothing changes for trading until you do.",
+          { ok: "Download" })) return;
       await ftAction("restore", { version });
       setTimeout(() => loadVersions(true), 600);
     }
@@ -4545,25 +4558,30 @@
       loadFinetune();
     }
 
-    function ftTrain() {
+    async function ftTrain() {
       const open = marketData && marketData.phase && ["active", "always"].includes(marketData.phase.phase);
-      if (!confirm(`Start a fine-tuning run now? It uses most of this computer's CPU for up to ${ftData ? ftData.max_minutes : 240} minutes.` +
-          (open ? "\n\nA market is open: the agent's Kronos checks will be slower while it runs." : ""))) return;
+      if (!await uiConfirm("Start a fine-tuning run now?",
+          `It uses most of this computer's CPU for up to ${ftData ? ftData.max_minutes : 240} minutes.` +
+          (open ? "\n\nA market is open: the agent's Kronos checks will be slower while it runs." : ""),
+          { ok: "Start training" })) return;
       ftAction("train");
     }
 
-    function ftShadow(runId) {
-      const msg = runId === "off" ? "Stop the shadow test?"
-        : `Shadow test ${runId}?\n\nThe agent will ask this model as well on every signal and record its answer. Trades keep following the current model. Each Kronos check uses more CPU while it runs.`;
-      if (!confirm(msg + "\n\nIt takes effect after you restart the agent.")) return;
+    async function ftShadow(runId) {
+      const off = runId === "off";
+      const title = off ? "Stop the shadow test?" : `Shadow test ${runId}?`;
+      const body = (off ? "" : "The agent will ask this model as well on every signal and record its answer. Trades keep following the current model. Each Kronos check uses more CPU while it runs.\n\n") +
+        "It takes effect after you restart the agent.";
+      if (!await uiConfirm(title, body, { ok: off ? "Stop shadow test" : "Start shadow test" })) return;
       ftAction("shadow", { run_id: runId });
     }
 
-    function ftUse(runId) {
-      const msg = runId === "original"
-        ? "Switch the agent back to the original Kronos model?"
-        : `Use ${runId} for the agent's Kronos confirmations?\n\nThis changes which model confirms live trades. You can switch back to the original at any time.`;
-      if (!confirm(msg + "\n\nIt takes effect after you restart the agent.")) return;
+    async function ftUse(runId) {
+      const orig = runId === "original";
+      const title = orig ? "Switch back to the original Kronos model?" : `Use ${runId} for Kronos confirmations?`;
+      const body = (orig ? "" : "This changes which model confirms live trades. You can switch back to the original at any time.\n\n") +
+        "It takes effect after you restart the agent.";
+      if (!await uiConfirm(title, body, { ok: orig ? "Use original model" : "Use this model", danger: !orig })) return;
       ftAction("use", { run_id: runId });
     }
 
@@ -4810,23 +4828,28 @@
       const res = await fetch("/api/trading_mode", { method: "POST", headers: { "Content-Type": "application/json" },
                                                      body: JSON.stringify({ mode, file }) });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) { alert(body.error || "Couldn't change who decides trades"); loadTradingMode(); return; }
+      if (!res.ok) { uiAlert("Couldn't change who decides trades", body.error || "The server refused the change."); loadTradingMode(); return; }
       tmRender(body);
     }
-    function tmSet(mode) {
+    async function tmSet(mode) {
       if (!tmData || tmData.mode === mode) return;
       const file = document.getElementById("tm-file").value || tmData.file;
-      const msg = mode === "skill"
-        ? `Let ${file.replace(/^config\//, "")} open and close trades on every broker?\n\nKronos will not be called. Your risk limits (max loss per trade, daily limits, per-stock limits, flat-by-close) still apply. Takes effect on the agent's next scan; open positions keep the manager they were opened with.`
-        : "Go back to Kronos deciding trades on every broker?\n\nTrades the skill already opened keep the skill's exits until they close.";
-      if (!confirm(msg)) { tmRender(tmData); return; }
+      const name = file.replace(/^config\//, "");
+      const ok = mode === "skill"
+        ? await uiConfirm(`Let ${name} open and close trades on every broker?`,
+            "Kronos will not be called. Your risk limits (max loss per trade, daily limits, per-stock limits, flat-by-close) still apply. Takes effect on the agent's next scan; open positions keep the manager they were opened with.",
+            { ok: "Use skill file", danger: true })
+        : await uiConfirm("Go back to Kronos deciding trades on every broker?",
+            "Trades the skill already opened keep the skill's exits until they close.", { ok: "Use Kronos" });
+      if (!ok) { tmRender(tmData); return; }
       tmPost(mode, file);
     }
-    function tmFileChanged() {
+    async function tmFileChanged() {
       if (!tmData) return;
       const file = document.getElementById("tm-file").value;
       if (tmData.mode !== "skill") { tmData.file = file; return; }
-      if (!confirm(`Switch trading to ${file.replace(/^config\//, "")}? New trades follow its settings from the next scan.`)) { tmRender(tmData); return; }
+      if (!await uiConfirm(`Switch trading to ${file.replace(/^config\//, "")}?`,
+          "New trades follow its settings from the next scan.", { ok: "Switch skill file", danger: true })) { tmRender(tmData); return; }
       tmPost("skill", file);
     }
     loadTradingMode();
@@ -5204,8 +5227,8 @@
       if (now) now.style.width = `${Math.min(100, since / b.len * 100)}%`;
       document.getElementById("cc-session-left").textContent = `${Math.floor(left / 60)}h ${Math.floor(left % 60)}m to close`;
     }
-    setInterval(ccTickSession, 1000);
-    setInterval(() => { if (document.getElementById("tab-command-center").classList.contains("active")) ccLiveBadge(); }, 5000);
+    setInterval(() => { if (!document.hidden) ccTickSession(); }, 1000);
+    setInterval(() => { if (!document.hidden && document.getElementById("tab-command-center").classList.contains("active")) ccLiveBadge(); }, 5000);
 
     // Trigger Scan Now
     async function triggerScanNow() {
@@ -5498,7 +5521,8 @@
     let rulesDirty = false;
     async function rulesLoad(force) {
       if (rulesDirty && !force) return;
-      if (force && rulesDirty && !confirm("Discard your unsaved changes to the rules?")) return;
+      if (force && rulesDirty && !await uiConfirm("Discard your unsaved changes to the rules?",
+          "Your edits since the last save will be lost.", { ok: "Discard changes", danger: true })) return;
       let d;
       try { d = await (await fetch("/api/rules", { cache: "no-store" })).json(); } catch (e) { return; }
       if (d.error) return;
@@ -5579,6 +5603,31 @@
     let settingsScope = "shared";
     let settingsDirty = {};     // key -> new value
     let settingsResets = new Set();
+    let settingsInvalid = {};   // key -> what was typed, while it breaks the field's limits
+
+    // Checked once the field has been changed (not while the first digit is typed),
+    // then live while it stays wrong. The browser's own rules come from min/max/step.
+    function _fieldError(el) {
+      const v = el.validity;
+      if (v.valid) return "";
+      if (v.badInput) return "Enter a number.";
+      if (v.rangeUnderflow) return `Must be ${el.min} or more.`;
+      if (v.rangeOverflow) return `Must be ${el.max} or less.`;
+      if (v.stepMismatch) return el.step === "1" ? "Must be a whole number." : "Not a valid step for this field.";
+      return el.validationMessage || "Not a valid value.";
+    }
+    function _showFieldError(el, msg) {
+      const err = document.getElementById(el.id + "-err");
+      if (!err) return;
+      err.textContent = msg;
+      err.hidden = !msg;
+      el.toggleAttribute("aria-invalid", !!msg);
+      if (msg) el.setAttribute("aria-invalid", "true");
+      const ids = (el.getAttribute("aria-describedby") || "").split(" ").filter(x => x && x !== err.id);
+      if (msg) ids.push(err.id);                       // only point at the message while there is one
+      ids.length ? el.setAttribute("aria-describedby", ids.join(" ")) : el.removeAttribute("aria-describedby");
+      el.closest(".settings-field")?.classList.toggle("invalid", !!msg);
+    }
 
     function _fieldValue(key) {
       const vals = (settingsData.values || {})[settingsScope] || {};
@@ -5642,7 +5691,8 @@
         html.push(`<section class="settings-section${sec.danger ? " danger" : ""}"><h4>${esc(sec.title)}${sec.danger ? " <span class='danger-tag'>changes real order sizes and stops</span>" : ""}</h4><div class="settings-grid">`);
         for (const f of fields) {
           const dirty = Object.prototype.hasOwnProperty.call(settingsDirty, f.key);
-          const value = dirty ? settingsDirty[f.key] : _fieldValue(f.key);
+          const bad = Object.prototype.hasOwnProperty.call(settingsInvalid, f.key);
+          const value = bad ? settingsInvalid[f.key] : dirty ? settingsDirty[f.key] : _fieldValue(f.key);
           const ovr = _isOverride(f.key);
           const shared = (settingsData.values.shared || {})[f.key];
           const id = "set-" + f.key.replace(/\./g, "__");
@@ -5670,6 +5720,7 @@
           html.push(`<div class="settings-field${dirty ? " dirty" : ""}">
               <label for="${id}">${esc(f.label)}${esc(unit.suffix)} ${tags.join("")}</label>
               ${input}
+              <div class="field-error" id="${id}-err" hidden></div>
               ${f.help ? `<div class="field-help">${esc(f.help)}</div>` : ""}
               ${unit.note}
             </div>`);
@@ -5681,7 +5732,25 @@
         for (const f of sec.fields) {
           const el = document.getElementById("set-" + f.key.replace(/\./g, "__"));
           if (!el) continue;
+          if (settingsInvalid[f.key] !== undefined) _showFieldError(el, _fieldError(el) || "Not a valid value.");
+          if (el.type === "number") el.addEventListener("input", () => {
+            // Live only once the field is already showing a problem; clears the moment it's fixed.
+            if (!el.hasAttribute("aria-invalid")) return;
+            const msg = _fieldError(el);
+            _showFieldError(el, msg);
+          });
           el.addEventListener("change", () => {
+            if (el.type === "number") {
+              const msg = _fieldError(el);
+              if (msg) {
+                settingsInvalid[f.key] = el.value;
+                delete settingsDirty[f.key];
+                _showFieldError(el, msg);
+                updateSettingsButtons();
+                return;
+              }
+              delete settingsInvalid[f.key];
+            }
             let v;
             if (f.type === "bool") v = el.checked;
             else if (f.type === "int") v = el.value === "" ? null : parseInt(el.value, 10);
@@ -5704,8 +5773,9 @@
 
     function updateSettingsButtons() {
       const n = Object.keys(settingsDirty).length + settingsResets.size;
-      document.getElementById("btn-settings-save").disabled = n === 0;
-      document.getElementById("btn-settings-discard").disabled = n === 0;
+      const bad = Object.keys(settingsInvalid).length;
+      document.getElementById("btn-settings-save").disabled = n === 0 && !bad;
+      document.getElementById("btn-settings-discard").disabled = n === 0 && !bad;
       document.getElementById("btn-settings-save").textContent = n ? `Save (${n})` : "Save";
     }
 
@@ -5722,7 +5792,7 @@
         sel.innerHTML = `<option value="shared">Shared settings (all brokers)</option>` +
           names.map(n => `<option value="${esc(n)}">${esc(settingsData.brokers[n].label)} only (${esc(n)})</option>`).join("");
         sel.value = settingsScope;
-        settingsDirty = {}; settingsResets = new Set();
+        settingsDirty = {}; settingsResets = new Set(); settingsInvalid = {};
         renderSettings();
         updateSettingsButtons();
       } catch (err) {
@@ -5731,16 +5801,24 @@
     }
 
     function discardSettings() {
-      settingsDirty = {}; settingsResets = new Set();
+      settingsDirty = {}; settingsResets = new Set(); settingsInvalid = {};
       renderSettings(); updateSettingsButtons();
     }
 
     async function saveSettings() {
+      const firstBad = document.querySelector("#settings-form [aria-invalid='true']");
+      if (firstBad) {
+        firstBad.focus();
+        firstBad.scrollIntoView({ block: "center" });
+        const n = Object.keys(settingsInvalid).length;
+        showToast(`Not saved: ${n} field${n === 1 ? " is" : "s are"} outside its allowed range`);
+        return;
+      }
       const keys = Object.keys(settingsDirty);
       const riskKeys = keys.concat([...settingsResets]).filter(k => k.startsWith("risk."));
-      if (riskKeys.length && !window.confirm(
-          `You are changing risk limits (${riskKeys.join(", ")}) for ${settingsScope === "shared" ? "all brokers" : settingsScope}. ` +
-          "They apply to real orders after the agent restarts. Save?")) return;
+      if (riskKeys.length && !await uiConfirm("Save risk limit changes?",
+          `You are changing ${riskKeys.join(", ")} for ${settingsScope === "shared" ? "all brokers" : settingsScope}. ` +
+          "They apply to real orders after the agent restarts.", { ok: "Save risk limits", danger: true })) return;
       try {
         const res = await fetch("/api/settings", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -5885,11 +5963,16 @@
         try { localStorage.removeItem("activeSymbol"); } catch (e) {}
         location.reload();
       });
-      document.getElementById("settings-scope").addEventListener("change", (e) => {
-        if ((Object.keys(settingsDirty).length || settingsResets.size) &&
-            !window.confirm("Discard unsaved changes?")) { e.target.value = settingsScope; return; }
-        settingsScope = e.target.value;
-        settingsDirty = {}; settingsResets = new Set();
+      document.getElementById("settings-scope").addEventListener("change", async (e) => {
+        const next = e.target.value;
+        if (Object.keys(settingsDirty).length || settingsResets.size || Object.keys(settingsInvalid).length) {
+          e.target.value = settingsScope;
+          if (!await uiConfirm("Discard unsaved changes?", "Switching scope drops the edits you haven't saved.",
+                               { ok: "Discard changes", danger: true })) return;
+          e.target.value = next;
+        }
+        settingsScope = next;
+        settingsDirty = {}; settingsResets = new Set(); settingsInvalid = {};
         renderSettings(); updateSettingsButtons();
       });
     }
@@ -5902,11 +5985,119 @@
       stateEl.style.color = autoRefresh ? "var(--accent-green)" : "var(--accent-red)";
     }
 
-    function showToast(msg) {
-      const toast = document.getElementById("toast");
-      toast.textContent = msg;
-      toast.style.display = "block";
-      setTimeout(() => { toast.style.display = "none"; }, 3500);
+    // ---- Dialogs: one native <dialog> for confirm / alert / short-text prompts.
+    // showModal() gives focus handling, Esc and the inert background for free.
+    let uiDialogResolve = null, uiDialogMode = "confirm";
+    function uiDialog({ title, body = "", ok = "OK", cancel = "Cancel", danger = false, mode = "confirm", value = "", label = "Note" }) {
+      const dlg = document.getElementById("ui-dialog");
+      if (dlg.open) dlg.close("cancel");                       // settles the previous question first
+      uiDialogMode = mode;
+      document.getElementById("ui-dialog-title").textContent = title;
+      document.getElementById("ui-dialog-body").textContent = body;
+      const field = document.getElementById("ui-dialog-field"), input = document.getElementById("ui-dialog-input");
+      const okBtn = document.getElementById("ui-dialog-ok"), cancelBtn = document.getElementById("ui-dialog-cancel");
+      field.hidden = mode !== "prompt";
+      document.getElementById("ui-dialog-field-label").textContent = label;
+      input.value = value;
+      okBtn.textContent = ok;
+      okBtn.className = `btn ${danger ? "btn-sell" : "btn-primary"}`;
+      cancelBtn.textContent = cancel;
+      cancelBtn.hidden = mode === "alert";
+      // Focus the safe choice: Cancel for questions, OK for a plain message, the box for typing.
+      [okBtn, cancelBtn, input].forEach(el => el.removeAttribute("autofocus"));
+      (mode === "alert" ? okBtn : mode === "prompt" ? input : cancelBtn).setAttribute("autofocus", "");
+      dlg.returnValue = "";
+      return new Promise(resolve => { uiDialogResolve = resolve; dlg.showModal(); });
+    }
+    const uiConfirm = (title, body, opts = {}) => uiDialog({ title, body, ok: "Continue", ...opts, mode: "confirm" });
+    const uiAlert = (title, body, opts = {}) => uiDialog({ title, body, ok: "OK", ...opts, mode: "alert" });
+    const uiPrompt = (title, body, opts = {}) => uiDialog({ title, body, ...opts, mode: "prompt" });
+    (() => {
+      const dlg = document.getElementById("ui-dialog");
+      dlg.addEventListener("close", () => {
+        const done = uiDialogResolve; uiDialogResolve = null;
+        const yes = dlg.returnValue === "ok";
+        if (done) done(uiDialogMode === "prompt" ? (yes ? document.getElementById("ui-dialog-input").value.trim() : null) : yes);
+        flushToasts();
+      });
+      // Enter in the text box means OK (the form's first button is Cancel).
+      document.getElementById("ui-dialog-input").addEventListener("keydown", e => {
+        if (e.key === "Enter") { e.preventDefault(); dlg.close("ok"); }
+      });
+      // Clicking the dimmed backdrop cancels (closedby="any" does this natively where supported).
+      ["ui-dialog", "manual-modal", "rm-modal"].forEach(id => {
+        const d = document.getElementById(id);
+        d.addEventListener("click", e => { if (e.target === d) d.close("cancel"); });
+      });
+    })();
+
+    // ---- Notifications: a stack of toasts in a manual popover (top layer, above
+    // everything but modal dialogs). Errors stay until closed; routine messages fade.
+    // While a modal dialog is open new toasts wait, then appear when it closes.
+    const TOAST_ERROR = /\b(fail|failed|error|couldn't|could not|not saved|not queued|not drawn|refused|denied)\b/i;
+    const toastQueue = [], toastHistory = [];
+    function toastStack() {
+      const stack = document.getElementById("toast-stack");
+      if (stack.showPopover && !stack.matches(":popover-open")) { try { stack.showPopover(); } catch (e) {} }
+      return stack;
+    }
+    function announce(msg) {
+      if (typeof document.ariaNotify === "function") { document.ariaNotify(msg); return; }
+      const live = document.getElementById("toast");
+      live.textContent = "";
+      setTimeout(() => { live.textContent = msg; }, 50);
+    }
+    function showToast(msg, opts = {}) {
+      const kind = opts.kind || (TOAST_ERROR.test(String(msg)) ? "error" : "info");
+      toastHistory.unshift({ msg: String(msg), kind, ts: Date.now() });
+      toastHistory.length = Math.min(toastHistory.length, 20);
+      toastQueue.push({ msg: String(msg), kind, persist: opts.persist ?? kind === "error" });
+      flushToasts();
+    }
+    function flushToasts() {
+      if (document.querySelector("dialog:modal")) return;
+      while (toastQueue.length) renderToast(toastQueue.shift());
+    }
+    function renderToast({ msg, kind, persist }) {
+      const stack = toastStack();
+      const el = document.createElement("div");
+      el.className = `toast toast-${kind}`;
+      const text = document.createElement("span");
+      text.className = "toast-text";
+      text.textContent = msg;
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "toast-close";
+      close.setAttribute("aria-label", "Close notification");
+      close.textContent = "×";
+      close.onclick = () => dismissToast(el);
+      el.append(text, close);
+      stack.prepend(el);
+      while (stack.children.length > 4) stack.lastElementChild.remove();  // keep the stack short
+      announce(msg);
+      if (!persist) {
+        let timer = setTimeout(() => dismissToast(el), 5000);
+        // Pause the fade while the pointer or keyboard is on it.
+        el.addEventListener("mouseenter", () => clearTimeout(timer));
+        el.addEventListener("focusin", () => clearTimeout(timer));
+        el.addEventListener("mouseleave", () => { timer = setTimeout(() => dismissToast(el), 3000); });
+      }
+    }
+    function dismissToast(el) {
+      if (!el.isConnected) return;
+      el.classList.add("leaving");
+      const gone = () => { el.remove(); if (!document.getElementById("toast-stack").children.length) hideStack(); };
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) gone();
+      else { el.addEventListener("transitionend", gone, { once: true }); setTimeout(gone, 400); }
+    }
+    function hideStack() {
+      const stack = document.getElementById("toast-stack");
+      if (stack.hidePopover && stack.matches(":popover-open")) { try { stack.hidePopover(); } catch (e) {} }
+    }
+    function showToastHistory() {
+      if (!toastHistory.length) { uiAlert("Recent notifications", "Nothing yet."); return; }
+      uiAlert("Recent notifications", toastHistory.map(t =>
+        `${new Date(t.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}  ${t.kind === "error" ? "⚠ " : ""}${t.msg}`).join("\n"));
     }
 
     // ---- Market bar: exchange clocks, sessions and agent phase ----
@@ -6035,19 +6226,32 @@
       }
     }
 
-    setInterval(tickMarkets, 1000);
+    setInterval(() => { if (!document.hidden) tickMarkets(); }, 1000);
     setInterval(() => { if (!document.hidden) loadMarkets(); }, 30000);
     loadMarkets();
 
-    // Polling loop
-    setInterval(() => {
-      if (autoRefresh) {
-        loadStatus();
-        loadPositions();
-        loadDecisions();
-        pollOverview();
-      }
-    }, 5000);
+    // Polling loop. Nothing polls while the browser tab is hidden (another tab,
+    // minimised window, locked screen); coming back refreshes straight away.
+    function refreshNow() {
+      loadStatus();
+      loadPositions();
+      loadDecisions();
+      pollOverview();
+    }
+    setInterval(() => { if (autoRefresh && !document.hidden) refreshNow(); }, 5000);
+    let hiddenSince = 0;
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) { hiddenSince = Date.now(); return; }
+      if (!hiddenSince || Date.now() - hiddenSince < 2000) return;   // a quick blip: the timers catch up
+      hiddenSince = 0;
+      tickMarkets();
+      ccTickSession();
+      if (!autoRefresh) return;
+      refreshNow();
+      loadMarkets();
+      if (document.getElementById("tab-command-center").classList.contains("active")) { KR.lastLoad = 0; krHeroTick(); }
+      if (document.getElementById("tab-risk-model").classList.contains("active") && RM.loaded) rmLoadState();
+    });
 
     // Chart view controls
     function updateChartTfNote() {
