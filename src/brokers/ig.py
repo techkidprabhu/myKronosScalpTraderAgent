@@ -121,6 +121,7 @@ class RequestGuard:
     def __init__(self):
         self.lock = threading.Lock()
         self.sent: list[float] = []
+        self.paths: list[tuple[float, str]] = []     # (time, request) for the budget message
         self.paused_until = 0.0
         self.strikes = 0
         self.reason = ""
@@ -144,7 +145,15 @@ class RequestGuard:
         return (f"IG request allowance used up ({self.reason}) - pausing IG requests until {until} so it can "
                 f"reset. The agent and the dashboard share the API key's allowance.")
 
-    def acquire(self):
+    def busiest(self) -> str:
+        """The requests that used this minute's budget, most first."""
+        import collections
+        now = time.time()
+        recent = [p for t, p in self.paths if now - t < 60.0]
+        top = collections.Counter(recent).most_common(3)
+        return ", ".join(f"{p} x{n}" for p, n in top)
+
+    def acquire(self, path: str = ""):
         """Wait for room in the budget; raise while paused or if the wait
         would be longer than IG_REQUEST_MAX_WAIT."""
         deadline = time.time() + self.max_wait()
@@ -156,11 +165,13 @@ class RequestGuard:
                 self.sent = [t for t in self.sent if now - t < 60.0]
                 if len(self.sent) < self.per_min():
                     self.sent.append(now)
+                    self.paths = [(t, p) for t, p in self.paths if now - t < 60.0] + [(now, path)]
                     return
                 wait = 60.0 - (now - self.sent[0]) + 0.05
             if time.time() + wait > deadline:
+                used = self.busiest()
                 raise BrokerError(f"IG request budget ({self.per_min()} a minute for this process) is full - "
-                                  "try again shortly")
+                                  "try again shortly" + (f" (used by {used})" if used else ""))
             time.sleep(min(wait, 1.0))
 
     def exceeded(self, error_code: str):
@@ -311,7 +322,11 @@ class IGClient(BrokerClient):
                 return hit[1]
         trading = _is_trading(method, path)
         if not trading:
-            GUARD.acquire()
+            label = path.split("?")[0]
+            for pre in ("/markets/", "/prices/", "/confirms/"):
+                if label.startswith(pre):
+                    label = pre + "…"
+            GUARD.acquire(f"{method} {label}")
         else:
             self._cache = {}                              # positions / orders are about to change
         headers = self._headers(version)
@@ -388,6 +403,20 @@ class IGClient(BrokerClient):
         return self._rest_bars(symbol, resolution, num_points)
 
     def _rest_bars(self, symbol: str, resolution: str, num_points: int) -> pd.DataFrame:
+        # The same candles asked for again within a minute (the dashboard's
+        # 10-second refreshes) come from here, not IG: each request uses
+        # the per-minute allowance and the weekly price-history allowance.
+        key = (symbol, resolution, int(num_points))
+        hit = getattr(self, "_bars_cache", {}).get(key)
+        if hit and time.time() - hit[0] < 60:
+            return hit[1].copy()
+        df = self._rest_bars_fetch(symbol, resolution, num_points)
+        if not hasattr(self, "_bars_cache"):
+            self._bars_cache = {}
+        self._bars_cache[key] = (time.time(), df)
+        return df.copy()
+
+    def _rest_bars_fetch(self, symbol: str, resolution: str, num_points: int) -> pd.DataFrame:
         data = self._request("GET", f"/prices/{symbol}", 3,
                              params={"resolution": RESOLUTIONS[resolution], "max": int(num_points), "pageSize": 0})
         allowance = ((data.get("metadata") or {}).get("allowance") or {})

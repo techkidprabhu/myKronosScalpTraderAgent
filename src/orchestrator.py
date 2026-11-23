@@ -86,6 +86,8 @@ NO_TRAIL = TrailConfig(trigger_points=float("inf"), trail_distance=0.0)
 # A trade opened by skill-file trading (trading_mode "skill"): its setup,
 # so it keeps the skill's exits even if the switch is flipped back.
 IG_STREAM_KEY = "ig_stream"          # around-the-clock IG: stream / allowance status for the dashboard
+BROKER_MIRROR_KEY = "broker_mirror"      # IG: positions/orders/account for the dashboard (shares the allowance)
+MIRROR_SECONDS = 30
 KRONOS_TIMING_KEY = "kronos_timing"      # how long Kronos takes on this computer (dashboard)
 SKILL_TRADE_KEY = "skill_trade:{symbol}"
 SKILL_DONE_KEY = "skill_done:{symbol}"
@@ -1806,6 +1808,48 @@ class Orchestrator:
 
         self.process_manual_orders()
         self.flat_by_close()
+        self._publish_broker_mirror(now)
+
+    def _publish_broker_mirror(self, now: float):
+        """IG only: the dashboard and the agent share IG's request allowance,
+        so the agent - which fetches positions, orders and the account anyway
+        - publishes them, and the dashboard reads them instead of asking IG
+        again. Every MIRROR_SECONDS; the account once a minute."""
+        if not hasattr(self.broker, "request_guard_status"):
+            return
+        if now - getattr(self, "_mirror_published", 0.0) < MIRROR_SECONDS:
+            return
+        self._mirror_published = now
+        try:
+            positions = self.broker.get_open_positions()
+            orders = self.broker.get_open_orders()
+        except Exception as exc:  # noqa: BLE001 - the dashboard falls back to asking IG
+            logger.debug("Broker mirror skipped: %s", exc)
+            return
+        if now - getattr(self, "_mirror_account_ts", 0.0) >= 60:
+            try:
+                self._mirror_account = self.broker.get_account_summary()
+                self._mirror_account_ts = now
+            except Exception:  # noqa: BLE001
+                pass
+        prices = {}
+        stream = getattr(self.broker, "stream", None)
+        if stream is not None:
+            for sym in {*self.workers, *(p["symbol"] for p in positions)}:
+                try:
+                    live = stream.price(sym)
+                except Exception:  # noqa: BLE001
+                    live = None
+                if live:
+                    prices[sym] = float(live)
+        try:
+            self.audit_log.set_kv(BROKER_MIRROR_KEY, {
+                "ts": now, "positions": positions, "orders": orders,
+                "account": getattr(self, "_mirror_account", None),
+                "account_ts": getattr(self, "_mirror_account_ts", None), "prices": prices,
+                "guard": self.broker.request_guard_status()})
+        except Exception:  # noqa: BLE001
+            logger.debug("Could not publish the broker mirror", exc_info=True)
 
     # ---- candle-close timing and one Kronos pass per candle ------------------
 
