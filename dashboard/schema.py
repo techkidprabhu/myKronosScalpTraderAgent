@@ -33,6 +33,9 @@ SECTIONS = [
     {"id": "schedule", "title": "Timeframe & schedule", "fields": [
         ("timeframe", "Candle timeframe", "select", {"options": TIMEFRAMES}),
         ("polling_interval_seconds", "Scan interval (s)", "int", {"min": 10, "max": 3600}),
+        ("trading_day_timezone", "Trading day time zone", "text", {"nullable": True, "timezone": True,
+         "help": "Where 'today' starts for P&L, the daily loss limit and profit target, e.g. Asia/Singapore. "
+                 "Blank = the market's own time zone"}),
         ("candle_close_poll", "Also scan right after each candle closes", "bool", {}),
         ("candle_close_delay_seconds", "Wait after the close for the finished candle (s)", "int", {"min": 1, "max": 30}),
         ("lookback_bars", "Lookback bars fed to Kronos", "int", {"min": 20, "max": 512}),
@@ -316,7 +319,14 @@ def coerce(key: str, value):
             raise ValueError(f"{f['label']}: at least one entry")
         return items
     if t == "text":
-        return str(value).strip() or None
+        text = str(value).strip() or None
+        if text and f.get("timezone"):
+            from zoneinfo import ZoneInfo
+            try:
+                ZoneInfo(text)
+            except Exception:  # noqa: BLE001
+                raise ValueError(f"{f['label']}: unknown time zone {text!r} - use a name like Asia/Singapore")
+        return text
     raise ValueError(f"{key}: unsupported type {t}")
 
 

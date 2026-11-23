@@ -36,7 +36,7 @@ from src import rules as rules_gate
 from src import version as code_version
 from src.kronos_indicators import indicators as ind_lib
 from src.brokers.base import size_num
-from src.market import BAR_DURATION, drop_unclosed_bar, market_timezone
+from src.market import BAR_DURATION, drop_unclosed_bar, market_timezone, trading_day_timezone
 from src import sentiment
 from src import kronos_scorecard
 from src import brokers as broker_registry
@@ -1016,10 +1016,14 @@ def _apply_live_price(pos: dict, prices: dict) -> dict:
     return pos
 
 
+def _day_tz():
+    """The time zone "today" is counted in: trading_day_timezone, else the market's."""
+    return trading_day_timezone(load_config(), _spec_market(current_spec()))
+
+
 def _market_day_start() -> float:
-    """Midnight today in the current broker's market time zone (epoch s)."""
-    tz = market_timezone(_spec_market(current_spec()))
-    return datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    """Midnight today, where today is counted in _day_tz() (epoch s)."""
+    return datetime.now(_day_tz()).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
 
 def _apply_today_pnl(pos: dict, prev_closes: dict, day_start: float) -> dict:
@@ -1480,8 +1484,7 @@ def api_rules():
     cfg = load_config()
     if request.method == "GET":
         out = _rules_payload(cfg)
-        day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-        out["today"] = _rules_stats(day)
+        out["today"] = _rules_stats(_market_day_start())
         out["week"] = _rules_stats(time.time() - 7 * 86400)
         return jsonify(out)
     data = request.get_json(silent=True) or {}
@@ -2184,8 +2187,12 @@ def _overview_data() -> dict:
     market = _spec_market(spec)
     tz = market_timezone(market)
     now = time.time()
-    day_start = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-    out = {"generated_at": now, "market": market}
+    day_tz = trading_day_timezone(cfg, market)
+    day_start = datetime.now(day_tz).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    out = {"generated_at": now, "market": market,
+           "day_starts": {"tz": str(day_tz), "ts": day_start,
+                          "label": datetime.fromtimestamp(day_start, day_tz).strftime("%H:%M ") +
+                          (datetime.fromtimestamp(day_start, day_tz).tzname() or str(day_tz))}}
 
     # session clock
     try:
@@ -2387,10 +2394,13 @@ def _json_or_empty(text) -> dict:
 
 
 def _since_days() -> float:
-    """?days=N -> epoch seconds N days ago (0 / all / missing-but-invalid = everything)."""
+    """?days=N -> epoch seconds N days ago (0 / all = everything; today = since
+    today's start, the same day the Command Center counts)."""
     raw = (request.args.get("days") or "30").strip().lower()
     if raw in ("0", "all"):
         return 0.0
+    if raw == "today":
+        return _market_day_start()
     try:
         days = max(1, min(3650, int(raw)))
     except ValueError:
@@ -2399,8 +2409,10 @@ def _since_days() -> float:
 
 
 def _market_tz() -> str:
+    """Days in Performance / Decisions (calendar, daily bars) are counted like
+    the Command Center's Today: in trading_day_timezone, else market time."""
     try:
-        return str(market_timezone(_spec_market(current_spec())))
+        return str(_day_tz())
     except Exception:
         return "UTC"
 

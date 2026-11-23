@@ -65,6 +65,21 @@ def market_timezone(market: str) -> ZoneInfo:
     return SESSIONS[market][0]
 
 
+def trading_day_timezone(cfg: dict | None, market: str) -> ZoneInfo:
+    """Where "today" starts and ends for P&L, the daily loss limit, the
+    profit target and the dashboard's Today figures: `trading_day_timezone`
+    in config.yaml (e.g. Asia/Singapore), else the market's own time zone.
+    Matters for markets that trade around the clock (IG), where the market's
+    midnight can fall in the middle of your day."""
+    name = str((cfg or {}).get("trading_day_timezone") or "").strip()
+    if name:
+        try:
+            return ZoneInfo(name)
+        except Exception:  # noqa: BLE001 - a typo falls back, the settings check reports it
+            pass
+    return market_timezone(market)
+
+
 def is_market_open(market: str, now: datetime | None = None) -> bool:
     tz = market_timezone(market)
     local = (now or datetime.now(tz)).astimezone(tz)
