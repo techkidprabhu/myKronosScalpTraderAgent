@@ -281,6 +281,27 @@ def get_broker(name: str | None = None):
         return st["client"]
 
 
+def _value_per_point_fn():
+    """For IG, where size is in contracts: what a 1.0 move per 1 size is worth
+    in the account currency, per symbol (the client caches IG's figures).
+    None for brokers where one unit is one share."""
+    try:
+        if current_spec().adapter != "ig":
+            return None
+    except Exception:  # noqa: BLE001
+        return None
+    client = get_broker()
+    if client is None or not hasattr(client, "instrument_spec"):
+        return None
+
+    def value(symbol):
+        try:
+            return client.instrument_spec(symbol)["value_per_point"]
+        except Exception:  # noqa: BLE001
+            return None
+    return value
+
+
 def _not_connected() -> str:
     spec = current_spec()
     return _client_state(spec.name)["error"] or f"{spec.label} not connected"
@@ -2089,7 +2110,7 @@ def get_risk_state():
         "halted": False if stale else bool(state.get("trading_halted")),
         "trading_day": today or state.get("trading_day"),
         "open_positions": len(active),
-        "open_risk": round(open_risk_at_stops(active), 2),
+        "open_risk": round(open_risk_at_stops(active, value_per_point=_value_per_point_fn()), 2),
         "trades_today": 0 if stale else int(state.get("trades_today") or 0),
         "positions": active,
         "cooldowns": cooldowns,
@@ -2242,7 +2263,7 @@ def _overview_data() -> dict:
         "trades_today": 0 if stale else int(state.get("trades_today") or 0),
         "max_trades_per_day": risk_cfg.get("max_trades_per_day"),
         "open_positions": len(active), "max_open_positions": risk_cfg.get("max_open_positions"),
-        "open_risk": round(open_risk_at_stops(active), 2),
+        "open_risk": round(open_risk_at_stops(active, value_per_point=_value_per_point_fn()), 2),
         "max_daily_loss": risk_cfg.get("max_daily_loss"),
         "halted": False if stale else bool(state.get("trading_halted")),
         **_profit_target_view(state, risk_cfg, stale),
