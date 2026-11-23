@@ -51,7 +51,7 @@ import pandas as pd
 
 from src import ig_hours
 from src.brokers import ig_stream
-from src.brokers.base import BrokerClient, BrokerError, Capabilities
+from src.brokers.base import BrokerClient, BrokerError, Capabilities, size_num
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +189,17 @@ ALLOWANCE_CODES = ("error.public-api.exceeded-api-key-allowance", "error.public-
 ACCOUNT_CACHE_SECONDS = 4.0      # positions / working orders / accounts, reused within one agent cycle
 
 
+SPEC_CACHE_SECONDS = 6 * 3600     # contract size / pip value / deal rules hardly ever change
+FX_CACHE_SECONDS = 600            # currency conversion for P&L and sizing
+
+
+def _num(text) -> float | None:
+    """The leading number of IG's text fields ("100000", "0.0001 CAD/USD")."""
+    import re
+    m = re.match(r"\s*([0-9]*\.?[0-9]+)", str(text or ""))
+    return float(m.group(1)) if m else None
+
+
 def _is_trading(method: str, path: str) -> bool:
     return method != "GET" and (path.startswith("/positions") or path.startswith("/workingorders"))
 
@@ -216,6 +227,9 @@ class IGClient(BrokerClient):
         self.account = os.environ.get("IG_ACC_ID", "")
         self._tokens: dict = {}
         self._cache: dict = {}            # GET path -> (time, data) for the account endpoints
+        self._specs: dict = {}            # epic -> (time, instrument_spec)
+        self._fx: dict = {}               # (from, to) -> (time, rate)
+        self._acct_ccy: str | None = None
         if session is None:
             import requests
             session = requests.Session()
@@ -318,7 +332,7 @@ class IGClient(BrokerClient):
             self._cache[path] = (time.time(), data)
         return data
 
-    def _confirm(self, deal_reference: str) -> dict:
+    def _confirm(self, deal_reference: str, sent: dict | None = None) -> dict:
         """Deal confirmation - IG accepts the request first and decides a
         moment later; poll briefly."""
         last = None
@@ -327,7 +341,12 @@ class IGClient(BrokerClient):
                 c = self._request("GET", f"/confirms/{deal_reference}", 1)
                 if c.get("dealStatus"):
                     if c["dealStatus"] != "ACCEPTED":
-                        raise BrokerError(f"IG rejected the deal: {c.get('reason') or c['dealStatus']}")
+                        what = ""
+                        if sent:
+                            what = (f" (sent {sent.get('direction')} size {sent.get('size')} of {sent.get('epic')}"
+                                    + (f" at {sent['level']}" if sent.get("level") is not None else "")
+                                    + f", currency {sent.get('currencyCode')})")
+                        raise BrokerError(f"IG rejected the deal: {c.get('reason') or c['dealStatus']}{what}")
                     return c
             except BrokerError as exc:
                 if "rejected" in str(exc):
@@ -410,10 +429,11 @@ class IGClient(BrokerClient):
         for item in self._request("GET", "/positions", 2).get("positions", []):
             pos, mkt = item.get("position", {}), item.get("market", {})
             size = float(pos.get("size") or 0)
-            qty = int(round(size)) * (-1 if pos.get("direction") == "SELL" else 1)
+            qty = size_num(size * (-1 if pos.get("direction") == "SELL" else 1))
             mid = _mid({"bid": mkt.get("bid"), "offer": mkt.get("offer")})
             level = pos.get("level")
-            pnl = ((mid - level) * qty) if (mid is not None and level is not None) else None
+            per = _num(pos.get("contractSize")) or 1.0         # in the market's own currency
+            pnl = ((mid - level) * qty * per) if (mid is not None and level is not None) else None
             out.append({"symbol": mkt.get("epic"), "name": mkt.get("instrumentName"), "quantity": qty,
                         "average_cost": level, "market_price": mid, "unrealized_pnl": pnl,
                         "currency": pos.get("currency"), "deal_id": pos.get("dealId")})
@@ -426,7 +446,7 @@ class IGClient(BrokerClient):
             typ = w.get("orderType")
             out.append({
                 "id": w.get("dealId"), "symbol": w.get("epic"), "action": w.get("direction"),
-                "order_type": typ, "quantity": int(round(float(w.get("orderSize") or 0))), "filled": 0,
+                "order_type": typ, "quantity": size_num(float(w.get("orderSize") or 0)), "filled": 0,
                 "limit_price": w.get("orderLevel") if typ == "LIMIT" else None,
                 "stop_price": w.get("orderLevel") if typ == "STOP" else None,
                 "status": "WORKING", "time_in_force": w.get("timeInForce"),
@@ -464,7 +484,7 @@ class IGClient(BrokerClient):
                 filled = a
         if filled is not None:
             det = filled.get("details", {}) or {}
-            size = int(round(float(det.get("size") or 0)))
+            size = size_num(float(det.get("size") or 0))
             return {"status": "FILLED", "active": False, "quantity": size, "filled": size,
                     "avg_fill_price": det.get("level") or filled.get("level")}
         if dead is not None:
@@ -582,6 +602,94 @@ class IGClient(BrokerClient):
                 if price:
                     rows.append({"code": epic, "last_price": float(price), "volume": None})
         return pd.DataFrame(rows, columns=["code", "last_price", "volume"])
+
+    # ---- contract size and sizing --------------------------------------
+    def account_currency(self) -> str:
+        if not self._acct_ccy:
+            try:
+                self._acct_ccy = str(self.get_account_summary().get("currency") or self.currency).upper()
+            except Exception:  # noqa: BLE001
+                return self.currency
+        return self._acct_ccy
+
+    def instrument_spec(self, symbol: str, price: float | None = None) -> dict:
+        """What one unit of IG "size" is worth, so trades are sized in IG's
+        units: on IG, size is a number of contracts, and one forex contract is
+        100,000 of the base currency - not one unit like a share.
+
+        Returns value_per_point (account currency gained or lost per 1.0 move
+        in the price, per 1 size), min_size and size_step (IG's dealing rules),
+        currency_code (the code IG wants on orders for this market) and how it
+        was worked out. Raises BrokerError when IG's figures or the currency
+        conversion are unavailable - the agent then doesn't trade it."""
+        spec = self._market_spec(symbol)
+        acct = self.account_currency()
+        rate = self.fx_rate(spec["pnl_currency"], acct, symbol=symbol, own=spec.get("pair"), price=price)
+        spec.update(value_per_point=spec["per_point_instrument"] * rate, account_currency=acct, fx_rate=rate)
+        return spec
+
+    def _market_spec(self, symbol: str) -> dict:
+        """IG's own figures for one market (cached): contract value per point
+        in the market's currency, deal-size rules and the order currency code."""
+        hit = self._specs.get(symbol)
+        if hit and time.time() - hit[0] < SPEC_CACHE_SECONDS:
+            return dict(hit[1])
+        data = self._request("GET", f"/markets/{symbol}", 3)
+        ins, rules = data.get("instrument") or {}, data.get("dealingRules") or {}
+        ccys = ins.get("currencies") or []
+        order_ccy = next((c.get("code") for c in ccys if c.get("isDefault")), None) or \
+            (ccys[0].get("code") if ccys else self.currency)
+        pip_value, pip_means = _num(ins.get("valueOfOnePip")), _num(ins.get("onePipMeans"))
+        contract = _num(ins.get("contractSize"))
+        if pip_value and pip_means:
+            per_point = pip_value / pip_means         # e.g. 10 / 0.0001 = 100,000 per 1.0 move
+        elif contract:
+            per_point = contract
+        else:
+            raise BrokerError(f"IG gave no contract size or pip value for {symbol}")
+        pair = symbol.split(".")[2] if symbol.count(".") >= 3 else ""
+        is_fx = str(ins.get("type") or "").upper() == "CURRENCIES" and len(pair) == 6 and pair.isalpha()
+        pnl_ccy = pair[3:] if is_fx else str(order_ccy or self.currency)
+        min_size = float(((rules.get("minDealSize") or {}).get("value")) or 0) or None
+        unit = str(ins.get("unit") or "CONTRACTS").upper()
+        spec = {"per_point_instrument": per_point, "pnl_currency": pnl_ccy.upper(),
+                "currency_code": order_ccy, "min_size": min_size,
+                "size_step": 1.0 if unit == "SHARES" else 0.01, "unit": unit,
+                "contract_size": contract, "pair": pair if is_fx else None}
+        self._specs[symbol] = (time.time(), dict(spec))
+        return spec
+
+    def fx_rate(self, frm: str, to: str, symbol: str = "", own: str | None = None, price: float | None = None) -> float:
+        """How many `to` one `frm` is worth, from IG's own forex prices."""
+        frm, to = frm.upper(), to.upper()
+        if frm == to:
+            return 1.0
+        if own and price and own == to + frm:          # e.g. USDCAD with a USD account: 1 CAD = 1/price USD
+            return 1.0 / float(price)
+        if own and price and own == frm + to:
+            return float(price)
+        hit = self._fx.get((frm, to))
+        if hit and time.time() - hit[0] < FX_CACHE_SECONDS:
+            return hit[1]
+        style = ".".join(symbol.split(".")[3:]) if symbol.count(".") >= 3 else "CSD.IP"
+        cands = {}
+        for pair, invert in ((frm + to, False), (to + frm, True)):
+            for st in dict.fromkeys((style, "CSD.IP", "CFD.IP", "MINI.IP")):
+                cands[f"CS.D.{pair}.{st}"] = invert
+        snaps = self.market_snapshots(list(cands))
+        for epic, invert in cands.items():
+            mid = _mid({"bid": (snaps.get(epic) or {}).get("bid"), "offer": (snaps.get(epic) or {}).get("offer")})
+            if mid:
+                rate = 1.0 / mid if invert else mid
+                self._fx[(frm, to)] = (time.time(), rate)
+                return rate
+        raise BrokerError(f"No IG price to convert {frm} into the account's {to}")
+
+    def _order_currency(self, symbol: str) -> str:
+        try:
+            return self._market_spec(symbol)["currency_code"] or self.currency
+        except Exception:  # noqa: BLE001
+            return self.currency
 
     def market_snapshots(self, epics: list[str]) -> dict[str, dict]:
         """Live status and prices, 50 markets per request (no history
@@ -756,14 +864,14 @@ class IGClient(BrokerClient):
     # ---- orders -----------------------------------------------------
     def _deal(self, body: dict) -> str:
         ref = self._request("POST", "/positions/otc", 2, body).get("dealReference")
-        return self._confirm(ref)["dealId"]
+        return self._confirm(ref, body)["dealId"]
 
     def _working(self, symbol, direction, quantity, level, typ, tif="GOOD_TILL_CANCELLED") -> str:
         body = {"epic": symbol, "expiry": self.expiry, "direction": direction, "size": quantity,
                 "level": self.round_price(level), "type": typ, "timeInForce": tif,
-                "guaranteedStop": False, "forceOpen": False, "currencyCode": self.currency}
+                "guaranteedStop": False, "forceOpen": False, "currencyCode": self._order_currency(symbol)}
         ref = self._request("POST", "/workingorders/otc", 2, body).get("dealReference")
-        return self._confirm(ref)["dealId"]
+        return self._confirm(ref, body)["dealId"]
 
     def create_entry(self, symbol, direction, quantity, entry_limit_price=None, currency=None) -> str:
         logger.info("IG %s entry: epic=%s size=%s limit=%s", direction, symbol, quantity, entry_limit_price)
@@ -771,7 +879,7 @@ class IGClient(BrokerClient):
             return self._working(symbol, direction, quantity, entry_limit_price, "LIMIT")
         return self._deal({"epic": symbol, "expiry": self.expiry, "direction": direction, "size": quantity,
                            "orderType": "MARKET", "guaranteedStop": False, "forceOpen": False,
-                           "currencyCode": currency or self.currency})
+                           "currencyCode": self._order_currency(symbol)})
 
     def place_stop_order(self, symbol, closing_direction, quantity, stop_price, currency=None) -> str:
         return self._working(symbol, closing_direction, quantity, stop_price, "STOP")
@@ -793,4 +901,4 @@ class IGClient(BrokerClient):
         logger.info("IG %s market close: epic=%s size=%s", direction, symbol, quantity)
         return self._deal({"epic": symbol, "expiry": self.expiry, "direction": direction, "size": quantity,
                            "orderType": "MARKET", "guaranteedStop": False, "forceOpen": False,
-                           "currencyCode": currency or self.currency})
+                           "currencyCode": self._order_currency(symbol)})

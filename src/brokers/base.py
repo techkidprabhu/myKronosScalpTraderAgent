@@ -63,6 +63,14 @@ class Capabilities:
         return d
 
 
+def size_num(x):
+    """A position or order size as a number: whole sizes stay ints (shares,
+    lots), fractional ones (IG's 0.05 contracts) stay fractions. Never
+    int() a size - that turns 0.05 contracts into 0."""
+    v = round(float(x or 0), 6)
+    return int(v) if v == int(v) else v
+
+
 class BrokerError(RuntimeError):
     pass
 

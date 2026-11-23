@@ -35,6 +35,7 @@ from src import indicator_gate
 from src import rules as rules_gate
 from src import version as code_version
 from src.kronos_indicators import indicators as ind_lib
+from src.brokers.base import size_num
 from src.market import BAR_DURATION, drop_unclosed_bar, market_timezone
 from src import sentiment
 from src import kronos_scorecard
@@ -278,6 +279,27 @@ def get_broker(name: str | None = None):
                 st.update(failed_at=time.time(), error=str(exc))
                 logger.warning("Could not connect to %s: %s", spec.label, exc)
         return st["client"]
+
+
+def _value_per_point_fn():
+    """For IG, where size is in contracts: what a 1.0 move per 1 size is worth
+    in the account currency, per symbol (the client caches IG's figures).
+    None for brokers where one unit is one share."""
+    try:
+        if current_spec().adapter != "ig":
+            return None
+    except Exception:  # noqa: BLE001
+        return None
+    client = get_broker()
+    if client is None or not hasattr(client, "instrument_spec"):
+        return None
+
+    def value(symbol):
+        try:
+            return client.instrument_spec(symbol)["value_per_point"]
+        except Exception:  # noqa: BLE001
+            return None
+    return value
 
 
 def _not_connected() -> str:
@@ -1053,7 +1075,7 @@ def get_positions():
     if broker_positions is not None:
         at_broker = set()
         for p in broker_positions:
-            qty = int(p["quantity"] or 0)
+            qty = size_num(p["quantity"] or 0)          # IG sizes can be fractions of a contract
             if not qty:
                 continue
             key = base(p["symbol"])
@@ -1151,12 +1173,15 @@ def manual_order():
         return jsonify({"error": f"action must be one of {', '.join(MANUAL_ACTIONS)}"}), 400
     quantity = None
     if action != "CLOSE":
+        fractional = current_spec().adapter == "ig"     # IG sizes in contracts, e.g. 0.05
         try:
-            quantity = int(body.get("quantity"))
+            quantity = size_num(float(body.get("quantity")))
         except (TypeError, ValueError):
-            return jsonify({"error": "quantity must be a whole number"}), 400
+            return jsonify({"error": "quantity must be a number"}), 400
         if quantity <= 0:
             return jsonify({"error": "quantity must be positive"}), 400
+        if not fractional and quantity != int(quantity):
+            return jsonify({"error": "quantity must be a whole number"}), 400
     from src.audit_log import AuditLog
     audit = AuditLog(str(_db_path()))
     try:
@@ -2085,7 +2110,7 @@ def get_risk_state():
         "halted": False if stale else bool(state.get("trading_halted")),
         "trading_day": today or state.get("trading_day"),
         "open_positions": len(active),
-        "open_risk": round(open_risk_at_stops(active), 2),
+        "open_risk": round(open_risk_at_stops(active, value_per_point=_value_per_point_fn()), 2),
         "trades_today": 0 if stale else int(state.get("trades_today") or 0),
         "positions": active,
         "cooldowns": cooldowns,
@@ -2238,7 +2263,7 @@ def _overview_data() -> dict:
         "trades_today": 0 if stale else int(state.get("trades_today") or 0),
         "max_trades_per_day": risk_cfg.get("max_trades_per_day"),
         "open_positions": len(active), "max_open_positions": risk_cfg.get("max_open_positions"),
-        "open_risk": round(open_risk_at_stops(active), 2),
+        "open_risk": round(open_risk_at_stops(active, value_per_point=_value_per_point_fn()), 2),
         "max_daily_loss": risk_cfg.get("max_daily_loss"),
         "halted": False if stale else bool(state.get("trading_halted")),
         **_profit_target_view(state, risk_cfg, stale),
