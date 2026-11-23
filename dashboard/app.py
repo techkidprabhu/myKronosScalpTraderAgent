@@ -35,6 +35,7 @@ from src import indicator_gate
 from src import rules as rules_gate
 from src import version as code_version
 from src.kronos_indicators import indicators as ind_lib
+from src.brokers.base import size_num
 from src.market import BAR_DURATION, drop_unclosed_bar, market_timezone
 from src import sentiment
 from src import kronos_scorecard
@@ -1053,7 +1054,7 @@ def get_positions():
     if broker_positions is not None:
         at_broker = set()
         for p in broker_positions:
-            qty = int(p["quantity"] or 0)
+            qty = size_num(p["quantity"] or 0)          # IG sizes can be fractions of a contract
             if not qty:
                 continue
             key = base(p["symbol"])
@@ -1151,12 +1152,15 @@ def manual_order():
         return jsonify({"error": f"action must be one of {', '.join(MANUAL_ACTIONS)}"}), 400
     quantity = None
     if action != "CLOSE":
+        fractional = current_spec().adapter == "ig"     # IG sizes in contracts, e.g. 0.05
         try:
-            quantity = int(body.get("quantity"))
+            quantity = size_num(float(body.get("quantity")))
         except (TypeError, ValueError):
-            return jsonify({"error": "quantity must be a whole number"}), 400
+            return jsonify({"error": "quantity must be a number"}), 400
         if quantity <= 0:
             return jsonify({"error": "quantity must be positive"}), 400
+        if not fractional and quantity != int(quantity):
+            return jsonify({"error": "quantity must be a whole number"}), 400
     from src.audit_log import AuditLog
     audit = AuditLog(str(_db_path()))
     try:

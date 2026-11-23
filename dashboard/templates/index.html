@@ -660,7 +660,7 @@
         <div class="manual-bar">
           <span class="manual-bar-label">Manual order</span>
           <input id="manual-symbol" type="text" placeholder="Symbol e.g. US.AAPL" autocomplete="off" spellcheck="false">
-          <input id="manual-qty" type="number" min="1" step="1" placeholder="Qty">
+          <input id="manual-qty" type="number" min="0.01" step="any" placeholder="Qty">
           <button class="btn btn-buy" onclick="openManualConfirm('BUY')">Buy</button>
           <button class="btn btn-sell" onclick="openManualConfirm('SELL')">Sell / Short</button>
           <span class="manual-bar-help">Skips the pattern / Kronos / risk gates. Once filled, the agent places the usual stop, target and trailing stop.</span>
@@ -2698,8 +2698,8 @@
         symbol = (document.getElementById("manual-symbol").value.trim() || activeSymbol || "").toUpperCase();
         if (!symbol) { showToast("Enter a symbol first"); return; }
         const raw = document.getElementById("manual-qty").value.trim();
-        qty = raw ? parseInt(raw, 10) : manualDefaultQty;
-        if (!Number.isInteger(qty) || qty <= 0) { showToast("Quantity must be a whole number above 0"); return; }
+        qty = raw ? Number(raw) : manualDefaultQty;
+        if (!Number.isFinite(qty) || qty <= 0) { showToast("Quantity must be above 0"); return; }
         lines = [`<b>${action} ${qty} ${esc(symbol)}</b> as a new position on <b>${esc(currentBroker || "the active broker")}</b>.`,
                  action === "SELL" ? "With no holding this opens a <b>short</b> - make sure your account allows it." : "",
                  "Pattern, Kronos and risk checks are skipped. The order uses your configured order type (limit at the last price outside market hours); stop and target are placed when it fills, then trailed as normal."];

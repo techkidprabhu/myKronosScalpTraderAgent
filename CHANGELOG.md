@@ -15,6 +15,26 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Fixed
+- IG: every forex entry was refused ("IG rejected the deal: UNKNOWN", once
+  INSUFFICIENT_FUNDS). Trades were sized as if one unit of IG "size" moved 1
+  per point, like a share; on IG it is a contract, and one forex contract is
+  100,000 of the base currency. A $20 max loss produced a size of 2,790
+  contracts (about 279 million USD of USD/CAD, ~2,000,000 CAD at the stop).
+  - Sizing now uses IG's own market details (`/markets/{epic}`: pip value,
+    contract size, minimum deal size), converted into the account currency with
+    IG's forex prices: size = max loss / (stop distance x value per point),
+    rounded down to 0.01 contracts. A trade whose minimum size would already
+    risk more than the max loss per trade is skipped with that reason. No
+    contract details, or no conversion price: no trade.
+  - Realised P&L, the daily loss limit and open risk at the stops count the
+    contract value too (they would have counted fractions of a cent).
+  - Orders carry the market's own currency code from IG (e.g. CAD for
+    USD/CAD) instead of IG_CURRENCY on every market.
+  - Sizes can be fractions (0.05 contracts) everywhere: positions, fills,
+    exits, the dashboard's positions table and manual orders (IG only).
+  - IG refusals now say what was sent: direction, size, epic, level, currency.
+
 ### Added
 - Scalp skill: the four core scalping models. `ScalpStarterSkill.md` (v0.2)
   now describes Momentum / Breakout (ORB), Trend Pullback (VWAP / 9-EMA),

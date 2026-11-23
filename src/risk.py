@@ -350,11 +350,17 @@ class RiskManager:
 
     def plan_entry(self, price: float, default_quantity: int, *, atr: float | None = None,
                    account: dict | None = None, open_risk: float = 0.0,
-                   stop_distance: float | None = None, target_distance: float | None = None) -> EntryPlan:
+                   stop_distance: float | None = None, target_distance: float | None = None,
+                   spec: dict | None = None) -> EntryPlan:
         """Size the trade and run the trade-level checks: stop distance,
         reward:risk, risk-based quantity and the daily cap including open
         risk. With every day-trader rule off this returns the configured
-        quantity and the usual distances, allowed."""
+        quantity and the usual distances, allowed.
+
+        `spec` is the broker's own description of one unit of size, when it
+        isn't "one share": value_per_point (account currency per 1.0 price
+        move per 1 size), min_size and size_step. IG needs it - one forex
+        contract is 100,000 of the base currency."""
         c = self.config
         fixed = stop_distance is not None and target_distance is not None
         stop_d, target_d = (float(stop_distance), float(target_distance)) if fixed \
@@ -380,29 +386,47 @@ class RiskManager:
         if c.min_reward_risk and rr + 1e-9 < c.min_reward_risk:
             return deny(f"reward:risk {rr:.2f} below min_reward_risk {c.min_reward_risk}")
 
+        vpp = float((spec or {}).get("value_per_point") or 1.0)
+        if spec is not None and not vpp > 0:
+            return deny("the market's contract size is unknown - not sizing a trade blind")
         lot = max(1, int(c.lot_size or 1))
+        if spec is not None:
+            details.update(value_per_point=round(vpp, 6), min_size=spec.get("min_size"),
+                           size_step=spec.get("size_step"), account_currency=spec.get("account_currency"),
+                           unit=spec.get("unit"))
         caps = {"max quantity per position": float(c.max_stake_per_point)}
         if c.max_loss_per_trade:
-            caps["max loss per trade"] = c.max_loss_per_trade / stop_d
+            caps["max loss per trade"] = c.max_loss_per_trade / (stop_d * vpp)
         else:
             caps["configured quantity"] = float(default_quantity)
         if account and (c.max_position_pct or c.cash_buffer_pct):
             total = float(account.get("total_assets") or 0)
             cash = float(account.get("cash") if account.get("cash") is not None else total)
             if c.max_position_pct and total > 0:
-                caps["max position % of account"] = total * c.max_position_pct / 100 / price
+                caps["max position % of account"] = total * c.max_position_pct / 100 / (price * vpp)
             if c.cash_buffer_pct and total > 0:
-                caps["cash after buffer"] = max(0.0, cash - total * c.cash_buffer_pct / 100) / price
+                caps["cash after buffer"] = max(0.0, cash - total * c.cash_buffer_pct / 100) / (price * vpp)
         elif c.max_position_pct or c.cash_buffer_pct:
             return deny("account value unavailable for max_position_pct / cash_buffer_pct")
         sized_by, raw = min(caps.items(), key=lambda kv: kv[1])
-        qty = int(raw // lot) * lot
-        details["caps"] = {k: round(v, 2) for k, v in caps.items()}
-        if qty < lot:
-            return deny(f"position too small: {sized_by} allows {raw:.2f} shares, under one lot of {lot}",
-                        sized_by=sized_by)
+        details["caps"] = {k: round(v, 4) for k, v in caps.items()}
+        if spec is not None:
+            step = float(spec.get("size_step") or 0.01)
+            qty = round(int(raw / step + 1e-9) * step, 6)
+            qty = int(qty) if qty == int(qty) else qty
+            min_size = float(spec.get("min_size") or step)
+            if qty < min_size:
+                at_min = min_size * stop_d * vpp
+                return deny(f"too small for this market: {sized_by} allows size {raw:.4f}, under the minimum "
+                            f"{min_size:g}; even the minimum would risk {at_min:.2f} {spec.get('account_currency') or ''}"
+                            .rstrip() + " at the stop", sized_by=sized_by)
+        else:
+            qty = int(raw // lot) * lot
+            if qty < lot:
+                return deny(f"position too small: {sized_by} allows {raw:.2f} shares, under one lot of {lot}",
+                            sized_by=sized_by)
 
-        max_loss = qty * stop_d
+        max_loss = qty * stop_d * vpp
         if c.daily_loss_includes_open_risk:
             self._roll_day()
             worst = self.state.daily_pnl - open_risk - max_loss
@@ -413,17 +437,24 @@ class RiskManager:
                             f"(cap -{abs(c.max_daily_loss):.2f})", quantity=qty, max_loss=max_loss, sized_by=sized_by)
 
         return EntryPlan(True, "ok", quantity=qty, stop_distance=stop_d, target_distance=target_d,
-                         risk_per_share=stop_d, max_loss=max_loss, reward_risk=rr,
+                         risk_per_share=stop_d * vpp, max_loss=max_loss, reward_risk=rr,
                          sized_by=sized_by, details=details)
 
 
-def open_risk_at_stops(positions: list[dict]) -> float:
+def open_risk_at_stops(positions: list[dict], value_per_point=None) -> float:
     """What the agent's pending and open positions would lose if every stop
     filled at its price. A stop already past the entry (profit locked in by
-    the trailing stop) counts as zero."""
+    the trailing stop) counts as zero. `value_per_point(symbol)` gives the
+    account-currency value of a 1.0 move per 1 size where that isn't 1 (IG)."""
     total = 0.0
     for p in positions:
         entry, stop = float(p["entry_price"]), float(p["current_stop"])
         loss = (entry - stop) if p["direction"] == "BUY" else (stop - entry)
-        total += max(0.0, loss) * abs(float(p["quantity"]))
+        per = 1.0
+        if value_per_point is not None:
+            try:
+                per = float(value_per_point(p["symbol"]) or 1.0)
+            except Exception:  # noqa: BLE001
+                per = 1.0
+        total += max(0.0, loss) * abs(float(p["quantity"])) * per
     return total

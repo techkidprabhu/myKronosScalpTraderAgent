@@ -43,7 +43,8 @@ from src.kronos_agent import DEFAULT_OPTIONS, KronosAgent, is_default, kronos_op
 from src.market import BAR_DURATION, drop_unclosed_bar, is_market_open, market_timezone
 from src.patterns import scan
 from src.kronos_indicators.indicators import atr as atr_series
-from src.risk import RiskConfig, RiskManager, open_risk_at_stops
+from src.risk import EntryPlan, RiskConfig, RiskManager, open_risk_at_stops
+from src.brokers.base import size_num
 from src.telegram_bot import TelegramReporter, esc
 from src.brokers import base_symbol, connect_with_timeout as connect_broker
 from src.moomoo_client import MoomooClient, connect_with_timeout
@@ -594,10 +595,34 @@ class SymbolWorker:
                 account = self.broker.get_account_summary()
             except Exception:
                 logger.exception("Account summary unavailable for sizing %s", self.symbol)
-        open_risk = open_risk_at_stops(self.audit_log.get_active_positions()) \
+        spec = None
+        if hasattr(self.broker, "instrument_spec"):
+            # Brokers whose "size" isn't one share (IG: contracts of 100,000
+            # for forex) say what one unit is worth; size from that, or not at all.
+            try:
+                spec = self.broker.instrument_spec(self.symbol, price=price)
+                self._last_vpp = float(spec.get("value_per_point") or 0) or None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Contract details unavailable for %s: %s", self.symbol, exc)
+                return EntryPlan(False, f"contract details unavailable, not sizing blind: {exc}")
+        open_risk = open_risk_at_stops(self.audit_log.get_active_positions(), value_per_point=self._value_per_point) \
             if cfg.daily_loss_includes_open_risk else 0.0
         return self.risk_manager.plan_entry(price, quantity, atr=None if fixed else self._atr(df),
-                                            account=account, open_risk=open_risk, **fixed)
+                                            account=account, open_risk=open_risk, spec=spec, **fixed)
+
+    def _value_per_point(self, symbol: str | None = None) -> float:
+        """Account currency per 1.0 price move per 1 size: 1 for shares;
+        IG's contract value for IG markets (cached by the broker)."""
+        if not hasattr(self.broker, "instrument_spec"):
+            return 1.0
+        try:
+            return float(self.broker.instrument_spec(symbol or self.symbol)["value_per_point"])
+        except Exception:  # noqa: BLE001
+            last = getattr(self, "_last_vpp", None)
+            if last and (symbol is None or symbol == self.symbol):
+                return last
+            logger.warning("No contract value for %s - P&L counted per unit", symbol or self.symbol)
+            return 1.0
 
     # ------------------------------------------------------------------
     # Skill-file trading (trading_mode "skill"): the skill file's engine
@@ -759,7 +784,7 @@ class SymbolWorker:
         new_id = None
         try:
             new_id = self.broker.place_target_order(self.symbol, _opposite(pos["direction"]),
-                                                    int(pos["quantity"]), level)
+                                                    size_num(pos["quantity"]), level)
         except Exception:
             logger.exception("Could not move the target for %s - watched in software", self.symbol)
         self.audit_log.set_target(self.symbol, float(level), str(new_id) if new_id else None)
@@ -827,7 +852,7 @@ class SymbolWorker:
             if self.audit_log.get_active_position(self.symbol) is not None:
                 raise RuntimeError("exit not completed yet (an exit order is still settling) - try again")
             return f"closed {pos['direction']} {pos['quantity']:g} via agent exit"
-        held = int(self.broker.get_position_quantity(self.symbol))
+        held = size_num(self.broker.get_position_quantity(self.symbol))
         if held == 0:
             raise RuntimeError(f"nothing held in {self.symbol}")
         # A holding the agent did not open (e.g. long-term shares in the same
@@ -1078,7 +1103,7 @@ class SymbolWorker:
                 fills.append((state["filled"], state["avg_fill_price"]))
 
         filled_by_broker = sum(q for q, _ in fills)
-        remaining = int(pos["quantity"]) - filled_by_broker
+        remaining = size_num(float(pos["quantity"]) - filled_by_broker)
         if remaining > 0:
             held = abs(self.broker.get_position_quantity(self.symbol))
             if held == 0 and not fills:
@@ -1107,7 +1132,7 @@ class SymbolWorker:
                     logger.warning("Could not read close fill for %s; using last price for P&L", self.symbol)
                 fills.append((to_close, fill_price))
 
-        self._finish_exit(pos, reason, fills or [(int(pos["quantity"]), current_price)])
+        self._finish_exit(pos, reason, fills or [(size_num(pos["quantity"]), current_price)])
 
     def _settled_state(self, order_id) -> dict:
         """Order state after a cancel, waiting up to CANCEL_SETTLE_SECONDS
@@ -1164,7 +1189,7 @@ class SymbolWorker:
         order ids; a leg that can't be placed is left as None and enforced
         by the software monitor."""
         extra_legs = extra_legs or set()
-        held = min(abs(self.broker.get_position_quantity(self.symbol)), int(pos["quantity"]))
+        held = size_num(min(abs(self.broker.get_position_quantity(self.symbol)), float(pos["quantity"])))
         stop_id, target_id = pos.get("stop_order_id"), pos.get("target_order_id")
         stop_id = None if stop_id in dead else stop_id
         target_id = None if target_id in dead else target_id
@@ -1235,8 +1260,9 @@ class SymbolWorker:
 
     def _finish_exit(self, pos: dict, reason: str, fills: list[tuple[int, float | None]]):
         sign = 1 if pos["direction"] == "BUY" else -1
+        per = self._value_per_point()        # account currency per 1.0 move per 1 size (IG contracts)
         pnl = sum(
-            sign * ((price if price is not None else pos["entry_price"]) - pos["entry_price"]) * qty
+            sign * ((price if price is not None else pos["entry_price"]) - pos["entry_price"]) * qty * per
             for qty, price in fills
         )
         exit_qty = sum(q for q, _ in fills)
@@ -1993,7 +2019,7 @@ class Orchestrator:
                 if req["action"] == "CLOSE":
                     result = worker.manual_close()
                 else:
-                    result = worker.manual_entry(req["action"], int(req["quantity"] or worker.quantity))
+                    result = worker.manual_entry(req["action"], size_num(req["quantity"] or worker.quantity))
                 ok = True
             except Exception as exc:
                 logger.exception("Manual %s %s failed", req["action"], req["symbol"])
