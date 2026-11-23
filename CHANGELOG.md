@@ -15,6 +15,20 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added
+- Scalp skill: the four core scalping models. `ScalpStarterSkill.md` (v0.2)
+  now describes Momentum / Breakout (ORB), Trend Pullback (VWAP / 9-EMA),
+  **Mean Reversion** (close outside the Bollinger Band with RSI at 30/70, then
+  a candle back inside; ranging markets only, ADX below 20; target the middle
+  band) and **Liquidity Sweep** (a wick through the prior session's or a recent
+  swing high/low that closes back inside with a rejection wick), plus which
+  model fits which market. The `scalp_vwap_orb` engine trades all four;
+  `setups:` takes a list (`[orb, pullback, mean_reversion, sweep]`, or `all`).
+  `setups: both` still means ORB + pullback only, so existing skill files trade
+  exactly as before.
+- The VWAP-cross exit now applies only to ORB and pullback trades (mean-reversion
+  and sweep trades often start on the far side of VWAP).
+
 ### Fixed
 - IG: "exceeded-api-key-allowance" (403) lock-outs. IG allows 60 non-trading
   requests a minute per API key and 30 per account, shared by the agent and the

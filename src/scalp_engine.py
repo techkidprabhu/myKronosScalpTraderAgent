@@ -1,9 +1,19 @@
 """
 Starter scalp engine for skill-file trading: `strategy: scalp_vwap_orb`.
 
-A common 3-minute scalping method, written as a placeholder until your
-own scalp rules replace it. Two setups, long and short, on CLOSED candles of
-the current session only:
+Common 1-5 minute scalping methods, written as a placeholder until your own
+scalp rules replace it. Four setups ("models"), long and short, on CLOSED
+candles; `setups:` picks which run (`both` = ORB + pullback, as before):
+
+  orb             Momentum / breakout      - opening-range breakout on volume
+  pullback        Trend pullback           - VWAP / fast-EMA pullback in a trend
+  mean_reversion  Mean reversion           - Bollinger + RSI extreme, then a
+                                             candle back inside; ranging only
+  sweep           Liquidity sweep          - a wick through a prior high/low that
+                                             closes back inside (spring/upthrust)
+
+When several could fire on the same candle the order is: orb, sweep,
+pullback, mean_reversion.
 
 Opening-range breakout (ORB)
   The opening range is the high / low of the first `orb_minutes` of the
@@ -20,10 +30,26 @@ VWAP pullback
   direction beyond the fast EMA. Stop beyond the pull-back's extreme; target
   `target_r` x the risk.
 
+Mean reversion
+  The previous candle closed outside the Bollinger band (`bb_period`,
+  `bb_std`) with RSI at an extreme (<= `rsi_low` for longs, >= `rsi_high`
+  for shorts); the newest candle closes back inside the band, in the
+  reversal's colour. Only when the market was ranging before the spike: ADX
+  below `mr_max_adx` (0 = no check). Stop beyond the spike; target the middle band,
+  and only if that is at least `mr_min_r` x the risk.
+
+Liquidity sweep
+  The newest candle trades through a level where stops sit - the prior
+  session's high/low and/or the recent swing high/low over `sweep_lookback`
+  candles (`sweep_levels`) - then closes back inside it, with a rejection
+  wick of at least `sweep_wick_ratio` of the candle and the close in the
+  half away from the sweep. Stop beyond the wick; target `target_r` x risk.
+
 Entry: a limit at the signal candle's close (it fills at once or within
 `max_wait_candles`). Exits, besides the stop, target, time stop and
-break-even stop: a close back across VWAP against the trade
-(`exit_on_vwap_cross`), and `max_hold_candles`.
+break-even stop: for ORB and pullback trades a close back across VWAP against
+the trade (`exit_on_vwap_cross`) - not for mean-reversion or sweep trades,
+which often start on the far side of VWAP - and `max_hold_candles`.
 """
 from __future__ import annotations
 
@@ -36,7 +62,8 @@ import pandas as pd
 @dataclass
 class ScalpSettings:
     strategy: str = "scalp_vwap_orb"
-    setups: str = "both"                # both | orb | pullback
+    setups: str = "both"                # both (= orb, pullback) | all | a list of: orb, pullback,
+                                        #   mean_reversion, sweep
     sides: str = "both"                 # both | long | short
     orb_minutes: int = 3                # 3 = the first 3-minute candle
     orb_window_minutes: int = 90        # ORB signals only this long after the open
@@ -53,9 +80,48 @@ class ScalpSettings:
     exit_on_vwap_cross: bool = True
     use_trailing_stop: bool = True      # the agent's trailing stop on these trades
     min_quality: int = 0                # 0-1: +1 when volume is 2x the average
+    # mean reversion
+    bb_period: int = 20
+    bb_std: float = 2.0
+    rsi_period: int = 14
+    rsi_low: float = 30.0
+    rsi_high: float = 70.0
+    adx_period: int = 14
+    mr_max_adx: float = 20.0            # only when ADX is below this (ranging); 0 = no check
+    mr_min_r: float = 1.0               # the middle band must be at least this many R away
+    # liquidity sweep
+    sweep_levels: str = "both"          # both | prior_day | swing
+    sweep_lookback: int = 20            # swing high / low over this many candles
+    sweep_wick_ratio: float = 0.5       # rejection wick at least this share of the candle
 
     def summary(self) -> dict:
         return asdict(self)
+
+
+MODELS = ("orb", "pullback", "mean_reversion", "sweep")
+ALIASES = {"both": ("orb", "pullback"), "all": MODELS, "breakout": ("orb",), "momentum": ("orb",),
+           "mr": ("mean_reversion",), "reversion": ("mean_reversion",), "liquidity_sweep": ("sweep",)}
+VWAP_EXIT_SETUPS = (None, "", "ORB", "VWAP pullback")
+
+
+def parse_setups(value) -> tuple[set, list]:
+    """`setups:` as written in the skill file -> (models, unknown names).
+    Accepts both / all / one name / a comma list / a YAML list."""
+    raw = value if isinstance(value, (list, tuple)) else str(value or "both")
+    if not isinstance(raw, (list, tuple)):
+        raw = raw.strip().strip("[]").replace(";", ",").replace(" ", ",").split(",")
+    chosen, unknown = set(), []
+    for item in raw:
+        name = str(item).strip().strip("'\"").lower().replace("-", "_")
+        if not name:
+            continue
+        if name in MODELS:
+            chosen.add(name)
+        elif name in ALIASES:
+            chosen.update(ALIASES[name])
+        else:
+            unknown.append(name)
+    return chosen, unknown
 
 
 def _session(df: pd.DataFrame) -> pd.DataFrame:
@@ -79,7 +145,40 @@ def _ema(x: np.ndarray, n: int) -> np.ndarray:
     return pd.Series(x).ewm(span=n, adjust=False).mean().to_numpy()
 
 
+def _rsi(c: np.ndarray, n: int) -> np.ndarray:
+    d = np.diff(c, prepend=c[0])
+    up = pd.Series(np.where(d > 0, d, 0.0)).ewm(alpha=1 / n, adjust=False).mean()
+    dn = pd.Series(np.where(d < 0, -d, 0.0)).ewm(alpha=1 / n, adjust=False).mean()
+    with np.errstate(invalid="ignore", divide="ignore"):
+        rs = up / dn
+    return (100 - 100 / (1 + rs)).fillna(50).to_numpy()
+
+
+def _bands(c: np.ndarray, n: int, k: float):
+    sr = pd.Series(c)
+    mid = sr.rolling(n, min_periods=n).mean()
+    sd = sr.rolling(n, min_periods=n).std(ddof=0)
+    return (mid - k * sd).to_numpy(), mid.to_numpy(), (mid + k * sd).to_numpy()
+
+
+def _adx(h: np.ndarray, l: np.ndarray, c: np.ndarray, n: int) -> np.ndarray:
+    """Wilder's ADX: trend strength, 0-100 (below ~20 = ranging)."""
+    up, dn = np.diff(h, prepend=h[0]), -np.diff(l, prepend=l[0])
+    pdm = np.where((up > dn) & (up > 0), up, 0.0)
+    ndm = np.where((dn > up) & (dn > 0), dn, 0.0)
+    pc = np.concatenate([[c[0]], c[:-1]])
+    tr = np.maximum.reduce([h - l, np.abs(h - pc), np.abs(l - pc)])
+    w = lambda x: pd.Series(x).ewm(alpha=1 / n, adjust=False).mean()  # noqa: E731
+    atr = w(tr)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        pdi, ndi = 100 * w(pdm) / atr, 100 * w(ndm) / atr
+        dx = 100 * (pdi - ndi).abs() / (pdi + ndi)
+    return w(dx.fillna(0)).to_numpy()
+
+
 def find_setup(df: pd.DataFrame, s: ScalpSettings, Setup):
+    models, _ = parse_setups(s.setups)
+    models = models or set(ALIASES["both"])
     if df is None or len(df) < max(s.ema_slow, s.volume_period) + 2:
         return Setup("none", "not enough candles")
     full_c = df["close"].to_numpy(float)
@@ -103,11 +202,12 @@ def find_setup(df: pd.DataFrame, s: ScalpSettings, Setup):
     det = {"vwap": round(float(vw[i]), 6), "ema_fast": round(float(ef), 6), "ema_slow": round(float(es), 6),
            "volume_x": round(vol_ratio, 2), "minutes_since_open": int(mins)}
 
-    def make(direction, kind, entry, stop):
+    def make(direction, kind, entry, stop, target=None):
         risk = abs(entry - stop)
         if risk <= 0:
             return None
-        target = entry + s.target_r * risk if direction == "BUY" else entry - s.target_r * risk
+        if target is None:
+            target = entry + s.target_r * risk if direction == "BUY" else entry - s.target_r * risk
         q = 1 if vol_ratio >= 2 else 0
         if q < s.min_quality:
             return Setup("invalid", f"{kind}: quality {q} below min_quality {s.min_quality}", details=det)
@@ -117,8 +217,8 @@ def find_setup(df: pd.DataFrame, s: ScalpSettings, Setup):
                               "breakout": pd.Timestamp(d.index[i]).isoformat()})
 
     buf = s.stop_buffer_pct / 100
-    # --- opening-range breakout
-    if s.setups in ("both", "orb"):
+    # --- opening-range breakout (momentum / breakout)
+    if "orb" in models:
         rng = np.asarray([(pd.Timestamp(t) - t0).total_seconds() / 60 < s.orb_minutes for t in d.index])
         if rng.sum() and not rng[i] and mins <= s.orb_window_minutes:
             or_h, or_l = float(h[rng].max()), float(l[rng].min())
@@ -138,8 +238,13 @@ def find_setup(df: pd.DataFrame, s: ScalpSettings, Setup):
                     r = make("SELL", "ORB", c[i], stop)
                     if r:
                         return r
-    # --- VWAP / EMA pullback
-    if s.setups in ("both", "pullback") and i >= 1:
+    # --- liquidity sweep: a wick through a prior high / low that closes back inside
+    if "sweep" in models:
+        r = _sweep(df, d, s, i, o, h, l, c, buf, long_ok, short_ok, det, make)
+        if r:
+            return r
+    # --- VWAP / EMA pullback (trend pullback)
+    if "pullback" in models and i >= 1:
         tol = s.pullback_touch_pct / 100
         j = i - 1
         ef_j = ema_f[off + j]
@@ -157,11 +262,84 @@ def find_setup(df: pd.DataFrame, s: ScalpSettings, Setup):
                 r = make("SELL", "VWAP pullback", c[i], stop)
                 if r:
                     return r
+    # --- mean reversion: back inside the band after an RSI extreme, ranging market only
+    if "mean_reversion" in models and i >= 1:
+        r = _mean_reversion(df, s, off, i, o, h, l, c, buf, long_ok, short_ok, det, make)
+        if r:
+            return r
     trend = "up" if ef > es and c[i] > vw[i] else "down" if ef < es and c[i] < vw[i] else "mixed"
     return Setup("waiting", f"no scalp signal (trend {trend}, volume {vol_ratio:.1f}x)", details=det)
 
 
-def exit_signal(df: pd.DataFrame, s: ScalpSettings, opened_at: str | None, direction: str, ExitSignal):
+def _mean_reversion(df, s, off, i, o, h, l, c, buf, long_ok, short_ok, det, make):
+    full_c = df["close"].to_numpy(float)
+    if len(full_c) < max(s.bb_period, s.rsi_period, 2 * s.adx_period) + 2:
+        return None
+    lo, mid, hi = _bands(full_c, s.bb_period, s.bb_std)
+    rsi = _rsi(full_c, s.rsi_period)
+    adx = _adx(df["high"].to_numpy(float), df["low"].to_numpy(float), full_c, s.adx_period)
+    k, kj = off + i, off + i - 1
+    # The market's state is judged BEFORE the spike: the spike itself lifts ADX.
+    kr = max(0, kj - 1)
+    det.update(bb_low=round(float(lo[k]), 6), bb_mid=round(float(mid[k]), 6), bb_high=round(float(hi[k]), 6),
+               rsi=round(float(rsi[kj]), 1), adx=round(float(adx[kr]), 1))
+    if np.isnan(mid[k]) or np.isnan(lo[kj]):
+        return None
+    if s.mr_max_adx and adx[kr] >= s.mr_max_adx:
+        return None                                   # trending: fading it is the wrong model
+    j = i - 1
+    if long_ok and c[j] < lo[kj] and rsi[kj] <= s.rsi_low and c[i] > lo[k] and c[i] > o[i]:
+        entry, stop, target = c[i], min(l[j], l[i]) * (1 - buf), float(mid[k])
+        if target - entry >= s.mr_min_r * (entry - stop) > 0:
+            return make("BUY", "mean reversion", entry, stop, target)
+    if short_ok and c[j] > hi[kj] and rsi[kj] >= s.rsi_high and c[i] < hi[k] and c[i] < o[i]:
+        entry, stop, target = c[i], max(h[j], h[i]) * (1 + buf), float(mid[k])
+        if entry - target >= s.mr_min_r * (stop - entry) > 0:
+            return make("SELL", "mean reversion", entry, stop, target)
+    return None
+
+
+def _sweep(df, d, s, i, o, h, l, c, buf, long_ok, short_ok, det, make):
+    rng = h[i] - l[i]
+    if rng <= 0:
+        return None
+    lows, highs = {}, {}
+    if s.sweep_levels in ("both", "prior_day"):
+        idx = pd.DatetimeIndex(df.index)
+        today = idx[-1].date()
+        prev_days = sorted({t.date() for t in idx if t.date() < today})
+        if prev_days:
+            pdm = np.asarray([t.date() == prev_days[-1] for t in idx])
+            lows["prior day low"] = float(df["low"].to_numpy(float)[pdm].min())
+            highs["prior day high"] = float(df["high"].to_numpy(float)[pdm].max())
+    if s.sweep_levels in ("both", "swing"):
+        fh, fl = df["high"].to_numpy(float), df["low"].to_numpy(float)
+        win = slice(max(0, len(df) - 1 - s.sweep_lookback), len(df) - 1)
+        if win.stop - win.start >= 3:
+            lows["swing low"] = float(fl[win].min())
+            highs["swing high"] = float(fh[win].max())
+    body_lo, body_hi = min(o[i], c[i]), max(o[i], c[i])
+    if long_ok:
+        swept = [(lvl, name) for name, lvl in lows.items() if l[i] < lvl < c[i]]
+        if swept and (body_lo - l[i]) >= s.sweep_wick_ratio * rng and c[i] >= l[i] + rng / 2:
+            lvl, name = max(swept)
+            det.update(swept_level=round(lvl, 6), swept=name)
+            r = make("BUY", "liquidity sweep", c[i], l[i] * (1 - buf))
+            if r:
+                return r
+    if short_ok:
+        swept = [(lvl, name) for name, lvl in highs.items() if c[i] < lvl < h[i]]
+        if swept and (h[i] - body_hi) >= s.sweep_wick_ratio * rng and c[i] <= h[i] - rng / 2:
+            lvl, name = min(swept)
+            det.update(swept_level=round(lvl, 6), swept=name)
+            r = make("SELL", "liquidity sweep", c[i], h[i] * (1 + buf))
+            if r:
+                return r
+    return None
+
+
+def exit_signal(df: pd.DataFrame, s: ScalpSettings, opened_at: str | None, direction: str, ExitSignal,
+                setup: str | None = None):
     if df is None or len(df) < 2:
         return None
     idx = pd.DatetimeIndex(df.index)
@@ -178,7 +356,7 @@ def exit_signal(df: pd.DataFrame, s: ScalpSettings, opened_at: str | None, direc
             return None
     if s.max_hold_candles and since >= s.max_hold_candles:
         return ExitSignal("close_now", f"held {since} candles (max_hold_candles)")
-    if s.exit_on_vwap_cross:
+    if s.exit_on_vwap_cross and setup in VWAP_EXIT_SETUPS:
         d = _session(df)
         vw = _vwap(d)
         c = float(d["close"].iloc[-1])

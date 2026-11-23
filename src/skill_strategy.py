@@ -128,8 +128,21 @@ def parse(text: str) -> tuple[StrategySettings | None, list[str]]:
         setattr(s, k, v)
     s.strategy = engine
     if engine == "scalp_vwap_orb":
-        for name, allowed in (("setups", ("both", "orb", "pullback")), ("sides", ("both", "long", "short")),
-                              ("orb_stop", ("mid", "candle"))):
+        from src.scalp_engine import MODELS, parse_setups
+        chosen, unknown = parse_setups(s.setups)
+        if unknown:
+            problems.append(f"setups: {', '.join(unknown)} unknown - the models are {', '.join(MODELS)}")
+        if not chosen:
+            problems.append("setups: no known model - using both (orb, pullback)")
+            s.setups = "both"
+        if s.sweep_levels not in ("both", "prior_day", "swing"):
+            problems.append(f"sweep_levels {s.sweep_levels!r} unknown - using both")
+            s.sweep_levels = "both"
+        for name, lo in (("bb_period", 5), ("rsi_period", 2), ("adx_period", 2), ("sweep_lookback", 3)):
+            if getattr(s, name) < lo:
+                problems.append(f"{name} below {lo} - using {lo}")
+                setattr(s, name, lo)
+        for name, allowed in (("sides", ("both", "long", "short")), ("orb_stop", ("mid", "candle"))):
             if getattr(s, name) not in allowed:
                 problems.append(f"{name} {getattr(s, name)!r} unknown - using {allowed[0]}")
                 setattr(s, name, allowed[0])
@@ -364,11 +377,13 @@ class ExitSignal:
     price: float | None = None
 
 
-def exit_signal(df: pd.DataFrame, s, opened_at: str | None, direction: str = "BUY") -> ExitSignal | None:
-    """Exit for an open skill trade, judged on the newest closed candle."""
+def exit_signal(df: pd.DataFrame, s, opened_at: str | None, direction: str = "BUY",
+                setup: str | None = None) -> ExitSignal | None:
+    """Exit for an open skill trade, judged on the newest closed candle.
+    `setup` is the scalp model that opened it (some exits apply to some only)."""
     if s.strategy == "scalp_vwap_orb":
         from src import scalp_engine
-        return scalp_engine.exit_signal(df, s, opened_at, direction, ExitSignal)
+        return scalp_engine.exit_signal(df, s, opened_at, direction, ExitSignal, setup=setup)
     if df is None or len(df) < 3:
         return None
     b = _Bars(df, s)
