@@ -693,7 +693,7 @@ class SymbolWorker:
             "entry": float(entry), "stop": float(stop),
             "target": float(target), "breakout": setup.details.get("breakout"),
             "max_wait_candles": settings.max_wait_candles, "use_trailing_stop": settings.use_trailing_stop,
-            "quality": setup.quality, "opened_bar": None})
+            "quality": setup.quality, "opened_bar": None, "setup": setup.details.get("setup")})
         self.audit_log.log_decision(
             self.symbol, name, direction, float(setup.quality), k_ok, k_conf, True, risk_reason, "opened",
             deal_id=str(entry_id),
@@ -737,7 +737,8 @@ class SymbolWorker:
         settings, _ = load_skill(trade.get("file") or trading_mode.DEFAULT_FILE)
         if settings is None:
             return                       # the bracket still protects the trade
-        sig = skill_strategy.exit_signal(df, settings, trade.get("opened_bar"), pos["direction"])
+        sig = skill_strategy.exit_signal(df, settings, trade.get("opened_bar"), pos["direction"],
+                                         setup=trade.get("setup"))
         if sig is None:
             return
         if sig.kind == "close_now":
