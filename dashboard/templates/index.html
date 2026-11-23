@@ -760,6 +760,7 @@
           <div class="cc-muted">Closed trades from the agent's records <span id="pf-ccy"></span></div>
         </div>
         <div class="rm-seg" role="group" aria-label="Period">
+          <button type="button" data-days="today" onclick="pfSetDays('today')">Today</button>
           <button type="button" data-days="7" onclick="pfSetDays(7)">7D</button>
           <button type="button" data-days="30" class="active" onclick="pfSetDays(30)">30D</button>
           <button type="button" data-days="90" onclick="pfSetDays(90)">90D</button>
@@ -4174,6 +4175,7 @@
         { group: "Actions", label: "Positions as cards", run: () => { switchTab("positions"); setPositionsView("cards"); } },
         { group: "Actions", label: "Positions as a table", run: () => { switchTab("positions"); setPositionsView("table"); } },
         { group: "Actions", label: "Risk Model on the live market", run: () => { switchTab("risk-model"); setTimeout(() => rmSetGraphMode("live"), 300); } },
+        { group: "Actions", label: "Performance: today", run: () => { switchTab("performance"); pfSetDays("today"); } },
         { group: "Actions", label: "Performance: last 30 days", run: () => { switchTab("performance"); pfSetDays(30); } },
         { group: "Actions", label: "Performance: all time", run: () => { switchTab("performance"); pfSetDays("all"); } },
         { group: "Actions", label: "Decisions: rejected by Kronos", run: () => { switchTab("decisions"); dsFilter("kronos"); } },
@@ -4824,7 +4826,9 @@
       oEl.hidden = !others.length;
       if (others.length) oEl.textContent = `Agent trades only. Your ${others.length} other holding${others.length === 1 ? "" : "s"} today: ${ccMoney(othersToday)}`;
       renderTodayDetail();
-      document.getElementById("cc-today-sub").textContent = `${r.closed_today || 0} closed today`;
+      const ds = o.day_starts;
+      document.getElementById("cc-today-sub").textContent =
+        `${r.closed_today || 0} closed since ${ds && ds.label ? ds.label : "midnight"}`;
 
       const pEl = document.getElementById("cc-30d");
       ccTween(pEl, r.pnl_30d || 0, v => ccBig(v)); ccSetSign(pEl, r.pnl_30d || 0);

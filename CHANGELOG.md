@@ -15,6 +15,16 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added
+- `trading_day_timezone` (Config & Risk -> Timeframe & schedule): where "today"
+  starts. Today's P&L, the daily loss limit, the profit target and trades per day
+  reset at midnight there; blank keeps the market's time zone (New York for US
+  and IG24). Set it to Asia/Singapore to count your own day instead of one that
+  starts at 13:00 Singapore time. Performance and Decisions count days the same way.
+- Command Center: Today's P&L says when the day started ("2 closed since 00:00 SGT").
+- Performance: a Today period (also in the command palette), matching the
+  Command Center's day.
+
 ### Fixed
 - IG: "Broker data unavailable (IG request budget (8 a minute for this
   process) is full)" on the dashboard. The dashboard was asking IG for things

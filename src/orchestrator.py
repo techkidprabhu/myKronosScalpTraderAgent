@@ -40,7 +40,7 @@ from src import skill_strategy
 from src import trading_mode
 from src import version as code_version
 from src.kronos_agent import DEFAULT_OPTIONS, KronosAgent, is_default, kronos_options
-from src.market import BAR_DURATION, drop_unclosed_bar, is_market_open, market_timezone
+from src.market import BAR_DURATION, drop_unclosed_bar, is_market_open, market_timezone, trading_day_timezone
 from src.patterns import scan
 from src.kronos_indicators.indicators import atr as atr_series
 from src.risk import EntryPlan, RiskConfig, RiskManager, open_risk_at_stops
@@ -1339,9 +1339,10 @@ class Orchestrator:
             self.kronos_agent = KronosAgent(**kronos_cfg)
 
         risk_cfg = RiskConfig(**config["risk"])
-        # Daily loss cap resets at midnight in the exchange's timezone.
+        # Daily loss cap, profit target and trade counts reset at midnight in
+        # trading_day_timezone (default: the exchange's time zone).
         self.risk_manager = RiskManager(
-            risk_cfg, store=self.audit_log, timezone=str(market_timezone(self.broker.market)),
+            risk_cfg, store=self.audit_log, timezone=str(trading_day_timezone(config, self.broker.market)),
         )
 
         self.screener = None

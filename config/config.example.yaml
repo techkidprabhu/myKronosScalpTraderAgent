@@ -341,6 +341,12 @@ unmanaged_positions:
 
 polling_interval_seconds: 15
 
+# Where "today" starts and ends: the Command Center's Today's P&L, the daily
+# loss limit, the profit target and trades-per-day all reset at midnight here.
+# Blank = the market's own time zone (New York for US and IG24). For markets
+# that trade around the clock, your own time zone keeps your day in one piece.
+trading_day_timezone: ""        # e.g. Asia/Singapore
+
 # Also scan a few seconds after every candle closes (1-15 minute candles), so
 # a 3-minute signal is acted on ~3 s after its candle closes instead of up to
 # polling_interval_seconds later. Symbols that signal on the same candle are
