@@ -1476,6 +1476,25 @@ def api_trading_mode():
     return jsonify(_trading_mode_payload())
 
 
+@app.route("/api/focus_mode", methods=["GET", "POST"])
+def api_focus_mode():
+    """Single-stock focus: trade only the one cleanest volume breakout
+    instead of every screener pick. One switch (data/focus_mode.json) for
+    every broker; the agent picks it up on its next candle, no restart."""
+    from src import focus
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data.get("enabled"), bool):
+            return jsonify({"error": "enabled must be true or false"}), 400
+        focus.write_switch(data["enabled"])
+        logger.info("Single-stock focus %s from the dashboard", "on" if data["enabled"] else "off")
+    sw = focus.read_switch()
+    cfg = load_config()
+    return jsonify({**sw, "rule": focus.settings(cfg), "timeframe": cfg.get("timeframe"),
+                    "screener_on": bool((cfg.get("screener") or {}).get("enabled")),
+                    "state": _kv(focus.STATE_KEY) or {}})
+
+
 @app.route("/api/rules", methods=["GET", "POST"])
 def api_rules():
     """GET: your rules file, parsed, with today's counts. POST {text}: save it
@@ -2530,6 +2549,8 @@ def _code_defaults() -> dict:
     from src import finetune as _ft, rules as _rules
     out = {f"finetune.{k}": v for k, v in _ft.DEFAULTS.items()}
     out.update({f"skills.{k}": v for k, v in _rules.DEFAULTS.items()})
+    from src import focus as _focus
+    out.update({f"screener.focus.{k}": v for k, v in _focus.DEFAULTS.items()})
     return out
 
 

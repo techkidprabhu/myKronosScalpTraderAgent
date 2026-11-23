@@ -16,6 +16,22 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Added
+- **Single-stock focus** (Command Center card and Settings → Universe &
+  screener; off by default). Instead of scanning every screener pick, the
+  agent picks the ONE cleanest volume breakout and trades only that, one
+  position at a time. The rule, on the last closed 1-5 min candle: close above
+  the highest high of the last 20 candles, in the top half of its own range;
+  volume at least 1.5x the 20-candle average; up-candle volume beating
+  down-candle volume; above session VWAP; EMA 9 over EMA 21; RSI 55-80; and,
+  for stocks and index CFDs, inside the first 2 hours after the open. The best
+  score wins. The focus is dropped when price closes back below the level,
+  volume fades, or 6 candles pass with no entry. A trade taken on the breakout
+  candle itself (still confirmed by Kronos) puts its stop just below the level
+  and its target at 2R. Every risk limit still applies, and open trades on
+  other symbols keep being managed. The switch is live (data/focus_mode.json,
+  no restart); the rule's numbers are under `screener.focus` in config.yaml.
+
+### Added
 - `trading_day_timezone` (Config & Risk -> Timeframe & schedule): where "today"
   starts. Today's P&L, the daily loss limit, the profit target and trades per day
   reset at midnight there; blank keeps the market's time zone (New York for US

@@ -38,10 +38,11 @@ from src import rules as rules_gate
 from src import ig_hours
 from src import skill_strategy
 from src import trading_mode
+from src import focus
 from src import version as code_version
 from src.kronos_agent import DEFAULT_OPTIONS, KronosAgent, is_default, kronos_options
 from src.market import BAR_DURATION, drop_unclosed_bar, is_market_open, market_timezone, trading_day_timezone
-from src.patterns import scan
+from src.patterns import PatternSignal, scan
 from src.kronos_indicators.indicators import atr as atr_series
 from src.risk import EntryPlan, RiskConfig, RiskManager, open_risk_at_stops
 from src.brokers.base import size_num
@@ -287,11 +288,12 @@ class SymbolWorker:
                     logger.debug("Shadow paths confidence failed for %s", self.symbol, exc_info=True)
         return result, extra, ms
 
-    def prepare_signal(self):
+    def prepare_signal(self, extra_signal=None):
         """Everything before Kronos: fetch candles, find a pattern, run the
         indicator and rules gates. Returns the context Kronos needs, or None
         when there is nothing to ask it (no new candle, no pattern, rejected
-        earlier, skill-file mode, ...)."""
+        earlier, skill-file mode, ...). `extra_signal` (focus mode's volume
+        breakout) is used as this candle's signal when given."""
         if self.monitor_only:
             return
         if not self.trade_outside_hours and not self._market_open():
@@ -329,10 +331,10 @@ class SymbolWorker:
             return
 
         signals = scan(df)
-        if not signals:
+        if not signals and extra_signal is None:
             return
 
-        signal = max(signals, key=lambda s: s.strength)
+        signal = extra_signal if extra_signal is not None else max(signals, key=lambda s: s.strength)
         logger.info("%s: pattern %s (%s, strength=%.2f)",
                      self.symbol, signal.name, signal.direction, signal.strength)
         self.audit_log.log_snapshot(
@@ -401,7 +403,7 @@ class SymbolWorker:
             self.reporter.report_rejected(self.symbol, signal.name, f"risk: {risk_reason}")
             return
 
-        plan = self._plan(float(last_close), self.quantity, df)
+        plan = self._plan(float(last_close), self.quantity, df, **(ctx.get("plan_fixed") or {}))
         self.audit_log.log_snapshot(self.symbol, float(last_close), "risk_plan", {
             "allowed": plan.allowed, "reason": plan.reason, "quantity": plan.quantity,
             "sized_by": plan.sized_by, "max_loss": round(plan.max_loss, 2),
@@ -1888,13 +1890,20 @@ class Orchestrator:
         batched model pass where possible - so the tenth symbol to signal on
         a candle isn't kept waiting behind the first nine."""
         pending = []
-        for worker in list(self.workers.values()):
+        if focus.read_switch()["enabled"]:
+            todo = self._focus_workers()
+        else:
+            self._focus_off()
+            todo = [(w, None) for w in list(self.workers.values())]
+        for worker, extra in todo:
             try:
-                ctx = worker.prepare_signal()
+                ctx = worker.prepare_signal(extra) if extra is not None else worker.prepare_signal()
             except Exception:
                 logger.exception("Worker error for %s", worker.symbol)
                 continue
             if ctx is not None:
+                if extra is not None and ctx["signal"] is extra:
+                    self._focus_plan(ctx)
                 pending.append((worker, ctx))
         if not pending:
             return
@@ -1959,6 +1968,128 @@ class Orchestrator:
                     worker.finish_signal(ctx, res, ms)
                 except Exception:
                     logger.exception("Worker error for %s", worker.symbol)
+
+    # ---- single-stock focus (src/focus.py) ------------------------------------
+
+    def _focus_bars(self, worker):
+        try:
+            bars = self.broker.get_historical_bars(worker.symbol, worker.timeframe, max(int(worker.lookback_bars), 60))
+            return drop_unclosed_bar(bars_to_df(bars), worker.timeframe)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Focus: no candles for %s: %s", worker.symbol, exc)
+            return None
+
+    def _publish_focus(self, results: dict | None = None, released: dict | None = None):
+        st = getattr(self, "_focus", None)
+        if released:
+            self._focus_released = released
+        rows = []
+        for sym, r in (results or {}).items():
+            w = self.workers.get(sym)
+            rows.append({"symbol": sym, "name": getattr(w, "name", sym), "qualified": bool(r.get("qualified")),
+                         "score": r.get("score"), "why": r.get("why"), "direction": r.get("direction"),
+                         "level": r.get("level"), "volume_ratio": r.get("volume_ratio"),
+                         "accumulation": r.get("accumulation"), "rsi": r.get("rsi")})
+        rows.sort(key=lambda x: (not x["qualified"], -(x["score"] or 0)))
+        payload = {"enabled": True, "ts": time.time(), "focus": st,
+                   "released": getattr(self, "_focus_released", None)}
+        if results is not None:
+            payload["candidates"] = rows[:20]
+            payload["checked_ts"] = time.time()
+        else:
+            prev = self.audit_log.get_kv(focus.STATE_KEY) or {}
+            payload["candidates"] = prev.get("candidates") or []
+            payload["checked_ts"] = prev.get("checked_ts")
+        try:
+            self.audit_log.set_kv(focus.STATE_KEY, payload)
+        except Exception:  # noqa: BLE001
+            logger.debug("Could not publish the focus state", exc_info=True)
+
+    def _focus_off(self):
+        if getattr(self, "_focus_was_on", False):
+            self._focus_was_on = False
+            self._focus = None
+            try:
+                self.audit_log.set_kv(focus.STATE_KEY, {"enabled": False, "ts": time.time()})
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _focus_workers(self) -> list:
+        """Focus mode: which worker(s) to scan this candle - the one focused
+        symbol, or none while nothing qualifies. An open agent trade always
+        owns the focus, so there is only ever one position."""
+        self._focus_was_on = True
+        cfg = focus.settings(self.config)
+        st = getattr(self, "_focus", None) or {}
+        now = time.time()
+        active = [p["symbol"] for p in self.audit_log.get_active_positions()]
+        if active:
+            sym = active[0]
+            if st.get("symbol") != sym:
+                st = {"symbol": sym, "name": getattr(self.workers.get(sym), "name", sym), "direction": None,
+                      "level": None, "picked_ts": now, "reason": "open trade"}
+            st.update(in_trade=True, bars_waited=0)
+            self._focus = st
+            self._publish_focus()
+            w = self.workers.get(sym)
+            return [(w, None)] if w is not None and not w.monitor_only else []
+        st.pop("in_trade", None)
+        if st.get("symbol"):
+            w = self.workers.get(st["symbol"])
+            if w is None or w.monitor_only:
+                why = "dropped by the screener"
+            else:
+                df = self._focus_bars(w)
+                if df is not None and not df.empty and str(df.index[-1]) != st.get("last_bar"):
+                    st["bars_waited"] = int(st.get("bars_waited") or 0) + 1
+                    st["last_bar"] = str(df.index[-1])
+                why = focus.still_valid(df, st, cfg)
+            if why is None:
+                self._focus = st
+                self._publish_focus()
+                return [(w, None)]
+            logger.info("Focus released %s: %s", st["symbol"], why)
+            self._focus = None
+            self._focus_released = {"symbol": st["symbol"], "why": why, "ts": now}
+        results, frames = {}, {}
+        for w in list(self.workers.values()):
+            if w.monitor_only:
+                continue
+            if not w.trade_outside_hours and not w._market_open():
+                results[w.symbol] = {"qualified": False, "why": "market closed"}
+                continue
+            if not focus.in_prime_window(w._session_minutes(), cfg):
+                results[w.symbol] = {"qualified": False,
+                                     "why": f"past the first {cfg['prime_minutes']} minutes of the session"}
+                continue
+            frames[w.symbol] = self._focus_bars(w)
+            results[w.symbol] = focus.evaluate(frames[w.symbol], cfg)
+        best = focus.pick(results)
+        if best is None:
+            self._focus = None
+            self._publish_focus(results)
+            return []
+        r, w = results[best], self.workers[best]
+        self._focus = {"symbol": best, "name": w.name, "direction": r["direction"], "level": r["level"],
+                       "score": r["score"], "volume_ratio": r.get("volume_ratio"), "picked_ts": now,
+                       "last_bar": str(frames[best].index[-1]), "bars_waited": 0, "reason": "volume breakout"}
+        logger.info("Focus: %s %s breakout of %s (score %.1f, volume %.1fx)", best, r["direction"],
+                    r["level"], r["score"], r.get("volume_ratio") or 0)
+        self._publish_focus(results)
+        extra = PatternSignal("volume_breakout", r["direction"], min(1.0, r["score"] / 100.0)) \
+            if cfg["entry_on_breakout"] else None
+        return [(w, extra)]
+
+    def _focus_plan(self, ctx: dict):
+        """A breakout entry: stop just beyond the breakout level, target at
+        target_r times that risk (focus.stop_below_level)."""
+        cfg = focus.settings(self.config)
+        st = getattr(self, "_focus", None) or {}
+        if not cfg["stop_below_level"]:
+            return
+        d = focus.breakout_stop(float(ctx["last_close"]), st, cfg)
+        if d:
+            ctx["plan_fixed"] = {"stop_distance": d, "target_distance": d * float(cfg["target_r"])}
 
     def _note_kronos_time(self, ms: float, symbols: int):
         note_kronos_time(self.audit_log, ms, symbols)

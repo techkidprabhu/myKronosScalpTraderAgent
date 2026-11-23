@@ -274,6 +274,21 @@
         <div id="tm-setups" class="tm-setups" hidden></div>
       </section>
 
+      <section class="cc-card tm-card fm-card" id="fm-card" aria-labelledby="fm-h">
+        <div class="tm-row">
+          <div class="tm-title">
+            <h2 id="fm-h">Single-stock focus</h2>
+            <p class="cc-muted" id="fm-explain">Loading…</p>
+          </div>
+          <div class="tm-switch" role="radiogroup" aria-labelledby="fm-h">
+            <button type="button" role="radio" id="fm-off" aria-checked="true" onclick="fmSet(false)">Scan all picks</button>
+            <button type="button" role="radio" id="fm-on" aria-checked="false" onclick="fmSet(true)">Focus on one</button>
+          </div>
+        </div>
+        <div id="fm-now" class="fm-now" hidden></div>
+        <div id="fm-cands" class="tm-setups" hidden></div>
+      </section>
+
       <section class="cc-card sc-card" id="sc-card" aria-labelledby="sc-h">
         <div class="tm-row">
           <div class="tm-title"><h2 id="sc-h">Scalp session today</h2>
@@ -4991,6 +5006,66 @@
     loadTradingMode();
     setInterval(() => { if (!document.hidden) loadTradingMode(); }, 30000);
 
+    // ---- Single-stock focus (data/focus_mode.json; the agent publishes kv focus_state)
+    let fmData = null;
+    function fmTime(ts) { return ts ? new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""; }
+    function fmRender(d) {
+      fmData = d;
+      const on = !!d.enabled, r = d.rule || {}, st = d.state || {};
+      document.getElementById("fm-on").setAttribute("aria-checked", String(on));
+      document.getElementById("fm-off").setAttribute("aria-checked", String(!on));
+      document.getElementById("fm-card").classList.toggle("tm-on", on);
+      const rule = `a ${tmEsc(d.timeframe || "")} candle that closes above the last ${r.level_bars} candles' high on at least ${r.min_volume_ratio}× average volume, above VWAP, EMAs aligned, RSI ${r.rsi_min}–${r.rsi_max}`;
+      document.getElementById("fm-explain").innerHTML = on
+        ? `Trading only the one cleanest volume breakout among the ${d.screener_on ? "screener's picks" : "symbols in your list"}, one position at a time. Looking for ${rule}.`
+        : `Every ${d.screener_on ? "screener pick" : "symbol"} is scanned. Switch on to pick one: ${rule}.`;
+      const now = document.getElementById("fm-now"), box = document.getElementById("fm-cands");
+      const f = st.focus, rel = st.released;
+      now.hidden = !on;
+      if (on) {
+        let html;
+        if (f && f.symbol) {
+          const pill = f.in_trade ? '<span class="tm-pill tm-open">In trade</span>'
+            : `<span class="tm-pill tm-ready">${tmEsc(f.direction === "SELL" ? "Breakdown" : "Breakout")} of ${tmEsc(f.level)}</span>`;
+          html = `<b>${tmEsc(f.name || f.symbol)}</b>${pill}` + (f.in_trade ? `<span class="cc-muted">No new symbol until it closes.</span>`
+            : `<span class="cc-muted">score ${tmEsc(f.score)} · volume ${tmEsc(f.volume_ratio)}× · since ${fmTime(f.picked_ts)} · ${f.bars_waited || 0} of ${r.max_wait_bars} candles waited</span>`);
+        } else {
+          html = `<span class="cc-muted">Waiting for a clean volume breakout${st.checked_ts ? ` · last checked ${fmTime(st.checked_ts)}` : " · the agent checks on each closed candle"}.</span>`;
+        }
+        if (rel && rel.symbol) html += `<div class="cc-muted">Dropped ${tmEsc(rel.symbol)} at ${fmTime(rel.ts)}: ${tmEsc(rel.why)}</div>`;
+        now.innerHTML = html;
+      }
+      const c = (st.candidates || []).slice(0, 8);
+      box.hidden = !on || !c.length;
+      if (on && c.length) box.innerHTML = `<h3 class="kr-gates-h">Last check</h3><ul>` + c.map(x =>
+        `<li><b>${tmEsc(x.name || x.symbol)}</b> ${x.qualified ? `<span class="tm-pill tm-ready">score ${tmEsc(x.score)}</span>`
+          : '<span class="tm-pill">no</span>'}<span class="cc-muted">${tmEsc(x.why || "")}${x.volume_ratio ? ` · volume ${tmEsc(x.volume_ratio)}×` : ""}</span></li>`).join("") + `</ul>`;
+      const live = document.getElementById("set-focus_mode");
+      if (live) live.checked = on;
+    }
+    async function loadFocusMode() {
+      try {
+        const res = await fetch("/api/focus_mode", { cache: "no-store" });
+        if (res.ok) fmRender(await res.json());
+      } catch (e) { /* offline: keep what is shown */ }
+    }
+    async function fmSet(enabled) {
+      if (!fmData || fmData.enabled === enabled) { if (fmData) fmRender(fmData); return; }
+      const ok = enabled
+        ? await uiConfirm("Trade only one symbol at a time?",
+            "On each closed candle the agent picks the one cleanest volume breakout and scans only that symbol. Open trades elsewhere are still managed. Your risk limits still apply. Takes effect on the next candle.",
+            { ok: "Focus on one", danger: true })
+        : await uiConfirm("Go back to scanning every pick?", "Any open trade keeps being managed as usual.", { ok: "Scan all picks" });
+      if (!ok) { fmRender(fmData); return; }
+      const res = await fetch("/api/focus_mode", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                    body: JSON.stringify({ enabled }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { uiAlert("Couldn't change single-stock focus", body.error || "The server refused the change."); loadFocusMode(); return; }
+      fmRender(body);
+    }
+    loadFocusMode();
+    setInterval(() => { if (!document.hidden) loadFocusMode(); }, 15000);
+
     // ---- Scalp session today (live, every 15 s)
     function scEsc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
     function scMoney(n) { return n == null ? "—" : `${n >= 0 ? "+" : "−"}${ccySym()}${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`; }
@@ -5835,7 +5910,9 @@
           const shared = (settingsData.values.shared || {})[f.key];
           const id = "set-" + f.key.replace(/\./g, "__");
           let input;
-          if (f.type === "bool") {
+          if (f.live === "focus") {
+            input = `<input type="checkbox" id="${id}" ${fmData && fmData.enabled ? "checked" : ""}>`;
+          } else if (f.type === "bool") {
             input = `<input type="checkbox" id="${id}" ${value ? "checked" : ""}>`;
           } else if (f.type === "select") {
             let opts = f.options || [];
@@ -5870,6 +5947,7 @@
         for (const f of sec.fields) {
           const el = document.getElementById("set-" + f.key.replace(/\./g, "__"));
           if (!el) continue;
+          if (f.live === "focus") { el.addEventListener("change", () => fmSet(el.checked)); continue; }
           if (settingsInvalid[f.key] !== undefined) _showFieldError(el, _fieldError(el) || "Not a valid value.");
           if (el.type === "number") el.addEventListener("input", () => {
             // Live only once the field is already showing a problem; clears the moment it's fixed.
