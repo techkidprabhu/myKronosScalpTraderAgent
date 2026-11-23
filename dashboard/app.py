@@ -528,15 +528,13 @@ def get_symbols():
     quantities = {s["symbol"]: s.get("quantity") for s in cfg.get("symbols", [])}
     client = get_broker()
 
+    items = active_symbols(cfg)["symbols"]
+    # One quote request for every symbol (not one each), shared with the tables.
+    live = _live_prices(client, [i["symbol"] for i in items]) if client or _mirror() else {}
     results = []
-    for item in active_symbols(cfg)["symbols"]:
+    for item in items:
         sym = item["symbol"]
-        price = None
-        if client:
-            try:
-                price = client.get_current_price(sym)
-            except Exception:
-                price = None
+        price = live.get(base_symbol(sym))
         results.append({
             "symbol": sym,
             "name": item["name"],
@@ -905,6 +903,32 @@ def _cache_seconds(kind: str, default: float) -> float:
     except Exception:  # noqa: BLE001
         return default
 _funds_cache: dict = {}    # broker name -> {"ts", "data"}
+MIRROR_MAX_AGE = 90        # the agent publishes every 30 s
+
+
+def _mirror() -> dict | None:
+    """IG: what the running agent last fetched from IG (positions, orders,
+    account, streamed prices), if recent - so the dashboard doesn't spend the
+    request allowance it shares with the agent asking for the same again."""
+    try:
+        if current_spec().adapter != "ig":
+            return None
+        conn = get_db()
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        row = conn.execute("SELECT value FROM kv WHERE key = ?", ("broker_mirror",)).fetchone()
+    except sqlite3.Error:
+        row = None
+    finally:
+        conn.close()
+    if not row:
+        return None
+    try:
+        m = json.loads(row[0])
+    except (TypeError, ValueError):
+        return None
+    return m if time.time() - float(m.get("ts") or 0) <= MIRROR_MAX_AGE else None
 
 
 def _broker_snapshot(client):
@@ -914,6 +938,9 @@ def _broker_snapshot(client):
         cache = _broker_cache.setdefault(current_spec().name, {"ts": 0.0, "data": None})
         if cache["data"] is not None and now - cache["ts"] < _cache_seconds("broker", BROKER_CACHE_SECONDS):
             return cache["data"]
+        m = _mirror()
+        if m is not None:
+            return m.get("positions") or [], m.get("orders") or []
         positions = client.get_open_positions()
         orders = client.get_open_orders()
         cache.update(ts=now, data=(positions, orders))
@@ -944,6 +971,17 @@ def _live_prices(client, symbols: list[str]) -> dict:
                   if base_symbol(s) in cache and now - cache[base_symbol(s)][0] < ttl}
     stale = [s for s in symbols if base_symbol(s) not in prices]
     if not stale:
+        return prices
+    m = _mirror()
+    if m is not None:                                   # IG: the agent's streamed prices first
+        for s in list(stale):
+            p = (m.get("prices") or {}).get(s)
+            if p:
+                prices[base_symbol(s)] = float(p)
+                stale.remove(s)
+        if not stale:
+            return prices
+    if client is None:
         return prices
     try:
         df = client.get_snapshots(stale)
@@ -1028,6 +1066,9 @@ def _account_summary(client):
         now = time.time()
         cache = _funds_cache.setdefault(current_spec().name, {"ts": 0.0, "data": None})
         if cache["data"] is None or now - cache["ts"] >= _cache_seconds("funds", BROKER_CACHE_SECONDS):
+            m = _mirror()
+            if m is not None and m.get("account") and now - float(m.get("account_ts") or 0) <= 150:
+                return m["account"]
             cache.update(ts=now, data=client.get_account_summary())
         return cache["data"]
 

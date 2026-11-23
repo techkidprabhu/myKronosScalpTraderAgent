@@ -16,6 +16,20 @@ that heading to the new version and date, and tag the commit
 ## [Unreleased]
 
 ### Fixed
+- IG: "Broker data unavailable (IG request budget (8 a minute for this
+  process) is full)" on the dashboard. The dashboard was asking IG for things
+  the agent had already fetched:
+  - the running agent now publishes IG positions, working orders, account
+    figures and streamed prices every 30 s, and the dashboard reads those
+    (falling back to asking IG itself when the agent isn't running);
+  - the symbol list fetched one price per symbol; it now uses one request
+    for all of them, shared with the tables;
+  - candles the dashboard does fetch from IG (e.g. a market whose saved
+    candles are old) are reused for a minute instead of every 10 s refresh,
+    which also spares the weekly price-history allowance;
+  - when a budget is full, the message now says which requests used it.
+
+### Fixed
 - IG: every forex entry was refused ("IG rejected the deal: UNKNOWN", once
   INSUFFICIENT_FUNDS). Trades were sized as if one unit of IG "size" moved 1
   per point, like a share; on IG it is a contract, and one forex contract is
