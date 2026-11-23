@@ -202,6 +202,30 @@ screener:
   # How often to re-run the screener and refresh the active symbol list.
   refresh_interval_minutes: 360
 
+  # Single-stock focus - trade only the ONE cleanest volume breakout among
+  # the picks, one position at a time (src/focus.py). Switched on and off
+  # live from the Command Center or Settings (data/focus_mode.json, off until
+  # you switch it on); the rule below is read at start-up.
+  focus:
+    level_bars: 20            # breakout level = highest high of the last N candles
+    volume_period: 20         # average volume over the last N candles
+    min_volume_ratio: 1.5     # breakout candle volume >= 1.5x that average
+    strong_volume_ratio: 3.0  # a 3x spike scores full marks
+    min_break_pct: 0.0        # how far past the level the candle must close (%)
+    min_accumulation: 1.0     # up-candle volume / down-candle volume
+    require_vwap: true        # close above session VWAP (below, for shorts)
+    require_ema: true         # EMA 9 above EMA 21
+    rsi_min: 55               # RSI 14 inside 55-80 (shorts: 20-45)
+    rsi_max: 80
+    sides: long               # long | both (both = breakdowns too)
+    prime_minutes: 120        # stocks/index CFDs: pick only in the first 2 h; 0 = any time
+    max_wait_bars: 6          # drop the focus after 6 candles with no entry
+    fade_ratio: 0.8           # ...or when the last 3 candles' volume < 0.8x average
+    entry_on_breakout: true   # the breakout candle is itself a signal (Kronos still confirms)
+    stop_below_level: true    # breakout entries: stop just past the level
+    stop_buffer_pct: 0.05
+    target_r: 2.0             # target = 2x that risk
+
   # moomoo "Market Movers" lists to start each screen from (moomoo, US/HK
   # markets only - needs a recent moomoo-api and OpenD). The lists are read
   # every refresh, merged with candidate_symbols above, and then go through

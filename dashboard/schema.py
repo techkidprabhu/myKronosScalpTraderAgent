@@ -129,6 +129,27 @@ SECTIONS = [
         ("screener.top_n", "Symbols traded at once", "int", {"min": 1, "max": 50}),
         ("screener.refresh_interval_minutes", "Re-screen every (min)", "int", {"min": 5, "max": 1440}),
         ("default_quantity", "Order quantity (screener picks)", "int", {"min": 1}),
+        ("focus_mode", "Single-stock focus (live switch)", "bool", {"live": "focus", "scope": "shared",
+         "help": "On = trade only the one cleanest volume breakout among the screener's picks, one position at a time. "
+                 "Takes effect on the next candle, no restart. Same switch as on the Command Center"}),
+        ("screener.focus.level_bars", "Focus: breakout level = high of last N candles", "int", {"min": 5, "max": 200}),
+        ("screener.focus.volume_period", "Focus: average volume over (candles)", "int", {"min": 5, "max": 200}),
+        ("screener.focus.min_volume_ratio", "Focus: min volume spike (x average)", "float", {"min": 1, "max": 20, "help": "1.5-3x is the usual range"}),
+        ("screener.focus.strong_volume_ratio", "Focus: spike that scores full marks (x)", "float", {"min": 1, "max": 50}),
+        ("screener.focus.min_break_pct", "Focus: min close beyond the level (%)", "float", {"min": 0, "max": 5}),
+        ("screener.focus.min_accumulation", "Focus: min up-volume / down-volume", "float", {"min": 0, "max": 10, "help": "Volume growing on rises and fading on dips; 1.0 = balanced"}),
+        ("screener.focus.require_vwap", "Focus: price must be on the right side of VWAP", "bool", {}),
+        ("screener.focus.require_ema", "Focus: EMA fast/slow must agree", "bool", {}),
+        ("screener.focus.rsi_min", "Focus: RSI at least", "float", {"min": 0, "max": 100, "help": "Shorts use 100 minus these"}),
+        ("screener.focus.rsi_max", "Focus: RSI at most", "float", {"min": 0, "max": 100}),
+        ("screener.focus.sides", "Focus: directions", "select", {"options": ["long", "both"], "help": "both = also breakdowns below support (needs Allow short selling for stocks)"}),
+        ("screener.focus.prime_minutes", "Focus: pick only in the first N minutes after the open", "int", {"min": 0, "max": 600, "help": "Markets with a session (stocks, index CFDs). 0 = any time. 24-hour markets have no window"}),
+        ("screener.focus.max_wait_bars", "Focus: drop it after N candles with no entry", "int", {"min": 1, "max": 100}),
+        ("screener.focus.fade_ratio", "Focus: drop it when volume fades below (x average)", "float", {"min": 0, "max": 5}),
+        ("screener.focus.entry_on_breakout", "Focus: the breakout candle itself is a signal (Kronos still confirms)", "bool", {}),
+        ("screener.focus.stop_below_level", "Focus: stop just beyond the breakout level", "bool", {}),
+        ("screener.focus.stop_buffer_pct", "Focus: stop buffer past the level (%)", "float", {"min": 0, "max": 5}),
+        ("screener.focus.target_r", "Focus: target (x the risk)", "float", {"min": 0.5, "max": 10}),
         ("screener.score.mode", "Stock score", "select", {"options": ["disabled", "log", "rank"],
             "help": "log = show the score but keep ranking by ATR %; rank = pick the top scores"}),
         ("screener.score.benchmark", "Score benchmark", "text", {"nullable": True,
@@ -281,6 +302,8 @@ def coerce(key: str, value):
     f = FIELDS.get(key)
     if f is None:
         raise ValueError(f"{key}: not editable from the dashboard")
+    if f.get("live"):
+        raise ValueError(f"{f['label']}: switched live, not saved to config.yaml")
     t = f["type"]
     if value is None or (isinstance(value, str) and value.strip() == "" and t != "text"):
         if f.get("nullable"):

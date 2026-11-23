@@ -1837,6 +1837,10 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .tm-pill.tm-waiting { background: rgba(56, 189, 248, .22); }
 .tm-pill.tm-error { background: rgba(239, 68, 68, .3); }
 
+/* Single-stock focus */
+.fm-now { font-size: .88rem; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; overflow-wrap: anywhere; }
+.fm-now > div { flex-basis: 100%; }
+
 /* Skill-file trading card (6b) */
 .st-flow a.st-skill { color: #f59e0b; }
 .st-card-skill { border-color: color-mix(in srgb, #f59e0b 45%, var(--border-color)); }
