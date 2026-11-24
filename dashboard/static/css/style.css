@@ -1837,6 +1837,9 @@ body, .header, .nav-bar, .panel-card, .cc-card, .cc-tile, .pc-card, .ds-box, .me
 .tm-pill.tm-waiting { background: rgba(56, 189, 248, .22); }
 .tm-pill.tm-error { background: rgba(239, 68, 68, .3); }
 
+/* CPR levels card */
+#cpr-levels .tm-pill { white-space: nowrap; }
+
 /* Single-stock focus */
 .fm-now { font-size: .88rem; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; overflow-wrap: anywhere; }
 .fm-now > div { flex-basis: 100%; }

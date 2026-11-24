@@ -86,6 +86,16 @@ CREATE TABLE IF NOT EXISTS kv (
     value TEXT NOT NULL
 );
 
+-- Closed daily candles per symbol, for the CPR levels and scorecard
+-- (src/cpr.py). Kept so the agent asks the broker for only the last few
+-- days after the first fill.
+CREATE TABLE IF NOT EXISTS daily_bars (
+    symbol TEXT NOT NULL,
+    day TEXT NOT NULL,
+    open REAL, high REAL, low REAL, close REAL,
+    PRIMARY KEY (symbol, day)
+);
+
 -- Manual buy/sell/close requests from the dashboard. The dashboard only
 -- queues them; the orchestrator (which owns the broker session and the
 -- position bookkeeping) executes them and writes the outcome back.
@@ -124,6 +134,22 @@ class AuditLog:
             if col not in existing:
                 self.conn.execute(f"ALTER TABLE positions ADD COLUMN {col} {col_type}")
         self.conn.commit()
+
+    # ---- daily candles (CPR) ----
+
+    def upsert_daily_bars(self, symbol: str, df) -> int:
+        """Store closed daily candles (DataFrame indexed by timestamp)."""
+        rows = [(symbol, str(ts)[:10], float(r["open"]), float(r["high"]), float(r["low"]), float(r["close"]))
+                for ts, r in df.iterrows()]
+        self.conn.executemany(
+            "INSERT INTO daily_bars (symbol, day, open, high, low, close) VALUES (?,?,?,?,?,?) "
+            "ON CONFLICT(symbol, day) DO UPDATE SET open=excluded.open, high=excluded.high, "
+            "low=excluded.low, close=excluded.close", rows)
+        self.conn.commit()
+        return len(rows)
+
+    def daily_bar_count(self, symbol: str) -> int:
+        return int(self.conn.execute("SELECT COUNT(*) FROM daily_bars WHERE symbol = ?", (symbol,)).fetchone()[0])
 
     # ---- key/value state ----
 

@@ -252,6 +252,17 @@ SECTIONS = [
          {"min": 1, "max": 240, "nullable": True, "help": "Scalps: close every agent trade this long before the close. Empty = hold overnight (not for scalping)"}),
         ("risk.blocked_symbols", "Never trade these symbols", "list", {"nullable": True}),
     ]},
+    {"id": "cpr", "title": "CPR levels & scorecard (watching only)", "fields": [
+        ("cpr.enabled", "Collect daily candles for CPR", "bool", {
+         "help": "Once a day per watched symbol. Shows the Central Pivot Range and a scorecard of how past "
+                 "sessions went. Nothing trades on it yet"}),
+        ("cpr.backfill_days", "History fetched the first time (days)", "int", {"min": 25, "max": 250,
+         "help": "After that only the last 5 days are fetched each day"}),
+        ("cpr.width_lookback", "Narrow / wide judged against (sessions)", "int", {"min": 5, "max": 100}),
+        ("cpr.narrow_pct", "Narrow = width at or below percentile", "float", {"min": 1, "max": 50}),
+        ("cpr.wide_pct", "Wide = width at or above percentile", "float", {"min": 50, "max": 99}),
+        ("cpr.adr_days", "Average daily range over (days)", "int", {"min": 5, "max": 60}),
+    ]},
     {"id": "sentiment", "title": "Market sentiment meter (display only)", "fields": [
         ("sentiment.enabled", "Show the sentiment meter", "bool", {}),
         ("sentiment.timeframe", "Candles used", "select", {"options": TIMEFRAMES,

@@ -390,6 +390,19 @@ scalp:
   # ...plus this % beyond the entry, so a break-even exit still covers costs.
   breakeven_offset_pct: 0.02
 
+# CPR (Central Pivot Range) - step 1: levels and a scorecard, NO trading.
+# Once a day per watched symbol the agent stores its daily candles; the
+# dashboard shows today's pivot, TC/BC, width (narrow / normal / wide against
+# the symbol's own history) and two-day relationship, plus a scorecard of
+# whether narrow days really trended on your markets (src/cpr.py).
+cpr:
+  enabled: false
+  backfill_days: 60       # daily candles fetched the first time; 5 a day after that
+  width_lookback: 20      # narrow / wide = percentile of the last 20 sessions' widths
+  narrow_pct: 25
+  wide_pct: 75
+  adr_days: 14            # "how big was the day" against the 14-day average range
+
 # Market Sentiment Meter (dashboard only - never affects trading).
 # Reads benchmark ETFs for the broker's market and labels the market
 # Up trend / Down trend / Sideways / Stable with a -100..100 needle.

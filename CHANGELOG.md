@@ -15,6 +15,19 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Added
+- **CPR levels and scorecard - step 1, watching only** (`cpr.enabled`, off by
+  default; Settings -> CPR levels & scorecard). Once a day the agent stores each
+  watched symbol's closed daily candles (the backfill the first time, the last
+  5 days after that, a few symbols per 5 minutes). A new Command Center card
+  shows today's Central Pivot Range per symbol: pivot, TC/BC, R1/S1, width
+  (narrow / normal / wide against the symbol's own last 20 sessions), Ochoa's
+  two-day relationship with its bias, and where the last price sits. A
+  scorecard checks every past session against its CPR - size against the
+  14-day average range, trend day, R1/S1 reached, traded into the band, closed
+  beyond it - grouped by width and relationship, so you can see whether
+  "narrow CPR = trend day" holds on your markets before anything trades on it.
+
 ### Fixed
 - **IG: skill entries on indices and commodities were refused**
   (`ATTACHED_ORDER_LEVEL_ERROR`). Skill setups such as the VWAP pullback

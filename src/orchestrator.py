@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from src import market_calendar as cal
+from src import cpr
 from src.audit_log import AuditLog
 from src import indicator_gate
 from src import rules as rules_gate
@@ -1842,6 +1843,43 @@ class Orchestrator:
         self.process_manual_orders()
         self.flat_by_close()
         self._publish_broker_mirror(now)
+        self._collect_daily_bars(now)
+
+    CPR_CHECK_SECONDS = 300      # how often to look for symbols still needing today's daily candles
+    CPR_SYMBOLS_PER_CHECK = 4    # protects the broker's per-minute request allowance
+    CPR_RETRY_SECONDS = 3600     # after a failed fetch
+
+    def _collect_daily_bars(self, now: float):
+        """CPR step 1 (src/cpr.py): once a day per watched symbol, store its
+        closed daily candles - the whole backfill the first time, the last
+        few days after that. The dashboard works out the levels and the
+        scorecard from them. Nothing here trades. Off unless cpr.enabled."""
+        cfg = cpr.settings(self.config)
+        if not cfg["enabled"] or now - getattr(self, "_cpr_last_check", 0.0) < self.CPR_CHECK_SECONDS:
+            return
+        self._cpr_last_check = now
+        today = time.strftime("%Y-%m-%d", time.gmtime(now))
+        failed = getattr(self, "_cpr_failed", {})
+        self._cpr_failed = failed
+        budget = self.CPR_SYMBOLS_PER_CHECK
+        for w in list(self.workers.values()):
+            key = f"cpr_fetched:{w.symbol}"
+            if self.audit_log.get_kv(key) == today or now - failed.get(w.symbol, 0.0) < self.CPR_RETRY_SECONDS:
+                continue
+            if budget <= 0:
+                break
+            budget -= 1
+            have = self.audit_log.daily_bar_count(w.symbol)
+            n = 5 if have >= cfg["width_lookback"] + cfg["adr_days"] else cfg["backfill_days"]
+            try:
+                df = drop_unclosed_bar(bars_to_df(self.broker.get_historical_bars(w.symbol, "DAY", n)), "DAY")
+                stored = self.audit_log.upsert_daily_bars(w.symbol, df)
+                self.audit_log.set_kv(key, today)
+                failed.pop(w.symbol, None)
+                logger.info("CPR: stored %d daily candles for %s", stored, w.symbol)
+            except Exception as exc:  # noqa: BLE001 - logged; tried again in an hour
+                failed[w.symbol] = now
+                logger.warning("CPR: no daily candles for %s: %s", w.symbol, exc)
 
     def _publish_broker_mirror(self, now: float):
         """IG only: the dashboard and the agent share IG's request allowance,
