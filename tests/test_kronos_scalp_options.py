@@ -137,7 +137,7 @@ def test_skill_kronos_mode_needs_kronos_to_agree_with_the_setup(tmp_path, skill_
     assert worker.kronos_agent.confirm_direction.call_args.args[1] == "BUY"
     assert broker.kinds() == []
     row = audit.conn.execute("SELECT action, kronos_confidence, risk_reason, details FROM decisions").fetchone()
-    assert row[0] == "rejected" and row[1] == 0.4 and "kronos confidence" in row[2]
+    assert row[0] == "rejected" and row[1] == 0.4 and "kronos agrees with BUY but only weakly" in row[2]
     assert json.loads(row[3])["engine"] == "skill+kronos"
     worker.poll_once()                                                       # same setup isn't asked again
     assert worker.kronos_agent.confirm_direction.call_count == 1
