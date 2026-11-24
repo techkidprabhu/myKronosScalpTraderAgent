@@ -15,6 +15,20 @@ that heading to the new version and date, and tag the commit
 
 ## [Unreleased]
 
+### Fixed
+- **IG: skill entries on indices and commodities were refused**
+  (`ATTACHED_ORDER_LEVEL_ERROR`). Skill setups such as the VWAP pullback
+  enter at the last close, and IG won't accept a limit order sitting on the
+  price for many indices and oil. On IG, an entry priced at the market now goes
+  as a market order; the skill's stop and target levels are unchanged, and a
+  skill price away from the market (e.g. a Praga retest) is still a limit order.
+- **IG: CHF pairs were never sized** ("No IG price to convert CHF into the
+  account's SGD"). Currencies without a direct IG pair now convert through USD,
+  then EUR.
+- **Kronos rejections say what they mean.** "kronos confidence 0.00 below
+  threshold" now reads "kronos disagrees with BUY: 0% of its forecast moves up"
+  - 0.00 is Kronos expecting the opposite move, not a failure.
+
 ### Added
 - **Single-stock focus** (Command Center card and Settings → Universe &
   screener; off by default). Instead of scanning every screener pick, the

@@ -202,6 +202,7 @@ ACCOUNT_CACHE_SECONDS = 4.0      # positions / working orders / accounts, reused
 
 SPEC_CACHE_SECONDS = 6 * 3600     # contract size / pip value / deal rules hardly ever change
 FX_CACHE_SECONDS = 600            # currency conversion for P&L and sizing
+FX_VIA = ("USD", "EUR")           # cross currencies when IG has no direct pair
 
 
 def _num(text) -> float | None:
@@ -217,6 +218,10 @@ def _is_trading(method: str, path: str) -> bool:
 
 class IGClient(BrokerClient):
     name = "ig"
+    # IG refuses a working (limit) order placed on the market price for many
+    # indices and commodities, so an entry meant to fill now goes as a market
+    # order (see SymbolWorker skill entries).
+    MARKET_FOR_AT_PRICE_ENTRIES = True
     label = "IG"
     capabilities = Capabilities(
         paper_trading=True, stop_orders=True, gtc_orders=True, short_selling=True,
@@ -701,18 +706,43 @@ class IGClient(BrokerClient):
         if hit and time.time() - hit[0] < FX_CACHE_SECONDS:
             return hit[1]
         style = ".".join(symbol.split(".")[3:]) if symbol.count(".") >= 3 else "CSD.IP"
+        rate = self._fx_direct(frm, to, style)
+        if rate is None:
+            # No direct pair (CHF into SGD, say): go through USD, then EUR.
+            for via in FX_VIA:
+                if via in (frm, to):
+                    continue
+                a = self._fx_direct(frm, via, style)
+                b = self._fx_direct(via, to, style) if a else None
+                if a and b:
+                    rate = a * b
+                    break
+        if rate is None:
+            raise BrokerError(f"No IG price to convert {frm} into the account's {to}")
+        self._fx[(frm, to)] = (time.time(), rate)
+        return rate
+
+    def _fx_direct(self, frm: str, to: str, style: str = "CSD.IP") -> float | None:
+        """`to` per `frm` from a single IG forex pair (either way round), or
+        None when IG lists neither."""
+        hit = self._fx.get((frm, to))
+        if hit and time.time() - hit[0] < FX_CACHE_SECONDS:
+            return hit[1]
         cands = {}
         for pair, invert in ((frm + to, False), (to + frm, True)):
             for st in dict.fromkeys((style, "CSD.IP", "CFD.IP", "MINI.IP")):
                 cands[f"CS.D.{pair}.{st}"] = invert
-        snaps = self.market_snapshots(list(cands))
+        try:
+            snaps = self.market_snapshots(list(cands))
+        except BrokerError:
+            return None
         for epic, invert in cands.items():
             mid = _mid({"bid": (snaps.get(epic) or {}).get("bid"), "offer": (snaps.get(epic) or {}).get("offer")})
             if mid:
                 rate = 1.0 / mid if invert else mid
                 self._fx[(frm, to)] = (time.time(), rate)
                 return rate
-        raise BrokerError(f"No IG price to convert {frm} into the account's {to}")
+        return None
 
     def _order_currency(self, symbol: str) -> str:
         try:

@@ -146,6 +146,28 @@ def note_kronos_time(audit_log, ms: float, symbols: int):
         logger.debug("Could not record Kronos timing", exc_info=True)
 
 
+def kronos_reason(confirmed, confidence, direction: str, threshold: float) -> str:
+    """Plain words for a Kronos rejection. Confidence is the share of the
+    forecast that moves the signal's way, so 0.00 means Kronos expects the
+    opposite move, not that it failed."""
+    conf = float(confidence or 0.0)
+    way = "up" if str(direction).upper() == "BUY" else "down"
+    if not confirmed:
+        return (f"kronos disagrees with {direction}: {conf:.0%} of its forecast moves {way} "
+                f"(confidence {conf:.2f}, needs {threshold})")
+    return f"kronos agrees with {direction} but only weakly: confidence {conf:.2f}, needs {threshold}"
+
+
+def at_market(entry: float, last_close: float, round_price=None) -> bool:
+    """True when an entry level is the current price (to the instrument's
+    rounding), i.e. the order is meant to fill now."""
+    r = round_price or (lambda x: x)
+    try:
+        return float(r(float(entry))) == float(r(float(last_close)))
+    except (TypeError, ValueError):
+        return False
+
+
 class SymbolWorker:
     def __init__(
         self,
@@ -385,7 +407,7 @@ class SymbolWorker:
         except Exception:
             logger.debug("Shadow submit failed", exc_info=True)
         if not confirmed or confidence < self.confidence_threshold:
-            reason = f"kronos confidence {confidence:.2f} below threshold {self.confidence_threshold}"
+            reason = kronos_reason(confirmed, confidence, signal.direction, self.confidence_threshold)
             self.audit_log.log_decision(
                 self.symbol, signal.name, signal.direction, signal.strength,
                 confirmed, confidence, None, reason, "rejected", details=kx or None,
@@ -693,8 +715,7 @@ class SymbolWorker:
             self.audit_log.log_snapshot(self.symbol, last_close, "kronos_result",
                                         {"confirmed": k_ok, "confidence": k_conf, "ms": round(ms), "engine": engine})
             if not k_ok or k_conf < self.confidence_threshold:
-                return reject(f"kronos confidence {k_conf:.2f} below threshold {self.confidence_threshold}",
-                              prefix="")
+                return reject(kronos_reason(k_ok, k_conf, direction, self.confidence_threshold), prefix="")
 
         allowed, risk_reason = self._risk_check(direction)
         if not allowed:
@@ -705,8 +726,17 @@ class SymbolWorker:
         plan = self._plan(entry, self.quantity, df, stop_distance=abs(entry - stop), target_distance=abs(target - entry))
         if not plan.allowed:
             return reject(plan.reason, {"risk_plan": plan.details})
+        # A skill entry priced at the last close means "enter now". Brokers
+        # that refuse a limit order sitting on the market (IG: working orders
+        # need a minimum distance from the price on indices and commodities -
+        # ATTACHED_ORDER_LEVEL_ERROR) get a market order; the skill's stop and
+        # target levels are unchanged.
+        order_price = entry
+        if (getattr(self.broker, "MARKET_FOR_AT_PRICE_ENTRIES", False) and self._market_open()
+                and at_market(entry, last_close, self.broker.round_price)):
+            order_price = None
         try:
-            entry_id = self.broker.create_entry(self.symbol, direction, plan.quantity, entry)   # limit at the skill's price
+            entry_id = self.broker.create_entry(self.symbol, direction, plan.quantity, order_price)
         except Exception as exc:
             logger.exception("Skill entry order failed for %s", self.symbol)
             self.audit_log.log_decision(self.symbol, name, direction, float(setup.quality), k_ok, k_conf, True,
@@ -727,7 +757,7 @@ class SymbolWorker:
             self.symbol, name, direction, float(setup.quality), k_ok, k_conf, True, risk_reason, "opened",
             deal_id=str(entry_id),
             details={"engine": engine, **kx, "file": switch["file"], "status": "entry_submitted", "entry": float(entry),
-                     "stop": float(stop), "target": float(target), "quantity": plan.quantity,
+                     "order": "market" if order_price is None else "limit", "stop": float(stop), "target": float(target), "quantity": plan.quantity,
                      "sized_by": plan.sized_by, "max_loss": round(plan.max_loss, 2),
                      "reward_risk": round(plan.reward_risk, 2), "setup": setup.summary()})
         self.audit_log.log_snapshot(self.symbol, last_close, "entry_submitted",
