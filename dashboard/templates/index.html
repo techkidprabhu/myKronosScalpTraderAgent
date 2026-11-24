@@ -289,6 +289,26 @@
         <div id="fm-cands" class="tm-setups" hidden></div>
       </section>
 
+      <section class="cc-card" id="cpr-card" aria-labelledby="cpr-h">
+        <div class="cc-card-head">
+          <h2 id="cpr-h">CPR levels <span class="cc-muted">· watching only</span></h2>
+          <span class="cc-muted" id="cpr-sub"></span>
+        </div>
+        <p class="cc-muted" id="cpr-explain" style="margin:0 0 10px">Loading…</p>
+        <div class="scr-wrap" id="cpr-levels-wrap" hidden><table class="cc-mini-table" id="cpr-levels" data-name="CPR levels" data-sort="off">
+          <thead><tr><th>Symbol</th><th title="Last price against the band: above TC, inside, below BC">Price</th><th>Pivot</th><th>TC / BC</th><th title="Band width as % of the pivot; narrow / wide against this symbol's last sessions">Width</th><th title="Today's band against yesterday's (Ochoa's two-day relationship)">Vs yesterday</th><th>R1 / S1</th></tr></thead>
+          <tbody id="cpr-levels-body"></tbody>
+        </table></div>
+        <div id="cpr-score" hidden>
+          <h3 class="cc-sub-h" style="margin-top:14px">Did it hold? Past sessions on these symbols</h3>
+          <p class="kq-verdict" id="cpr-verdict"></p>
+          <div class="scr-wrap"><table class="cc-mini-table" id="cpr-score-table" data-name="CPR scorecard" data-sort="off">
+            <thead><tr><th>Sessions</th><th>Days</th><th title="Day's high-low range divided by the average range of the 14 days before">Size vs avg</th><th title="Range at least the average and the close in the top or bottom quarter of the day">Trend days</th><th>Reached R1 or S1</th><th>Traded into the band</th><th>Closed above TC</th><th>Closed below BC</th></tr></thead>
+            <tbody id="cpr-score-body"></tbody>
+          </table></div>
+        </div>
+      </section>
+
       <section class="cc-card sc-card" id="sc-card" aria-labelledby="sc-h">
         <div class="tm-row">
           <div class="tm-title"><h2 id="sc-h">Scalp session today</h2>
@@ -5065,6 +5085,63 @@
     }
     loadFocusMode();
     setInterval(() => { if (!document.hidden) loadFocusMode(); }, 15000);
+
+    // ---- CPR step 1: levels + scorecard (read-only)
+    function cprNum(v) {
+      if (v == null) return "–";
+      const a = Math.abs(v), d = a >= 1000 ? 1 : a >= 10 ? 2 : a >= 1 ? 4 : 5;
+      return Number(v).toFixed(d);
+    }
+    async function loadCpr() {
+      let d;
+      try { const res = await fetch("/api/cpr", { cache: "no-store" }); if (!res.ok) return; d = await res.json(); }
+      catch (e) { return; }
+      const ex = document.getElementById("cpr-explain"), wrap = document.getElementById("cpr-levels-wrap");
+      const syms = d.symbols || [], sc = d.scorecard || {}, all = sc.all || {};
+      if (!d.enabled && !syms.length) {
+        ex.textContent = "Off. Turn on “Collect daily candles for CPR” in Settings → CPR levels & scorecard. The agent then stores each watched symbol's daily candles once a day; nothing trades on it.";
+        wrap.hidden = true; document.getElementById("cpr-score").hidden = true;
+        document.getElementById("cpr-sub").textContent = ""; return;
+      }
+      ex.textContent = syms.length
+        ? "Today's Central Pivot Range from each symbol's previous session. Above TC reads bullish, below BC bearish, inside is balance. Narrow bands are watched for trend days, wide ones for ranges."
+        : "Waiting for the agent to store daily candles (it checks every 5 minutes, a few symbols at a time).";
+      document.getElementById("cpr-sub").textContent = syms.length ? `${syms.length} symbol${syms.length === 1 ? "" : "s"}` : "";
+      wrap.hidden = !syms.length;
+      const loc = { above: '<span class="tm-pill tm-ready">above TC</span>', below: '<span class="tm-pill tm-open">below BC</span>', inside: '<span class="tm-pill">inside</span>' };
+      const wcls = { narrow: '<span class="tm-pill tm-ready">narrow</span>', wide: '<span class="tm-pill">wide</span>', normal: "normal", unknown: '<span class="cc-muted">too few days</span>' };
+      document.getElementById("cpr-levels-body").innerHTML = syms.map(s =>
+        `<tr><td><b>${esc(s.symbol)}</b><div class="cc-muted">from ${esc(s.based_on)}</div></td>` +
+        `<td>${s.location ? loc[s.location] : '<span class="cc-muted">–</span>'}${s.price != null ? `<div class="mono cc-muted">${cprNum(s.price)}</div>` : ""}</td>` +
+        `<td class="mono">${cprNum(s.P)}</td><td class="mono">${cprNum(s.TC)}<br>${cprNum(s.BC)}</td>` +
+        `<td><span class="mono">${Number(s.width_pct).toFixed(3)}%</span><br>${wcls[s.width_class] || esc(s.width_class)}</td>` +
+        `<td>${esc(s.relationship_label || "–")}${s.bias ? `<div class="cc-muted">bias ${s.bias > 0 ? "+" : ""}${s.bias}</div>` : ""}</td>` +
+        `<td class="mono">${cprNum(s.R1)}<br>${cprNum(s.S1)}</td></tr>`).join("");
+      const box = document.getElementById("cpr-score");
+      box.hidden = !all.days;
+      if (all.days) {
+        const pct = v => v == null ? "–" : `${v}%`;
+        const row = (name, g, cls = "") => `<tr class="${cls}"><td>${esc(name)}</td><td class="mono">${g.days}</td><td class="mono">${g.avg_range_x == null ? "–" : g.avg_range_x + "×"}</td>` +
+          `<td class="mono">${pct(g.trend_days_pct)}</td><td class="mono">${pct(g.reached_r1_or_s1_pct)}</td><td class="mono">${pct(g.touched_pct)}</td>` +
+          `<td class="mono">${pct(g.closed_above_pct)}</td><td class="mono">${pct(g.closed_below_pct)}</td></tr>`;
+        document.getElementById("cpr-score-body").innerHTML = row("All sessions", all, "kq-total") +
+          `<tr class="kq-sep"><td colspan="8">By band width</td></tr>` +
+          (sc.by_width || []).map(g => row(g.class[0].toUpperCase() + g.class.slice(1), g)).join("") +
+          `<tr class="kq-sep"><td colspan="8">By two-day relationship</td></tr>` +
+          (sc.by_relationship || []).map(g => row(g.label, g)).join("");
+        const n = (sc.by_width || []).find(g => g.class === "narrow"), w = (sc.by_width || []).find(g => g.class === "wide");
+        const v = document.getElementById("cpr-verdict");
+        if (!n || !w || Math.min(n.days, w.days) < 30) {
+          v.textContent = `${all.days} sessions scored so far. Wait for at least 30 narrow and 30 wide sessions before reading much into it.`;
+        } else {
+          const gap = Math.round((n.trend_days_pct || 0) - (w.trend_days_pct || 0));
+          v.textContent = `Narrow-band sessions trended ${n.trend_days_pct}% of the time, wide ones ${w.trend_days_pct}% (all sessions ${all.trend_days_pct}%). ` +
+            (gap >= 10 ? `The narrow-CPR tendency holds here: ${gap} points.` : gap > -10 ? "Little difference on these markets so far." : `Wide bands trended more here: the classic reading doesn't hold on these markets.`);
+        }
+      }
+    }
+    loadCpr();
+    setInterval(() => { if (!document.hidden) loadCpr(); }, 60000);
 
     // ---- Scalp session today (live, every 15 s)
     function scEsc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }

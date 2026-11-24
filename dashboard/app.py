@@ -1476,6 +1476,57 @@ def api_trading_mode():
     return jsonify(_trading_mode_payload())
 
 
+@app.route("/api/cpr")
+def api_cpr():
+    """CPR step 1 (src/cpr.py): today's Central Pivot Range per watched
+    symbol, from the daily candles the agent stores, and a scorecard of how
+    past sessions actually went by width class and two-day relationship.
+    Read-only: nothing trades on it."""
+    from src import cpr
+    cfg = cpr.settings(load_config() or {})
+    out = {"enabled": cfg["enabled"], "settings": cfg, "symbols": [], "scorecard": cpr.scorecard([])}
+    try:
+        conn = get_db()
+    except sqlite3.Error:
+        return jsonify({**out, "error": "No audit database yet"})
+    prices = {}
+    try:
+        try:
+            rows = [dict(r) for r in conn.execute(
+                "SELECT symbol, day, open, high, low, close FROM daily_bars ORDER BY symbol, day")]
+        except sqlite3.OperationalError:
+            rows = []                                   # the agent hasn't created the table yet
+        try:
+            for r in conn.execute("SELECT symbol, price FROM snapshots WHERE id IN "
+                                  "(SELECT MAX(id) FROM snapshots WHERE ts > ? GROUP BY symbol)",
+                                  (time.time() - 6 * 3600,)):
+                prices[r["symbol"]] = r["price"]
+        except sqlite3.OperationalError:
+            pass
+    finally:
+        conn.close()
+    by_sym: dict = {}
+    for r in rows:
+        by_sym.setdefault(r["symbol"], []).append(r)
+    every = []
+    for sym, rs in by_sym.items():
+        days = cpr.build_days(pd.DataFrame(rs).set_index("day"), cfg)
+        if not days:
+            continue
+        every.extend(days)
+        cur, price = days[-1], prices.get(sym)
+        out["symbols"].append({
+            "symbol": sym, "history_days": len(rs), "price": price,
+            "location": cpr.location(price, cur) if price else None,
+            "relationship_label": cpr.LABELS.get(cur["relationship"]),
+            **{k: cur[k] for k in ("P", "TC", "BC", "R1", "S1", "R2", "S2", "width_pct", "width_class",
+                                   "relationship", "bias", "based_on")}})
+    order = {"narrow": 0, "normal": 1, "wide": 2}
+    out["symbols"].sort(key=lambda s: (order.get(s["width_class"], 3), s["width_pct"]))
+    out["scorecard"] = cpr.scorecard(every)
+    return jsonify(out)
+
+
 @app.route("/api/focus_mode", methods=["GET", "POST"])
 def api_focus_mode():
     """Single-stock focus: trade only the one cleanest volume breakout
@@ -2551,6 +2602,8 @@ def _code_defaults() -> dict:
     out.update({f"skills.{k}": v for k, v in _rules.DEFAULTS.items()})
     from src import focus as _focus
     out.update({f"screener.focus.{k}": v for k, v in _focus.DEFAULTS.items()})
+    from src import cpr as _cpr
+    out.update({f"cpr.{k}": v for k, v in _cpr.DEFAULTS.items()})
     return out
 
 
